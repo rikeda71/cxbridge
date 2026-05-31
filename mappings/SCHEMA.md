@@ -7,7 +7,7 @@
 ```yaml
 domain: skills                      # 領域識別子（ファイル名と一致）
 title: "Skills (SKILL.md)"          # 人間向けタイトル
-doc: ../docs/02-skills.md           # 対応する解説ドキュメント（相対パス）
+doc: ../docs/spec.md           # 対応する解説ドキュメント（相対パス）
 files:                              # この領域が扱う設定ファイル
   claude:
     - ".claude/skills/<name>/SKILL.md"

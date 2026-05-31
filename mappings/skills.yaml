@@ -1,6 +1,6 @@
 domain: skills
 title: "Skills (SKILL.md)"
-doc: ../docs/02-skills.md
+doc: ../docs/spec.md
 files:
   claude:
     - ".claude/skills/<name>/SKILL.md"

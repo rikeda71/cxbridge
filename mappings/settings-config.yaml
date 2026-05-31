@@ -1,6 +1,6 @@
 domain: settings-config
 title: "Settings & Config (settings.json ⇄ config.toml)"
-doc: ../docs/07-settings-and-config.md
+doc: ../docs/spec.md
 files:
   claude:
     - "~/.claude/settings.json"
@@ -539,7 +539,7 @@ entries:
   # ─── Hooks・MCP（別ドキュメント参照） ──────────────────────────
 
   # hooks と mcpServers は本 yaml のエントリ対象外。
-  # 詳細は docs/05-hooks.md および docs/06-mcp.md / mappings/hooks.yaml / mappings/mcp.yaml を参照。
+  # 詳細は mappings/hooks.yaml / mappings/mcp.yaml を参照。
 
   # ─── メモリ・セッション管理 ────────────────────────────────────
 
@@ -1029,7 +1029,7 @@ notes:
     filesystem・network.domains・.rules（execpolicy）の 3 つに分散変換が必要。
   - |
     hooks と mcpServers は本 yaml のエントリ対象外。
-    docs/05-hooks.md / mappings/hooks.yaml（hooks）および docs/06-mcp.md / mappings/mcp.yaml（MCP）を参照。
+    mappings/hooks.yaml（hooks）および mappings/mcp.yaml（MCP）を参照。
   - |
     Codex の `sandbox_mode`/`sandbox_workspace_write`（旧方式）と
     `default_permissions`/`[permissions.*]`（新方式）は排他。新規変換では新方式を推奨。

@@ -1,6 +1,6 @@
 domain: subagents
 title: "Subagents (agents/*.md / agents/*.toml)"
-doc: ../docs/04-subagents.md
+doc: ../docs/spec.md
 files:
   claude:
     - ".claude/agents/<name>.md"

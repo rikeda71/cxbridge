@@ -1,6 +1,6 @@
 domain: plugins
 title: "Plugins (plugin.json / marketplace.json)"
-doc: ../docs/03-plugins.md
+doc: ../docs/spec.md
 files:
   claude:
     - ".claude-plugin/plugin.json"
