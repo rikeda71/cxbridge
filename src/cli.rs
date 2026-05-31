@@ -116,7 +116,7 @@ fn run_convert(dir: ConvDir, path: &str, opts: &ConvertOpts) -> anyhow::Result<(
     let plan = handler.lower(&ir, dir, &lower_opts)?;
     let report = build_report(&ir, &plan);
     if !opts.dry_run {
-        write_plan(&plan, opts)?;
+        write_plan(&plan, opts.force)?;
     }
     let report_fmt = opts.report.as_ref().and_then(|r| r.as_deref());
     print_report(&report, report_fmt);
@@ -195,9 +195,35 @@ fn build_lower_opts(opts: &ConvertOpts) -> LowerOpts {
     }
 }
 
-/// `--force` なし時は既存ファイルへの上書きを拒否する。
-/// config.toml と .rules は append 対象のため上書き保護対象外。
-pub fn write_plan(plan: &EmitPlan, opts: &ConvertOpts) -> anyhow::Result<()> {
+/// Append target kind for `config.toml` / `.rules`, which are merged into an
+/// existing destination rather than overwritten.
+enum AppendTarget {
+    /// `config.toml`: additive TOML merge (existing keys win).
+    ConfigToml,
+    /// `*.rules`: concatenate, skipping content already present.
+    Rules,
+}
+
+fn append_target(dest: &Path) -> Option<AppendTarget> {
+    let name = dest.file_name()?.to_str()?;
+    if name == "config.toml" {
+        Some(AppendTarget::ConfigToml)
+    } else if name.ends_with(".rules") {
+        Some(AppendTarget::Rules)
+    } else {
+        None
+    }
+}
+
+/// Writes every file in the plan, creating parent directories.
+///
+/// `config.toml` and `.rules` are append targets: they are merged into an
+/// existing destination (additively for TOML, by concatenation for rules) so
+/// that converting several skills into one output tree, or converting into an
+/// existing Codex project, never clobbers prior `[agents.*]`/`[features]`
+/// entries. Other files are protected: an existing destination is refused
+/// unless `force` is set.
+pub fn write_plan(plan: &EmitPlan, force: bool) -> anyhow::Result<()> {
     for file in &plan.files {
         let dest = PathBuf::from(&file.path);
 
@@ -206,24 +232,78 @@ pub fn write_plan(plan: &EmitPlan, opts: &ConvertOpts) -> anyhow::Result<()> {
                 .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
         }
 
-        // config.toml と .rules はハンドラ側でマージ済みなので上書き保護を免除する
-        let is_append_target = dest
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(|n| n == "config.toml" || n.ends_with(".rules"))
-            .unwrap_or(false);
+        let content = match append_target(&dest) {
+            Some(target) if dest.exists() => {
+                let existing = std::fs::read_to_string(&dest)
+                    .with_context(|| format!("Failed to read file: {}", dest.display()))?;
+                match target {
+                    AppendTarget::ConfigToml => merge_config_toml(&existing, &file.content)
+                        .with_context(|| format!("Failed to merge TOML into {}", dest.display()))?,
+                    AppendTarget::Rules => append_rules(&existing, &file.content),
+                }
+            }
+            None if dest.exists() && !force => {
+                anyhow::bail!(
+                    "Output file already exists (use --force to overwrite): {}",
+                    dest.display()
+                );
+            }
+            _ => file.content.clone(),
+        };
 
-        if dest.exists() && !is_append_target && !opts.force {
-            anyhow::bail!(
-                "Output file already exists (use --force to overwrite): {}",
-                dest.display()
-            );
-        }
-
-        std::fs::write(&dest, &file.content)
+        std::fs::write(&dest, &content)
             .with_context(|| format!("Failed to write file: {}", dest.display()))?;
     }
     Ok(())
+}
+
+/// Additively merges `addition` into `existing` TOML: tables are merged
+/// recursively and missing keys are inserted, but keys already present in
+/// `existing` are kept (existing config wins). Formatting of `existing` is
+/// preserved via `toml_edit`.
+fn merge_config_toml(existing: &str, addition: &str) -> anyhow::Result<String> {
+    use toml_edit::DocumentMut;
+
+    let mut base: DocumentMut = existing
+        .parse()
+        .context("existing config.toml is not valid TOML")?;
+    let add: DocumentMut = addition
+        .parse()
+        .context("generated config.toml is not valid TOML")?;
+
+    merge_tables(base.as_table_mut(), add.as_table());
+    Ok(base.to_string())
+}
+
+fn merge_tables(base: &mut toml_edit::Table, addition: &toml_edit::Table) {
+    for (key, add_item) in addition.iter() {
+        match base.get_mut(key) {
+            None => {
+                base.insert(key, add_item.clone());
+            }
+            Some(base_item) => {
+                if let (Some(base_tbl), Some(add_tbl)) =
+                    (base_item.as_table_mut(), add_item.as_table())
+                {
+                    merge_tables(base_tbl, add_tbl);
+                }
+                // Otherwise the key already exists as a value: keep existing.
+            }
+        }
+    }
+}
+
+/// Concatenates `addition` onto `existing` rules, skipping it when already
+/// present so repeated conversions stay idempotent.
+fn append_rules(existing: &str, addition: &str) -> String {
+    if existing.contains(addition.trim()) {
+        return existing.to_string();
+    }
+    let mut out = existing.trim_end().to_string();
+    out.push('\n');
+    out.push_str(addition.trim_end());
+    out.push('\n');
+    out
 }
 
 fn parse_scope(s: &str) -> Scope {
