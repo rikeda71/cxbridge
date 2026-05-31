@@ -1,6 +1,6 @@
 domain: hooks
 title: "Hooks"
-doc: ../docs/05-hooks.md
+doc: ../docs/spec.md
 files:
   claude:
     - "~/.claude/settings.json"

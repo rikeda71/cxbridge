@@ -1,6 +1,6 @@
 domain: variables
 title: "Variables, Placeholders & Dynamic Injection"
-doc: ../docs/09-variables-and-templating.md
+doc: ../docs/spec.md
 files:
   claude:
     - ".claude/skills/<name>/SKILL.md"

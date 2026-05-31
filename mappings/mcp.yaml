@@ -1,6 +1,6 @@
 domain: mcp
 title: "MCP Servers (.mcp.json / config.toml)"
-doc: ../docs/06-mcp.md
+doc: ../docs/spec.md
 files:
   claude:
     - ".mcp.json"

@@ -1,6 +1,6 @@
 domain: memory
 title: "メモリ/指示ファイル (CLAUDE.md ⇄ AGENTS.md)"
-doc: ../docs/08-memory-files.md
+doc: ../docs/spec.md
 files:
   claude:
     - "./CLAUDE.md"
