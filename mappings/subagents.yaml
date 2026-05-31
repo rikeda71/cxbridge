@@ -10,8 +10,8 @@ files:
     - "~/.codex/agents/<name>.toml"
     - ".codex/config.toml ([agents.<name>] section)"
 format:
-  claude: markdown+yaml-frontmatter
-  codex: toml
+  claude: [markdown+yaml-frontmatter]
+  codex: [toml]
 entries:
   - id: subagents.path
     claude:

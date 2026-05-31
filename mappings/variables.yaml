@@ -11,8 +11,8 @@ files:
     - "~/.agents/skills/<name>/SKILL.md"
     - "（Custom Prompts: deprecated・/prompts:name で呼び出し）"
 format:
-  claude: markdown+yaml-frontmatter
-  codex: markdown+yaml-frontmatter
+  claude: [markdown+yaml-frontmatter]
+  codex: [markdown+yaml-frontmatter]
 entries:
   - id: variables.arguments-all
     claude:

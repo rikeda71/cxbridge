@@ -9,8 +9,8 @@ files:
     - "~/.codex/config.toml"
     - ".codex/config.toml"
 format:
-  claude: json
-  codex: toml
+  claude: [json]
+  codex: [toml]
 
 entries:
   - id: mcp.format

@@ -13,8 +13,8 @@ files:
     - "~/.codex/config.toml"
     - ".codex/config.toml"
 format:
-  claude: json
-  codex: toml-or-json
+  claude: [json]
+  codex: [toml, json]
 
 entries:
 

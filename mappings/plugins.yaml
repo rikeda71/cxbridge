@@ -10,8 +10,8 @@ files:
     - ".agents/plugins/marketplace.json"
     - ".claude-plugin/marketplace.json"  # Codex が互換読み込みする Claude 側パス
 format:
-  claude: json
-  codex: json
+  claude: [json]
+  codex: [json]
 entries:
   # ─── マニフェスト配置 ───────────────────────────────────────────────────
   - id: plugins.manifest-path

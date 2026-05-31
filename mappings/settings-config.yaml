@@ -14,8 +14,8 @@ files:
     - "/etc/codex/config.toml"
     - "requirements.toml (managed)"
 format:
-  claude: json
-  codex: toml
+  claude: [json]
+  codex: [toml]
 entries:
 
   # ─── モデル・動作 ────────────────────────────────────────────────

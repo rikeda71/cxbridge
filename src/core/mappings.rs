@@ -60,10 +60,58 @@ pub struct DegradeSpec {
     pub target: String,
 }
 
+/// ドメインが扱うファイル形式。`claude` / `codex` はそれぞれ複数形式を取りうる
+/// （例: Codex hooks は TOML または JSON）。スカラー文字列・リストの両方を受け付ける。
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct FormatSpec {
+    #[serde(default, deserialize_with = "string_or_seq")]
+    pub claude: Vec<String>,
+    #[serde(default, deserialize_with = "string_or_seq")]
+    pub codex: Vec<String>,
+}
+
+/// 単一文字列とリストのどちらでも `Vec<String>` として受け付ける。
+fn string_or_seq<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct StringOrSeq;
+
+    impl<'de> serde::de::Visitor<'de> for StringOrSeq {
+        type Value = Vec<String>;
+
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a string or a list of strings")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(vec![value.to_string()])
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            let mut out = Vec::new();
+            while let Some(item) = seq.next_element::<String>()? {
+                out.push(item);
+            }
+            Ok(out)
+        }
+    }
+
+    deserializer.deserialize_any(StringOrSeq)
+}
+
 /// ドメイン単位のマッピング（例: skills, mcp, hooks）。
 #[derive(Debug, Clone, Deserialize)]
 pub struct DomainMap {
     pub domain: String,
+    #[serde(default)]
+    pub format: Option<FormatSpec>,
     pub entries: Vec<MapEntry>,
 }
 
@@ -287,5 +335,31 @@ mod tests {
         for domain in &expected {
             assert!(maps.contains_key(*domain), "Missing domain: {}", domain);
         }
+    }
+
+    #[test]
+    fn test_format_parsed_as_list() {
+        let maps = load_mappings(Path::new("mappings"));
+
+        // すべてのドメインで format が非空のリストとして読める
+        for (domain, dm) in &maps {
+            let format = dm
+                .format
+                .as_ref()
+                .unwrap_or_else(|| panic!("domain {domain} missing format"));
+            assert!(
+                !format.claude.is_empty(),
+                "domain {domain} has empty claude format"
+            );
+            assert!(
+                !format.codex.is_empty(),
+                "domain {domain} has empty codex format"
+            );
+        }
+
+        // Codex hooks は TOML または JSON の複数形式
+        let hooks = &maps["hooks"].format.as_ref().unwrap().codex;
+        assert!(hooks.contains(&"toml".to_string()));
+        assert!(hooks.contains(&"json".to_string()));
     }
 }

@@ -15,9 +15,9 @@ files:                              # この領域が扱う設定ファイル
   codex:
     - ".agents/skills/<name>/SKILL.md"
     - "~/.agents/skills/<name>/SKILL.md"
-format:                            # ファイル形式（変換時のシリアライザ選択用）
-  claude: markdown+yaml-frontmatter
-  codex: markdown+yaml-frontmatter
+format:                            # ファイル形式（リスト。1領域が複数形式を取りうる）
+  claude: [markdown+yaml-frontmatter] # 単一形式でもリストで書く
+  codex: [toml, json]                 # 例: Codex hooks は TOML または JSON
 entries:                           # フィールド対応エントリの配列（下記）
   - { ... }
 notes:                             # 領域全体にかかる注記（任意）

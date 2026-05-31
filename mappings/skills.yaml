@@ -9,8 +9,8 @@ files:
     - ".agents/skills/<name>/SKILL.md"
     - "~/.agents/skills/<name>/SKILL.md"
 format:
-  claude: markdown+yaml-frontmatter
-  codex: markdown+yaml-frontmatter
+  claude: [markdown+yaml-frontmatter]
+  codex: [markdown+yaml-frontmatter]
 entries:
   - id: skills.path
     claude:

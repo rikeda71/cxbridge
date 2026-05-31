@@ -16,8 +16,8 @@ files:
     - "~/.codex/AGENTS.md"                  # $CODEX_HOME/AGENTS.md
     - "~/.codex/AGENTS.override.md"
 format:
-  claude: markdown
-  codex: markdown
+  claude: [markdown]
+  codex: [markdown]
 entries:
   - id: memory.filename
     claude:
