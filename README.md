@@ -1,171 +1,121 @@
-# ccx — Claude Code ⇄ OpenAI Codex CLI 設定双方向変換 CLI
+# ccx — Claude Code ⇄ Codex CLI Config Converter
 
-**ccx** は Claude Code（`.claude/`、JSON）と OpenAI Codex CLI（`.codex/`、TOML）の設定ファイルを双方向変換する Rust 製 CLI です。
-Skills / Plugins / Hooks / MCP / Memory / Subagents / Settings などの全領域を対象とし、変換できないフィールドは conversion report に明記します。
+[日本語](README.ja.md)
 
-> 調査日: 2026-05-30 / 対象: Claude Code（`code.claude.com/docs`, SchemaStore）, OpenAI Codex CLI（`developers.openai.com/codex`, `github.com/openai/codex`）。
-> Codex 側の仕様は流動的です。各 `mappings/*.yaml` の `notes`/`source` を参照してください。
+**ccx** is a Rust CLI that bidirectionally converts configuration files between
+[Claude Code](https://code.claude.com/docs) (`.claude/`, JSON) and
+[OpenAI Codex CLI](https://developers.openai.com/codex) (`.codex/`, TOML).
+It covers Skills, Plugins, Hooks, MCP servers, Memory files, Subagents, and Settings.
+Conversion rules are declared in `mappings/*.yaml` (287 entries); the CLI is an engine
+that interprets those declarations.
+
+```
+Claude Code  .claude/ (JSON)  ⇄  Codex CLI  .codex/ (TOML)
+```
+
+Every conversion always produces a **conversion report** that enumerates what was
+lossless, lossy, degraded, dropped, and any body-scan warnings. Silent data loss is
+prohibited.
 
 ---
 
-## インストール
+## Install
 
-**事前要件**: Rust 1.80 以上（`cargo` が使えること）
+**Prerequisites:** Rust 1.80+ (`cargo` available)
 
 ```sh
-# リポジトリをクローン
 git clone https://github.com/rikeda71/ccx
 cd ccx
-
-# ビルド
 cargo build --release
-
-# バイナリを PATH に追加
 cp target/release/ccx ~/.local/bin/
 ```
 
 ---
 
-## 使い方
-
-### 変換コマンド
+## Usage
 
 ```sh
-# Claude → Codex 変換
-ccx c2x <path>
-
-# Codex → Claude 変換
-ccx x2c <path>
-
-# 変換可能性の事前診断（書き込まない）
-ccx check <path>
+ccx c2x <path>    # Claude → Codex (one-way)
+ccx x2c <path>    # Codex → Claude (one-way)
+ccx check <path>  # Pre-conversion diagnosis (no writes)
 ```
 
-`<path>` にはファイル（例: `.claude/skills/deploy/SKILL.md`）またはディレクトリを指定します。
-ディレクトリを指定した場合は再帰的に対象ファイルを検出します。
+`<path>` accepts a file or a directory (recursive detection).
 
-### 基本的な例
+### Options (shared by `c2x` / `x2c`)
+
+| Flag | Default | Description |
+|---|---|---|
+| `--out <dir>` | `<input>.converted/` | Output root directory |
+| `--only <domains>` | all | Comma-separated domain filter (`skills,mcp`, …) |
+| `--scope <project\|user>` | `project` | Degrade target scope (`.rules` / agents placement) |
+| `--skill-target <auto\|skill\|subagent>` | `auto` | Force skill conversion target |
+| `--interactive` | false | TTY confirmation for gray-case skills |
+| `--rewrite-body` | false | Apply body substitutions (default: detect + warn only) |
+| `--dual-manifest` | false | Keep `.claude-plugin/` and also generate `.codex-plugin/` |
+| `--hooks-target <user\|project>` | `user` | Hooks write destination |
+| `--report[=json]` | none | Emit detailed report (`=json` for machine-readable output) |
+| `--dry-run` | false | Report only, no file writes |
+| `--strict` | false | Exit 2 if any fields were dropped (for CI) |
+| `--keep-claude-frontmatter` | false | Retain Claude-specific frontmatter keys in Codex output |
+| `--force` | false | Allow overwriting existing files |
+
+### Examples
 
 ```sh
-# Claude の SKILL.md を Codex 形式に変換
+# Convert a Claude skill to Codex format
 ccx c2x .claude/skills/deploy/SKILL.md
 
-# Codex の config.toml を Claude 形式に変換
-ccx x2c .codex/config.toml
+# Convert Codex config.toml to Claude format, report only
+ccx x2c .codex/config.toml --dry-run --report
 
-# .mcp.json の変換可能性を診断
+# Diagnose an MCP config before converting
 ccx check .mcp.json
-```
 
----
-
-## コマンドオプション
-
-`c2x` / `x2c` サブコマンドは以下のオプションを共通で受け付けます。
-
-| オプション | 説明 | 既定値 |
-|---|---|---|
-| `--out <dir>` | 出力先ディレクトリ | `<path>.converted/` |
-| `--only <domains>` | 変換対象ドメインをカンマ区切りで限定（`skills,mcp` など） | 全ドメイン |
-| `--scope <project\|user>` | 降格先スコープ（`.rules` / agents の配置） | `project` |
-| `--skill-target <auto\|skill\|subagent>` | Skill の変換先を強制指定 | `auto` |
-| `--interactive` | グレーケースを TTY 対話で確認する | false |
-| `--rewrite-body` | 本文の変数/記法を自動書き換え（既定は検出のみ） | false |
-| `--dual-manifest` | plugin を `.claude-plugin/` に残しつつ `.codex-plugin/` を追加生成 | false |
-| `--hooks-target <user\|project>` | hooks の書き出し先 | `user` |
-| `--report[=json]` | 詳細レポートを出力。`=json` で機械可読 JSON | なし |
-| `--dry-run` | 書き込まず report のみ出力 | false |
-| `--strict` | dropped が 1 件でもあれば exit 2（CI 用） | false |
-| `--keep-claude-frontmatter` | Claude 固有 frontmatter キーを出力に残置 | false |
-| `--force` | 既存ファイルへの上書きを許可 | false |
-
-### CI での使い方
-
-```sh
-# dropped フィールドがあれば非ゼロ終了（CI に組み込む場合）
+# CI: fail if any fields are dropped
 ccx c2x .claude/skills/deploy/SKILL.md --strict
 
-# JSON レポートを標準出力に出力
+# Machine-readable JSON report
 ccx c2x .mcp.json --dry-run --report=json
 ```
 
 ---
 
-## conversion report の見方
+## Conversion Report
 
-変換後、または `--report` 指定時に以下の形式でレポートが出力されます。
+Every run prints a report. Example:
 
 ```
-  ◎ skills.name, skills.description  lossless
-  ○ skills.when_to_use  lossy  when_to_use concatenated into description (lossy)
-  △ skills.model  lossy (degrade)  skills.model → .codex/agents/deploy.toml (degrade: skills.model→subagent)
-  ✕ skills.user-invocable  dropped  Codex に概念なし
-  ⚠ body L3: $ARGUMENTS[0] - index-shift to $1
-Summary: 2 lossless, 2 lossy(1 degraded), 1 dropped, 1 body-warning
+✔ skills/deploy/SKILL.md → .agents/skills/deploy/SKILL.md
+  ◎ name, description                          lossless
+  ○ when_to_use → description(concatenated)    lossy
+  △ allowed-tools → .codex/rules/deploy.rules  lossy (degrade: skill→project)
+  △ model: opus→gpt-5.x, effort: max→xhigh     lossy (degrade: skill→subagent)
+  ✕ user-invocable                             dropped (no Codex equivalent)
+  ✕ paths                                      dropped
+  ⚠ body L42: !`git diff` not executed in Codex (literal residue risk)
+  + generated: .codex/rules/deploy.rules, .codex/agents/deploy.toml
+Summary: 2 lossless, 3 lossy (2 degraded), 2 dropped, 1 body-warning
 ```
 
-| 記号 | 意味 |
+| Symbol | Meaning |
 |---|---|
-| ◎ | lossless: 完全に変換可能 |
-| ○ | lossy: 変換されるが意味に差異あり |
-| △ | degrade: 別スコープ（`.rules` / subagent TOML）への降格 |
-| ✕ | dropped: 変換先なしで破棄 |
-| ⚠ | body-warning: 本文に手動確認が必要な記法 |
+| ◎ | Lossless — fully equivalent |
+| ○ | Lossy — meaning preserved but information partially reduced |
+| △ | Degraded — moved to a broader scope (e.g., skill → session) |
+| ✕ | Dropped — no conversion target; discarded |
+| ⚠ | Body warning — requires manual review |
 
-`--strict` フラグ使用時、dropped が 1 件以上あると exit code 2 で終了します。
-
----
-
-## 変換ドメインと損失サマリ
-
-| 概念 | Claude Code | OpenAI Codex CLI | 対応度 |
-|---|---|---|---|
-| 再利用可能な指示 | Skills `SKILL.md` | Skills `SKILL.md` | ◎ ファイル名同一 |
-| 配布バンドル | Plugins `.claude-plugin/plugin.json` | Plugins `.codex-plugin/plugin.json` | ○ 構造ほぼ同一 |
-| サブエージェント | `agents/*.md` | `[agents.*]` + standalone TOML | △ 設計差大 |
-| ライフサイクル hooks | Hooks（30 events） | Hooks（10 events） | ○ Claude が広い |
-| MCP サーバー | `.mcp.json`（JSON） | `[mcp_servers.*]`（TOML） | ○ STDIO 共通 |
-| 中核設定 | `settings.json`（JSON） | `config.toml`（TOML） | △ 形式・粒度差大 |
-| 指示メモリ | `CLAUDE.md` | `AGENTS.md` | ○ 名前差のみ |
-| 本文の変数/引数 | `$ARGUMENTS[N]`（0起点）| `$1`-`$9`（1起点） | △ ずれ・損失 |
-
-凡例: ◎ ほぼ無損失 / ○ 形式変換は要るが意味は保持 / △ 設計差が大きく部分的・要手動
-
-### 確定損失フィールド（dropped）
-
-以下のフィールドは Codex に対応概念がなく、変換時に破棄されます:
-- `user-invocable`, `paths`（glob 自動発火）, `arguments`/`argument-hint`（引数機構）
-- 本文の動的注入（`` !`cmd` ``）と `${CLAUDE_*}` 変数
-- plugin の `lspServers`/`outputStyles`/`themes`/`monitors`/`bin`/`userConfig`/`channels`
-- Claude 固有 hook イベント（`Stop`, `Notification`, `Setup` ほか 20+）, `http`/`mcp_tool` hook タイプ
+`--strict` causes exit code 2 when any dropped entries exist.
 
 ---
 
-## プロジェクト構成
+## Documentation
 
-```
-src/        Rust 実装
-mappings/   変換テーブル YAML（287 エントリ・正本データ）
-docs/       設計書
-tests/      統合テスト・fixtures
-```
-
-変換ルールは `mappings/*.yaml` に宣言済みで、CLI はそれを解釈・実行するエンジンです。
-CLI の型・処理フロー・降格仕様の詳細は [`docs/12-cli-spec.md`](docs/12-cli-spec.md) を参照してください。
-
----
-
-## 既知の制限
-
-- Codex 側の仕様は流動的です（plugin 同梱 hooks は `#16430` で未ロードの可能性、skill loader は未知 frontmatter を fail-open で無視、など）。変換結果は実機での動作確認を推奨します。
-- `settings.json ⇄ config.toml` の全自動変換は非現実的なため、権限/env/MCP/hooks/model の部分集合に絞っています。
-- `--interactive` フラグは現バージョンでは TTY 検出のみ（対話的確認は将来実装）。
-
----
-
-## 出典
-
-**Claude Code**: `code.claude.com/docs`（skills/plugins-reference/hooks/mcp/settings/memory）, SchemaStore。
-**OpenAI Codex**: `developers.openai.com/codex`（skills/plugins/hooks/mcp/config-reference/permissions/subagents）, `github.com/openai/codex`。
-
-各エントリの一次情報 URL は対応する `mappings/*.yaml` の `source` と `docs/*.md` の「出典」節にあります。
+- **[docs/spec.md](docs/spec.md)** — full design & implementation specification (IR model,
+  transform registry, domain handler contracts, degrade engine, CLI flags, exit codes,
+  testing strategy, and more)
+- **[mappings/](mappings/)** — canonical conversion table (287 entries across
+  `skills.yaml`, `hooks.yaml`, `mcp.yaml`, `plugins.yaml`, `memory.yaml`,
+  `subagents.yaml`, `settings-config.yaml`); schema defined in
+  [mappings/SCHEMA.md](mappings/SCHEMA.md)
