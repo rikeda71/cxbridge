@@ -1,7 +1,12 @@
-#!/usr/bin/env python3
-"""mappings/*.yaml の不変条件を検証する（docs/12 §13 / mappings/SCHEMA.md）。
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.9"
+# dependencies = ["pyyaml"]
+# ///
+"""mappings/*.yaml の不変条件を検証する（mappings/SCHEMA.md 準拠）。
 
-CI・Claude Code の hook・validate-mappings skill から呼ばれる。
+Claude Code の hook・validate-mappings skill から `uv run` 経由で呼ばれる。
+依存（PyYAML）は先頭の PEP 723 メタデータで宣言し、uv が解決・実行する。
 違反があれば内容を stderr に出して非ゼロ終了する。
 
 検証する不変条件:
@@ -11,17 +16,12 @@ CI・Claude Code の hook・validate-mappings skill から呼ばれる。
   - `loss` ∈ {lossless, lossy, dropped}
   - `degrade` があるなら `loss` == lossy
   - `loss` == dropped のエントリに `transform` を付けない
-依存: PyYAML
 """
 import sys
 import os
 import glob
 
-try:
-    import yaml
-except ImportError:
-    print("PyYAML が必要です（pip install pyyaml / uv pip install pyyaml）", file=sys.stderr)
-    sys.exit(3)
+import yaml
 
 VALID_DIRECTION = {"both", "claude_to_codex", "codex_to_claude"}
 VALID_LOSS = {"lossless", "lossy", "dropped"}

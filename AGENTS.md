@@ -30,7 +30,7 @@ cargo clippy -- -D warnings
 cargo fmt
 cargo run -- check <path>
 cargo run -- c2x <path>
-python3 scripts/validate-mappings.py   # validate mappings invariants
+uv run scripts/validate-mappings.py   # validate mappings invariants
 ```
 
 ## Per-Area Work Rules

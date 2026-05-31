@@ -16,7 +16,7 @@ tools:
 ### 1. スクリプトによる自動検証
 
 ```bash
-python3 "$CLAUDE_PROJECT_DIR/scripts/validate-mappings.py"
+uv run "$CLAUDE_PROJECT_DIR/scripts/validate-mappings.py"
 ```
 
 NG が出たら後続ステップの前に修正案を提示する。

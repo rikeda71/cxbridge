@@ -13,7 +13,7 @@ allowed-tools:
 1. バリデーションスクリプトを実行する。
 
    ```bash
-   python3 "$CLAUDE_PROJECT_DIR/scripts/validate-mappings.py"
+   uv run "$CLAUDE_PROJECT_DIR/scripts/validate-mappings.py"
    ```
 
 2. 出力が全件 OK であればそのまま完了を報告する。

@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/validate-mappings.py\" || true",
+            "command": "uv run \"$CLAUDE_PROJECT_DIR/scripts/validate-mappings.py\" || true",
             "timeout": 30,
             "statusMessage": "mappings 不変条件を検証中..."
           }

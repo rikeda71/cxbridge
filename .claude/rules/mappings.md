@@ -21,7 +21,7 @@ paths:
 Claude Code の PostToolUse hook が自動実行するが、手動でも確認できる:
 
 ```
-python3 scripts/validate-mappings.py
+uv run scripts/validate-mappings.py
 ```
 
 ## 意味・根拠の保全
