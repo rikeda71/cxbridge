@@ -27,10 +27,10 @@ python3 scripts/validate-mappings.py
 ## 意味・根拠の保全
 
 - 各エントリの `notes` に根拠 source URL を残す（`source:` フィールドまたは `notes` 内）
-- `docs/` の記述と矛盾する変更はしない。矛盾が生じる場合は `docs/12-cli-spec.md` と該当 `mappings/*.yaml` を**両方**更新して整合を保つ
+- `docs/` の記述と矛盾する変更はしない。矛盾が生じる場合は `docs/spec.md` と該当 `mappings/*.yaml` を**両方**更新して整合を保つ
 - 既存エントリの意味を黙って変えない。不明な場合は `docs/` および `notes` を確認する
 
-## mappings 不変条件テスト（`docs/12 §13`）
+## mappings 不変条件テスト（`docs/spec.md §18 Testing Strategy`）
 
 実装側（`src/**`, `tests/**`）でテストすること:
 

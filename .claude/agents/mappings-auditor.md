@@ -1,7 +1,7 @@
 ---
 name: mappings-auditor
 description: >
-  mappings/*.yaml と docs（特に mappings/SCHEMA.md・docs/13-feature-matrix.md）の整合を監査する。
+  mappings/*.yaml と docs（特に mappings/SCHEMA.md・docs/spec.md §16 Feature & Loss Matrix Summary）の整合を監査する。
   loss 判定の妥当性、notes の根拠 URL 有無、SCHEMA 違反を点検する。
   「mappings を監査して」「mappings の整合チェック」「audit mappings」と言われた場合に使用する。
 tools:
@@ -21,14 +21,14 @@ python3 "$CLAUDE_PROJECT_DIR/scripts/validate-mappings.py"
 
 NG が出たら後続ステップの前に修正案を提示する。
 
-### 2. loss/direction と docs/13 の整合確認
+### 2. loss/direction と docs/spec.md §16 の整合確認
 
-`docs/13-feature-matrix.md` を Read して、各機能の対応状況（変換可・不可・将来追従）を把握する。
+`docs/spec.md §16 Feature & Loss Matrix Summary` を Read して、各機能の対応状況（変換可・不可・将来追従）を把握する。
 次に `mappings/*.yaml` の各エントリを Grep・Read し、以下を確認する。
 
-- `docs/13` で「変換不可」とされているフィールドは `loss: dropped` になっているか。
-- `docs/13` で「将来追従」とされているフィールドは `notes` に `status: awaiting-codex` が付いているか。
-- `loss: lossy` のエントリは docs/13 の説明と整合する理由があるか（単純 rename や単位変換は `lossless` が適切でないか）。
+- `docs/spec.md §16` で「変換不可」とされているフィールドは `loss: dropped` になっているか。
+- `docs/spec.md §17 Codex Interop Notes & Known Issues` で「将来追従」とされているフィールドは `notes` に `status: awaiting-codex` が付いているか。
+- `loss: lossy` のエントリは docs/spec.md の説明と整合する理由があるか（単純 rename や単位変換は `lossless` が適切でないか）。
 
 ### 3. notes の根拠 URL 確認
 
