@@ -1,6 +1,3 @@
-// 実装は docs/12 §7.4 参照
-// MCP ドメインハンドラ。
-// Claude .mcp.json ⇄ Codex config.toml [mcp_servers.<id>] の双方向変換。
 use std::path::Path;
 
 use anyhow::Context;
@@ -695,15 +692,14 @@ impl McpHandler {
         Ok(EmitPlan { files, diagnostics })
     }
 
-    /// Codex config.toml の [mcp_servers.*] を生成（x2c 方向）
+    /// x2c: Codex config.toml の [mcp_servers.*] → Claude .mcp.json
     fn lower_x2c(&self, ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPlan> {
         let mut files = Vec::new();
         let mut diagnostics = Vec::new();
 
         let out_root = opts.out.as_deref().unwrap_or(".");
 
-        // 子ノードを Claude .mcp.json 形式に変換
-        // x2c 出力: .mcp.json のみ（§11.0 output table 参照）。config.toml は出力しない。
+        // x2c は .mcp.json のみ出力する（config.toml は出力しない）
         let mut mcp_servers_map: Map<String, Value> = Map::new();
 
         for child in &ir.children {
@@ -774,7 +770,7 @@ impl McpHandler {
                         .and_then(|f| f.value.as_str())
                         .unwrap_or("stdio");
                     if transport == "http" || transport == "streamable-http" {
-                        // http transport では env は使用不可（mappings notes 参照）; env_http_headers で出力済み
+                        // http transport では env は env_http_headers に変換済みなのでスキップ
                     } else if let Some(entry) = self.map.entries.iter().find(|e| e.id == "mcp.env")
                     {
                         if let Some(codex_field) =

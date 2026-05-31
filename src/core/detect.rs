@@ -1,4 +1,3 @@
-// 実装は docs/12 §7.1 参照
 use std::path::Path;
 
 use walkdir::WalkDir;
@@ -21,7 +20,7 @@ use crate::core::ir::Kind;
 /// - [hooks] テーブルあり       → Kind::Hooks
 /// - 両方あり                   → Kind::Plugin
 ///
-/// x2c 追加ルール（§7.1 参照）:
+/// x2c 追加ルール:
 /// - .agents/skills/<n>/agents/openai.yaml → Kind::Skill
 /// - .codex/agents/<n>.toml               → Kind::Subagent
 pub fn detect(path: &str) -> anyhow::Result<Kind> {
@@ -47,14 +46,12 @@ fn detect_file(p: &Path) -> anyhow::Result<Kind> {
         }
         "hooks.json" => return Ok(Kind::Hooks),
         "settings.json" => {
-            // settings.json は Hooks セクションがある場合のみ Kind::Hooks として扱う
             return detect_settings_json(p);
         }
         "config.toml" => return detect_config_toml(p),
         _ => {}
     }
 
-    // plugin.json: .claude-plugin/ or .codex-plugin/ 配下
     if file_name.ends_with("plugin.json") || file_name == "plugin.json" {
         let path_str = p.to_str().unwrap_or("");
         if path_str.contains(".claude-plugin/") || path_str.contains(".codex-plugin/") {
@@ -62,7 +59,6 @@ fn detect_file(p: &Path) -> anyhow::Result<Kind> {
         }
     }
 
-    // x2c 追加ルール: .agents/skills/<n>/agents/openai.yaml
     if file_name == "openai.yaml" {
         let path_str = p.to_str().unwrap_or("");
         if path_str.contains(".agents/skills/") && path_str.contains("/agents/openai.yaml") {
@@ -70,7 +66,6 @@ fn detect_file(p: &Path) -> anyhow::Result<Kind> {
         }
     }
 
-    // x2c 追加ルール: .codex/agents/<n>.toml または agents/<n>.toml
     if file_name.ends_with(".toml") && file_name != "config.toml" {
         let path_str = p.to_str().unwrap_or("");
         if path_str.contains(".codex/agents/") || path_str.contains("/agents/") {
@@ -78,8 +73,6 @@ fn detect_file(p: &Path) -> anyhow::Result<Kind> {
         }
     }
 
-    // c2x 追加ルール: .claude/agents/<n>.md または agents/<n>.md
-    // (not SKILL.md, not CLAUDE.md/AGENTS.md/etc. which are already handled above)
     if file_name.ends_with(".md")
         && !matches!(
             file_name,
@@ -108,7 +101,6 @@ fn detect_settings_json(p: &Path) -> anyhow::Result<Kind> {
     if val.get("hooks").is_some() {
         Ok(Kind::Hooks)
     } else {
-        // settings.json without hooks: treat as Settings
         Ok(Kind::Settings)
     }
 }
@@ -128,15 +120,11 @@ fn detect_config_toml(p: &Path) -> anyhow::Result<Kind> {
         (true, true) => Ok(Kind::Plugin),
         (true, false) => Ok(Kind::Mcp),
         (false, true) => Ok(Kind::Hooks),
-        (false, false) => {
-            // config.toml が存在するが既知テーブルがない場合は Settings として扱う
-            Ok(Kind::Settings)
-        }
+        (false, false) => Ok(Kind::Settings),
     }
 }
 
 fn detect_dir(p: &Path) -> anyhow::Result<Kind> {
-    // walkdir で再帰探索して最初に見つかった kind を返す
     // 優先順位: Skill > Plugin > Mcp > Hooks > Memory > Subagent > Settings
     let mut found_kinds: Vec<Kind> = Vec::new();
 
@@ -207,7 +195,6 @@ fn detect_dir(p: &Path) -> anyhow::Result<Kind> {
         )
     }
 
-    // 優先順位で最初に見つかった kind を返す
     let priority = [
         Kind::Skill,
         Kind::Plugin,
@@ -227,7 +214,6 @@ fn detect_dir(p: &Path) -> anyhow::Result<Kind> {
     Ok(found_kinds.remove(0))
 }
 
-// PartialEq は ir.rs で derive されているので使える
 use anyhow::Context;
 
 #[cfg(test)]

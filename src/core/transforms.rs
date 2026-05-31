@@ -1,4 +1,3 @@
-// 実装は docs/12 §6.2 参照
 use std::collections::HashMap;
 
 use once_cell::sync::Lazy;
@@ -18,7 +17,6 @@ pub enum ConvDir {
 }
 
 /// モデルのティア（能力レベル）。
-/// モデル名対応は model-map.yaml を廃止してコード内 const のティア方式に変更（§6.2 参照）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tier {
     High,
@@ -52,10 +50,8 @@ pub fn codex_tier(m: &str) -> Option<Tier> {
     }
 }
 
-// ── その時点の最新モデル名（CLI リリース時に更新するプレースホルダ）──
-// 往復一貫性の保証:
-//   tier_to_codex(t) の結果 m について codex_tier(m) == Some(t) が成立すること。
-//   tier_to_claude(t) の結果 m について claude_tier(m) == Some(t) が成立すること。
+// Roundtrip invariant: tier_to_codex(t) must satisfy codex_tier(result) == Some(t),
+// and tier_to_claude(t) must satisfy claude_tier(result) == Some(t).
 const CODEX_LATEST: &[(Tier, &str)] = &[
     (Tier::High, "gpt-5-codex-high"), // ends_with("-high") → High ✓
     (Tier::Mid, "gpt-5-codex"),       // neither -high/-xhigh nor -mini → Mid ✓
@@ -106,10 +102,6 @@ pub struct TransformSpec {
     /// 引数（`enum_map:{max:xhigh}` の `{...}` 部分）
     pub args: Option<HashMap<String, String>>,
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// transform 関数の実装
-// ──────────────────────────────────────────────────────────────────────────
 
 fn tf_ms_to_sec(v: &Value, _ctx: &TransformCtx) -> Value {
     match v {
@@ -274,10 +266,6 @@ fn tf_inline_imports(v: &Value, _ctx: &TransformCtx) -> Value {
     v.clone()
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// 静的レジストリ
-// ──────────────────────────────────────────────────────────────────────────
-
 static TRANSFORM_REGISTRY: Lazy<HashMap<&'static str, TransformFn>> = Lazy::new(|| {
     let mut m: HashMap<&'static str, TransformFn> = HashMap::new();
     m.insert("unit:ms_to_sec", tf_ms_to_sec);
@@ -302,10 +290,6 @@ static TRANSFORM_REGISTRY: Lazy<HashMap<&'static str, TransformFn>> = Lazy::new(
 pub fn get_transform(name: &str) -> Option<TransformFn> {
     TRANSFORM_REGISTRY.get(name).copied()
 }
-
-// ──────────────────────────────────────────────────────────────────────────
-// transform spec パーサ
-// ──────────────────────────────────────────────────────────────────────────
 
 /// `"unit:ms_to_sec; enum_map:{max:xhigh,high:high}"` を分解し Vec<TransformSpec> を返す。
 /// `{...}` ブロックは key:value ペアに分解して TransformSpec.args に格納する。

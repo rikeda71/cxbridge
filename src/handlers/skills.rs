@@ -1,4 +1,3 @@
-// 実装は docs/12 §7.2 §7.2.1 §16 参照
 use std::path::Path;
 
 use anyhow::Context;
@@ -18,7 +17,6 @@ use crate::handlers::{EmitFile, EmitPlan, Handler, LowerOpts};
 use crate::scanner::body::{rewrite_body, scan_body};
 
 /// skills ドメインのハンドラ。
-/// DomainMap（maps["skills"]）を保持する。
 pub struct SkillsHandler {
     pub map: DomainMap,
 }
@@ -138,7 +136,7 @@ impl Handler for SkillsHandler {
         if dir == ConvDir::X2c {
             let openai_yaml = load_openai_yaml(&source_path);
             if let Some(allow_implicit) = openai_yaml {
-                // polarity:invert → disable-model-invocation
+                // allow_implicit_invocation=false means disable-model-invocation=true (polarity invert)
                 let disable_val = Value::Bool(!allow_implicit);
                 if let Some(entry) = self
                     .map
@@ -260,12 +258,10 @@ impl SkillsHandler {
         }
 
         // disable-model-invocation → SideArtifact: agents/openai.yaml
-        // Note: polarity:invert is applied in lift, so:
-        //   Claude disable-model-invocation: true → IR stores Value::Bool(false)
-        //   (because invert(true) == false, meaning allow_implicit_invocation = false)
+        // polarity:invert was applied in lift: disable-model-invocation=true (Claude) → IR holds false
+        // because invert(true)==false means allow_implicit_invocation=false in openai.yaml
         if let Some(f) = ir.fields.get("skills.disable-model-invocation") {
             if f.value == Value::Bool(false) {
-                // polarity:invert was applied in lift: source was true (disable) → IR holds false (= allow=false)
                 let openai_yaml_path = format!(
                     "{}/.agents/skills/{}/agents/openai.yaml",
                     out_root, skill_name

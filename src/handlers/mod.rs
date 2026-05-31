@@ -1,4 +1,3 @@
-// 実装は docs/12 §7 §16 参照
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -25,7 +24,7 @@ pub enum Scope {
     Project,
 }
 
-/// skill の変換先選択モード（§7.2.1 参照）。
+/// skill の変換先選択モード。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkillTargetMode {
     /// 自動判定（決定的ケース自動 + グレーケースは保守的デフォルト or 対話）
@@ -71,10 +70,7 @@ pub struct EmitFile {
     pub content: String,
 }
 
-/// 領域ハンドラのトレイト（§7 参照）。
-///
-/// 各ハンドラは対応する DomainMap を保持する。
-/// `pick_handler` が Kind と全 domain map を受け取り、対応するハンドラをボックス化して返す。
+/// 領域ハンドラのトレイト。各ハンドラは対応する DomainMap を保持する。
 pub trait Handler {
     fn kind(&self) -> Kind;
 
@@ -107,7 +103,7 @@ pub trait Handler {
     ) -> anyhow::Result<EmitPlan>;
 }
 
-/// Kind（detect 結果）と全 domain map を受け取り、対応するハンドラをボックス化して返す。
+/// Kind と全 domain map を受け取り、対応するハンドラをボックス化して返す。
 pub fn pick_handler(kind: &Kind, maps: &HashMap<String, DomainMap>) -> Box<dyn Handler> {
     match kind {
         Kind::Skill => Box::new(skills::SkillsHandler {

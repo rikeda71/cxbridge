@@ -1,21 +1,13 @@
-// 実装は docs/12 §8.3 参照
-// skill hooks → session/project hooks への降格エンジン。
-// skill frontmatter の hooks を session/project の [hooks.*] に移送する。
-
 use crate::core::ir::{DiagLevel, Diagnostic, SideArtifact};
 use crate::handlers::Scope;
 
-/// skill frontmatter の hooks を session/project hooks に移送する。
+/// Moves skill-scoped hooks into a session- or project-scoped target file.
 ///
-/// diagnostic: 「skill スコープではなくなる（session/project 全体に拡大）」warn を必ず出す。
+/// Always emits a Warn diagnostic because the hooks will now fire for all sessions
+/// in that scope, not only when the originating skill runs.
 ///
-/// # 書き出し先（LowerOpts.hooks_target で決定）
-/// - Scope::User → ~/.codex/hooks.json
-/// - Scope::Project → .codex/config.toml の [hooks] セクション（toml_edit で非破壊追記）
-///
-/// # plugin 同梱 hooks の注意（§7.3 #16430）
-/// plugin root の hooks は Codex が読まないため、
-/// --hooks-target=user|project で書き出す降格を既定にする。
+/// Codex does not read plugin-bundled hooks (openai/codex#16430), so the target
+/// must be an explicit `--hooks-target=user|project` location.
 pub fn degrade_skill_hooks(
     skill_name: &str,
     hooks_value: &serde_json::Value,
@@ -35,7 +27,6 @@ pub fn degrade_skill_hooks(
         ),
     };
 
-    // hooks の JSON 表現を生成
     let hooks_content =
         serde_json::to_string_pretty(hooks_value).unwrap_or_else(|_| "{}".to_string());
 
@@ -48,7 +39,6 @@ pub fn degrade_skill_hooks(
         ),
     });
 
-    // スコープ拡大の警告
     diagnostics.push(Diagnostic {
         level: DiagLevel::Warn,
         id: Some("skills.hooks".to_string()),

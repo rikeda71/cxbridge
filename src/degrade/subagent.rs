@@ -1,39 +1,34 @@
-// 実装は docs/12 §8.2 §7.2.1 §16 参照
-// skill(model/effort/context:fork) → subagent への降格エンジン。
-// .codex/agents/<skill>.toml を生成し、config.toml に [agents.*] / [features] を追記する。
-
 use crate::core::ir::{DiagLevel, Diagnostic, IRNode, SideArtifact};
 use crate::core::transforms::{claude_tier, tier_to_codex};
 use crate::handlers::{LowerOpts, SkillTargetMode};
 
-/// skill → skill か skill → subagent かの変換先を示す。
-/// cli.rs の ConvertOpts には依存しない（循環依存回避）。
-/// LowerOpts を介して参照する。
+/// Whether a skill is emitted as a Codex skill file or as a subagent.
+///
+/// Avoids a direct dependency on `cli.rs`; accessed through `LowerOpts`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkillTarget {
     Skill,
     Subagent,
 }
 
-/// IR ノードと LowerOpts から変換先（SkillTarget）を決定する。
+/// Determines whether an IR node should be emitted as a skill or subagent.
 ///
-/// # 決定優先順位（§7.2.1 / §16 参照）
-/// 1. 明示オプション（LowerOpts.skill_target が Auto 以外なら従う）
-/// 2. 決定的ケースの自動判定:
-///    - skill.model / skill.effort / skill.context==fork あり → Subagent
-///    - 権限なし（純粋指示） → Skill
-/// 3. グレーケース（権限あり・session 降格で許容できるか不明）:
-///    - interactive あり → TTY 対話（dialoguer で確認）
-///    - 非対話 → 保守的デフォルト（Subagent）、report に選択理由を必ず明記
+/// Decision priority:
+/// 1. Explicit option — if `LowerOpts.skill_target` is not `Auto`, obey it.
+/// 2. Deterministic cases:
+///    - `skill.model` / `skill.effort` / `skill.context==fork` present → `Subagent`
+///    - No permissions (pure instruction) → `Skill`
+/// 3. Ambiguous case (permissions present, unclear if session scope is acceptable):
+///    - Interactive mode → prompt the user via TTY
+///    - Non-interactive → conservative default (`Subagent`); reason is recorded in the report
 pub fn decide_skill_target(ir: &IRNode, opts: &LowerOpts) -> SkillTarget {
-    // ① 明示オプション
+    // Explicit option takes precedence over all heuristics.
     match opts.skill_target {
         SkillTargetMode::Skill => return SkillTarget::Skill,
         SkillTargetMode::Subagent => return SkillTarget::Subagent,
         SkillTargetMode::Auto => {}
     }
 
-    // ② 決定的ケース
     let has_model = ir.fields.contains_key("skills.model");
     let has_effort = ir.fields.contains_key("skills.effort");
     let has_fork = ir
@@ -48,14 +43,15 @@ pub fn decide_skill_target(ir: &IRNode, opts: &LowerOpts) -> SkillTarget {
     let has_perms = ir.fields.contains_key("skills.allowed-tools")
         || ir.fields.contains_key("skills.disallowed-tools");
     if !has_perms {
-        return SkillTarget::Skill; // 純粋指示 → skill
+        // Pure instruction with no tool constraints fits natively as a skill.
+        return SkillTarget::Skill;
     }
 
-    // ③ グレーケース（権限あり）
+    // Ambiguous: has permissions but no model/effort/fork signal.
     if opts.interactive {
         ask_user_skill_target(ir)
     } else {
-        // 保守的デフォルト: 権限あり → subagent（失わない方）
+        // Conservative default: keep permissions by bundling into a subagent.
         SkillTarget::Subagent
     }
 }
@@ -85,40 +81,23 @@ fn ask_user_skill_target(ir: &IRNode) -> SkillTarget {
     }
 }
 
-/// skill(model/effort/context:fork) → .codex/agents/<skill>.toml の生成。
+/// Generates `.codex/agents/<skill>.toml` and appends the required `[agents.*]` /
+/// `[features].multi_agent` entries to `config.toml`.
 ///
-/// # 生成内容（§8.2 参照）
-/// ```toml
-/// name = "<skill>"
-/// description = "<when_to_use or description>"
-/// developer_instructions = "<skill 本文>"
-/// model = "<tier_to_codex(claude_tier(model))>"
-/// model_reasoning_effort = "xhigh"   # max→xhigh (enum_map)
-/// ```
-/// + config.toml への非破壊追記（toml_edit）:
-/// ```toml
-/// [agents.<skill>]
-/// config_file = ".codex/agents/<skill>.toml"
-/// [features]
-/// multi_agent = true
-/// ```
-///
-/// diagnostic: 「自動 fork ではなく spawn_agent の明示起動になる」
+/// A Diagnostic is always emitted to record that the skill's auto-fork behaviour
+/// changes to an explicit `spawn_agent` call in Codex.
 pub fn degrade_to_subagent(skill_name: &str, ir: &IRNode) -> (Vec<SideArtifact>, Vec<Diagnostic>) {
     let mut artifacts = Vec::new();
     let mut diagnostics = Vec::new();
 
-    // 本文
     let body = ir.body.as_ref().map(|b| b.raw.as_str()).unwrap_or("");
 
-    // description / when_to_use
     let description = ir
         .fields
         .get("skills.description")
         .and_then(|f| f.value.as_str())
         .unwrap_or("");
 
-    // model → tier 変換
     let model_str = ir
         .fields
         .get("skills.model")
@@ -129,7 +108,7 @@ pub fn degrade_to_subagent(skill_name: &str, ir: &IRNode) -> (Vec<SideArtifact>,
     } else if let Some(tier) = claude_tier(model_str) {
         tier_to_codex(tier).to_string()
     } else {
-        // 未知モデル → warn して値をそのまま使う
+        // Unknown model string: pass through as-is and warn so the user can verify.
         diagnostics.push(Diagnostic {
             level: DiagLevel::Warn,
             id: Some("skills.model".to_string()),
@@ -141,7 +120,6 @@ pub fn degrade_to_subagent(skill_name: &str, ir: &IRNode) -> (Vec<SideArtifact>,
         model_str.to_string()
     };
 
-    // effort → model_reasoning_effort 変換
     let effort_str = ir
         .fields
         .get("skills.effort")
@@ -157,7 +135,6 @@ pub fn degrade_to_subagent(skill_name: &str, ir: &IRNode) -> (Vec<SideArtifact>,
         _ => effort_str,
     };
 
-    // .codex/agents/<skill>.toml の生成
     let agents_toml_path = format!(".codex/agents/{}.toml", skill_name);
     let mut toml_lines = vec![
         format!(r#"name = "{}""#, skill_name),
@@ -165,7 +142,6 @@ pub fn degrade_to_subagent(skill_name: &str, ir: &IRNode) -> (Vec<SideArtifact>,
     ];
 
     if !body.is_empty() {
-        // TOML の multi-line string
         toml_lines.push(format!("developer_instructions = '''\n{}\n'''", body));
     }
 
@@ -186,7 +162,6 @@ pub fn degrade_to_subagent(skill_name: &str, ir: &IRNode) -> (Vec<SideArtifact>,
         note: format!("skill '{}' degraded to subagent", skill_name),
     });
 
-    // config.toml 追記（toml_edit で非破壊追記）
     let config_update = format!(
         "[agents.{}]\nconfig_file = \"{}\"\n\n[features]\nmulti_agent = true\n",
         skill_name, agents_toml_path
@@ -200,7 +175,6 @@ pub fn degrade_to_subagent(skill_name: &str, ir: &IRNode) -> (Vec<SideArtifact>,
         ),
     });
 
-    // diagnostic: 自動 fork → 明示 spawn_agent の変化を警告
     diagnostics.push(Diagnostic {
         level: DiagLevel::Warn,
         id: Some("skills.context-fork".to_string()),

@@ -1,22 +1,11 @@
-// 実装は docs/12 §3 参照
-// serde_json の薄いラッパ。
-// handler の parse() / lower() で JSON ファイルの入出力に使用する。
-
 use std::path::Path;
 
 use anyhow::Context;
 use serde_json::Value;
 
-/// JSON ファイルを読み込み Value に変換する。
+/// JSON ファイルを読み込み、handler の parse() 契約に従う Value を返す。
 ///
-/// handler の parse() 契約に従う JSON Value を返す:
-/// ```json
-/// {
-///   "frontmatter": { ... },  // トップレベルフィールドを全て格納
-///   "body": "",              // JSON ソースの場合は空文字列
-///   "path": "/abs/path"
-/// }
-/// ```
+/// トップレベルオブジェクトを `frontmatter` に格納し、`body` は空文字列とする。
 pub fn parse_json_file(path: &Path) -> anyhow::Result<Value> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read JSON file: {}", path.display()))?;
@@ -26,11 +15,10 @@ pub fn parse_json_file(path: &Path) -> anyhow::Result<Value> {
 
     let abs_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
 
-    // トップレベルフィールドを frontmatter に格納
+    // Non-object top-level JSON (arrays, scalars) is not a valid config; normalise to empty.
     let frontmatter = match parsed {
         Value::Object(map) => Value::Object(map),
         other => {
-            // トップレベルが Object でない場合は空 object にする
             let _ = other;
             Value::Object(serde_json::Map::new())
         }

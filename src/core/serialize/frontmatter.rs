@@ -1,7 +1,3 @@
-// 実装は docs/12 §3 §7 参照
-// gray_matter + serde-saphyr の薄いラッパ。
-// frontmatter と本文を分離し、handler が parse() で利用する。
-
 use std::path::Path;
 
 use anyhow::Context;
@@ -11,17 +7,7 @@ use serde_json::Value;
 
 /// frontmatter 付き Markdown ファイルを parse する。
 ///
-/// # 返値
-/// handler の parse() 契約に従う JSON Value:
-/// ```json
-/// {
-///   "frontmatter": { "name": "...", "description": "..." },
-///   "body": "...",
-///   "path": "/abs/path"
-/// }
-/// ```
-///
-/// frontmatter キーの serialize 順序は mappings エントリの定義順に従う。
+/// handler の parse() 契約に従う JSON Value `{frontmatter, body, path}` を返す。
 pub fn parse_frontmatter_file(path: &Path) -> anyhow::Result<Value> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read file: {}", path.display()))?;
@@ -31,8 +17,6 @@ pub fn parse_frontmatter_file(path: &Path) -> anyhow::Result<Value> {
     let matter = Matter::<YAML>::new();
     let result = matter.parse(&content);
 
-    // frontmatter を serde_json::Value に変換
-    // gray_matter の Pod は Into<serde_json::Value> を実装している
     let frontmatter: Value = if let Some(pod) = result.data {
         pod.into()
     } else {
@@ -48,9 +32,7 @@ pub fn parse_frontmatter_file(path: &Path) -> anyhow::Result<Value> {
     }))
 }
 
-/// frontmatter（HashMap）と本文テキストを Markdown ファイルとして書き出す。
-///
-/// frontmatter のキー順序は mappings エントリの定義順に従う（serde-saphyr のキー順保持を活用）。
+/// frontmatter と本文テキストを Markdown ファイルとして書き出す。
 pub fn emit_frontmatter_file(
     path: &Path,
     frontmatter: &serde_json::Map<String, Value>,
@@ -64,9 +46,6 @@ pub fn emit_frontmatter_file(
     let output = if frontmatter.is_empty() {
         body.to_string()
     } else {
-        // serde_json::Map → YAML 文字列
-        // serde-saphyr の to_string は serde::Serialize を実装している任意の型を受け取れる
-        // serde_json::Value は serde::Serialize を実装しているので直接渡せる
         let json_obj = Value::Object(frontmatter.clone());
         let yaml_str = serde_saphyr::to_string(&json_obj)
             .with_context(|| "Failed to serialize frontmatter as YAML")?;

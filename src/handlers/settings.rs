@@ -1,22 +1,3 @@
-// 実装は docs/12 §15, mappings/settings-config.yaml, docs/07 参照
-// P4: Settings handler (PARTIAL subset only)
-//
-// 変換対象サブセット:
-//   - model / effortLevel (lossy tier mapping)
-//   - permissions.allow/deny/ask Bash → .rules (execpolicy)
-//   - permissions.allow/deny Read/Write → [permissions.*].filesystem
-//   - permissions.allow/deny WebFetch → [permissions.*].network
-//   - sandbox.filesystem.* → [permissions.*].filesystem
-//   - sandbox.network.allowedDomains → [permissions.*].network.domains
-//   - sandbox.network.allowAllUnixSockets ⇄ dangerously_allow_all_unix_sockets (rename, lossless)
-//   - env ⇄ shell_environment_policy.set (rename + format)
-//   - editorMode ⇄ tui.vim_mode_default (enum_map)
-//   - attribution.commit ⇄ commit_attribution (rename)
-//   - autoMemoryEnabled ⇄ memories.use_memories + memories.generate_memories
-//   - cleanupPeriodDays ⇄ memories.max_rollout_age_days
-//   それ以外は report で manual として列挙
-//
-// Codex → Claude 方向も partial に対応（x2c）。
 use std::path::Path;
 
 use anyhow::Context;
@@ -31,7 +12,6 @@ use crate::degrade::rules::degrade_allowed_tools;
 use crate::handlers::{EmitFile, EmitPlan, Handler, LowerOpts};
 
 /// settings ドメインのハンドラ（部分変換サブセット）。
-/// DomainMap（maps["settings-config"]）を保持する。
 pub struct SettingsHandler {
     pub map: DomainMap,
 }

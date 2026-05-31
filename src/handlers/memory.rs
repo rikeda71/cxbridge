@@ -1,4 +1,3 @@
-// 実装は docs/12 §7.3 Memory, mappings/memory.yaml, docs/08 参照
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
@@ -429,8 +428,7 @@ fn inline_imports(
     result
 }
 
-/// 行がコードブロック内かどうかを簡易チェック（行単位の位置検出は非推奨）。
-/// inline_imports で状態追跡を使うため、ここでは使用しない。
+/// コードブロック内判定のスタブ（inline_imports 内で状態追跡するため常に false）。
 fn in_code_block(_line: &str, _full_body: &str) -> bool {
     false
 }

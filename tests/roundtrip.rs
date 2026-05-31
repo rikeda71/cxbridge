@@ -1,6 +1,5 @@
-// 実装は docs/12 §13 参照
-// ラウンドトリップテスト: c2x → x2c で IR 差分が「既知の lossy/dropped」だけになることを検証。
-// lossless フィールドは完全一致を要求する。
+// Roundtrip tests: after c2x → x2c, IR diffs should contain only known lossy/dropped fields.
+// Lossless fields must match exactly.
 
 use std::path::Path;
 
@@ -50,7 +49,6 @@ fn test_skill_c2x_basic_roundtrip() {
         .lift(&parsed, ConvDir::C2x)
         .expect("lift should succeed");
 
-    // lossless フィールドが存在すること
     let report = build_report(&ir, &empty_plan());
     assert!(
         !report.lossless.is_empty(),
@@ -65,7 +63,6 @@ fn test_skill_c2x_basic_roundtrip() {
         "skills.description should be lossless"
     );
 
-    // dropped フィールドが存在すること (user-invocable, paths, etc.)
     assert!(
         !report.dropped.is_empty(),
         "Expected dropped fields (user-invocable, paths, etc.)"
@@ -81,8 +78,6 @@ fn test_skill_c2x_basic_roundtrip() {
         drop_ids
     );
 
-    // degraded フィールドが存在すること (model, effort, allowed-tools)
-    // degraded は IRField.degrade が Some の場合に report.degraded に入る
     assert!(
         !report.degraded.is_empty() || !report.lossy.is_empty(),
         "Expected degraded or lossy entries (model, effort, allowed-tools)"
@@ -105,7 +100,6 @@ fn test_skill_c2x_check_reports_dropped() {
         .expect("lift should succeed");
 
     let report = build_report(&ir, &empty_plan());
-    // user-invocable, paths, argument-hint(なし), arguments(なし) などが dropped
     assert!(
         report.dropped.len() >= 2,
         "Expected at least 2 dropped fields, got {}",
@@ -135,7 +129,6 @@ fn test_mcp_c2x_basic() {
         .lift(&parsed, ConvDir::C2x)
         .expect("lift should succeed");
 
-    // 子ノードが存在すること (mcpServers の各エントリ)
     assert_eq!(ir.children.len(), 4, "Expected 4 MCP server children");
 
     // filesystem サーバーの timeout 変換確認
@@ -216,7 +209,6 @@ fn test_mcp_c2x_lower_generates_files() {
         !plan.files.is_empty(),
         "Expected at least one generated file"
     );
-    // .mcp.json が生成されているか
     let mcp_file = plan.files.iter().find(|f| f.path.ends_with(".mcp.json"));
     assert!(mcp_file.is_some(), "Expected .mcp.json in output");
     let content: serde_json::Value = serde_json::from_str(&mcp_file.unwrap().content).unwrap();
@@ -322,13 +314,12 @@ fn test_mcp_x2c_lower_generates_claude_mcp_json() {
         .as_object()
         .expect("mcpServers should be object");
 
-    // filesystem が変換されていること
     assert!(
         servers.contains_key("filesystem"),
         "Expected filesystem server in .mcp.json"
     );
 
-    // disabled-server は除外されること
+    // Servers with enabled=false must not appear in output.
     assert!(
         !servers.contains_key("disabled-server"),
         "disabled-server should be excluded from .mcp.json"
@@ -352,7 +343,6 @@ fn test_check_skill_reports_dropped_count() {
 
     let report = build_report(&ir, &empty_plan());
 
-    // check コマンドの出力内容を検証
     println!(
         "check: {}\n  dropped: {}, degraded: {}, lossy: {}, lossless: {}",
         skill_path,
@@ -362,11 +352,9 @@ fn test_check_skill_reports_dropped_count() {
         report.lossless.len()
     );
 
-    // 最低限: lossless に name と description が含まれること
     assert!(report.lossless.contains(&"skills.name".to_string()));
     assert!(report.lossless.contains(&"skills.description".to_string()));
 
-    // dropped に user-invocable と paths が含まれること
     let dropped_ids: Vec<_> = report
         .dropped
         .iter()
@@ -406,18 +394,15 @@ fn test_skill_c2x_lower_generates_skill_md() {
         .lower(&ir, ConvDir::C2x, &opts)
         .expect("lower should succeed");
 
-    // SKILL.md が生成されていること
     let skill_file = plan.files.iter().find(|f| f.path.ends_with("SKILL.md"));
     assert!(skill_file.is_some(), "Expected SKILL.md in output");
 
     let content = &skill_file.unwrap().content;
-    // name と description が含まれること
     assert!(content.contains("deploy"), "Expected 'deploy' in SKILL.md");
     assert!(
         content.contains("Deploy the application"),
         "Expected description in SKILL.md"
     );
-    // when_to_use が description に連結されていること
     assert!(
         content.contains("Use this skill when"),
         "Expected when_to_use concatenated into description"
@@ -487,7 +472,6 @@ fn test_hooks_c2x_basic() {
 
     // Report check
     let report = build_report(&ir, &empty_plan());
-    // Dropped events should be reported
     assert!(
         !report.dropped.is_empty(),
         "Expected dropped events in report"
@@ -538,7 +522,6 @@ fn test_hooks_c2x_lower_user_scope() {
         .lower(&ir, ConvDir::C2x, &opts)
         .expect("lower should succeed");
 
-    // Should produce hooks.json
     let hooks_file = plan.files.iter().find(|f| f.path.ends_with("hooks.json"));
     assert!(hooks_file.is_some(), "Expected hooks.json output");
 
@@ -605,13 +588,11 @@ fn test_hooks_c2x_lower_project_scope() {
     assert!(config_file.is_some(), "Expected config.toml output");
 
     let content = &config_file.unwrap().content;
-    // Should contain [[hooks.PreToolUse]] etc.
     assert!(
         content.contains("[[hooks.PreToolUse]]"),
         "Expected [[hooks.PreToolUse]] in config.toml, got: {}",
         content
     );
-    // Setup should NOT be present
     assert!(
         !content.contains("[[hooks.Setup]]"),
         "Setup event should not be in config.toml"
@@ -650,7 +631,6 @@ fn test_hooks_c2x_matcher_alternation_normalized() {
         matcher, "^(Edit|Write)$",
         "Expected alternation matcher normalized"
     );
-    // Should have a lossy warn diagnostic
     let has_lossy_warn = ir
         .diagnostics
         .iter()
@@ -827,7 +807,6 @@ fn test_plugin_c2x_generates_codex_manifest() {
         .lower(&ir, ConvDir::C2x, &opts)
         .expect("lower should succeed");
 
-    // .codex-plugin/plugin.json が生成されているか確認
     let codex_manifest = plan
         .files
         .iter()
@@ -859,7 +838,6 @@ fn test_plugin_c2x_recursion() {
         .lift(&parsed, ConvDir::C2x)
         .expect("lift should succeed");
 
-    // skills と mcp の子ノードが存在すること
     let skill_children: Vec<_> = ir
         .children
         .iter()
@@ -898,7 +876,6 @@ fn test_plugin_c2x_dropped_classification() {
 
     let report = build_report(&ir, &empty_plan());
 
-    // dropped フィールドが report に列挙されていること
     let dropped_ids: Vec<_> = report
         .dropped
         .iter()
@@ -954,7 +931,6 @@ fn test_plugin_c2x_dual_manifest() {
         .lower(&ir, ConvDir::C2x, &opts)
         .expect("lower should succeed");
 
-    // .claude-plugin/plugin.json と .codex-plugin/plugin.json の両方が生成される
     let has_claude = plan
         .files
         .iter()
@@ -994,7 +970,6 @@ fn test_plugin_c2x_marketplace_policy_defaults() {
         .lower(&ir, ConvDir::C2x, &opts)
         .expect("lower should succeed");
 
-    // marketplace.json が出力されていること
     let marketplace_file = plan
         .files
         .iter()
@@ -1011,7 +986,6 @@ fn test_plugin_c2x_marketplace_policy_defaults() {
         .expect("Expected plugins array");
     assert!(!plugins.is_empty(), "Expected at least one plugin entry");
 
-    // policy が補完されていること
     let policy = &plugins[0]["policy"];
     assert!(policy.is_object(), "Expected policy object");
     assert_eq!(
@@ -1025,7 +999,6 @@ fn test_plugin_c2x_marketplace_policy_defaults() {
         "Expected authentication=ON_INSTALL"
     );
 
-    // policy 補完 warn が出ていること
     let has_policy_warn = plan
         .diagnostics
         .iter()
@@ -1118,7 +1091,6 @@ fn test_subagent_c2x_generates_codex_toml() {
         "color should be dropped"
     );
 
-    // Lower to .codex/agents/researcher.toml
     let out_dir = tempfile::TempDir::new().unwrap();
     let opts = default_lower_opts(out_dir.path().to_str().unwrap());
     let plan = handler
@@ -1180,7 +1152,6 @@ fn test_subagent_x2c_generates_claude_md() {
 
     assert_eq!(ir.kind, ccx::core::ir::Kind::Subagent);
 
-    // Lower to .claude/agents/coder.md
     let out_dir = tempfile::TempDir::new().unwrap();
     let opts = LowerOpts {
         out: Some(out_dir.path().to_str().unwrap().to_string()),
@@ -1231,7 +1202,6 @@ fn test_subagent_c2x_report_dropped_fields() {
 
     let report = build_report(&ir, &empty_plan());
 
-    // dropped フィールドが report に列挙されていること
     assert!(
         !report.dropped.is_empty(),
         "Expected dropped fields in subagent report"
@@ -1296,18 +1266,15 @@ fn test_settings_c2x_generates_config_toml() {
 
     assert_eq!(ir.kind, ccx::core::ir::Kind::Settings);
 
-    // model and effortLevel should be present (lossy)
     assert!(ir.fields.contains_key("settings.model"));
     assert!(ir.fields.contains_key("settings.effortLevel"));
 
-    // effortLevel: high → high (1:1)
+    // effortLevel high → high is a lossless 1:1 mapping
     let effort = &ir.fields["settings.effortLevel"];
     assert_eq!(effort.value, serde_json::Value::String("high".to_string()));
 
-    // editorMode → vim should be present (lossless)
     assert!(ir.fields.contains_key("settings.editorMode"));
 
-    // dropped fields should be present
     let has_viewmode_dropped = ir
         .fields
         .get("settings.viewMode")
@@ -1334,7 +1301,6 @@ fn test_settings_c2x_generates_config_toml() {
         .lower(&ir, ConvDir::C2x, &opts)
         .expect("lower should succeed");
 
-    // config.toml should be generated
     let config_toml = plan.files.iter().find(|f| f.path.ends_with("config.toml"));
     assert!(
         config_toml.is_some(),
@@ -1375,14 +1341,12 @@ fn test_settings_c2x_generates_config_toml() {
         "Expected .rules file for Bash permissions"
     );
 
-    // Report should enumerate the un-converted remainder
     let report = build_report(&ir, &plan);
     assert!(
         !report.dropped.is_empty(),
         "Expected dropped fields in settings report (viewMode, worktree, etc.)"
     );
 
-    // Partial conversion warning should be present
     let has_partial_warn = plan
         .diagnostics
         .iter()
@@ -1410,13 +1374,11 @@ fn test_settings_c2x_report_enumerates_remainder() {
 
     let report = build_report(&ir, &empty_plan());
 
-    // dropped フィールドが report に列挙されていること
     assert!(
         !report.dropped.is_empty(),
         "Expected dropped fields in settings report"
     );
 
-    // viewMode, worktree, autoUpdatesChannel should be dropped
     let drop_ids: Vec<_> = report
         .dropped
         .iter()
@@ -1435,13 +1397,11 @@ fn test_settings_c2x_report_enumerates_remainder() {
         "Expected settings.autoUpdatesChannel in dropped"
     );
 
-    // lossy フィールドが report に列挙されていること
     assert!(
         !report.lossy.is_empty(),
         "Expected lossy fields in settings report (model, effortLevel, etc.)"
     );
 
-    // lossless フィールドが report に含まれていること
     assert!(
         !report.lossless.is_empty(),
         "Expected lossless fields (editorMode → vim_mode_default is lossless)"

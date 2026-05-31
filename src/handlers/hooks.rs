@@ -1,4 +1,3 @@
-// 実装は docs/12 §7.3 参照
 use std::path::Path;
 
 use serde_json::Value;
@@ -362,7 +361,7 @@ fn process_hook_entries_c2x(event_name: &str, entries: &Value, node: &mut IRNode
                         ),
                     });
                 } else {
-                    // regex passthrough: warn per §7.3
+                    // regex passthrough: Codex evaluates matchers as regexes; preserve and warn
                     node.diagnostics.push(Diagnostic {
                         level: DiagLevel::Warn,
                         id: Some("hooks.matcher.regex".to_string()),
@@ -447,8 +446,7 @@ fn process_single_hook_c2x(hook: &Value, event_name: &str, node: &mut IRNode) ->
         return None;
     }
 
-    // prompt/agent タイプは dropped（mappings/hooks.yaml: loss:dropped / warn:true）
-    // Codex は parse するが実行しないため完全に落とす。dropped として report に列挙する。
+    // Codex は prompt/agent タイプを parse するが実行しないため dropped にする
     if hook_type == "prompt" || hook_type == "agent" {
         node.diagnostics.push(Diagnostic {
             level: DiagLevel::Drop,

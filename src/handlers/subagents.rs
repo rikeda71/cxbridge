@@ -1,7 +1,3 @@
-// 実装は docs/12 §7(Subagent), §8.2, mappings/subagents.yaml, docs/04 参照
-// P4: Subagents handler
-// c2x: .claude/agents/<n>.md (md+yaml frontmatter) → .codex/agents/<n>.toml
-// x2c: .codex/agents/<n>.toml → .claude/agents/<n>.md
 use std::path::Path;
 
 use anyhow::Context;
@@ -19,7 +15,6 @@ use crate::core::transforms::{
 use crate::handlers::{EmitFile, EmitPlan, Handler, LowerOpts};
 
 /// subagents ドメインのハンドラ。
-/// DomainMap（maps["subagents"]）を保持する。
 pub struct SubagentHandler {
     pub map: DomainMap,
 }

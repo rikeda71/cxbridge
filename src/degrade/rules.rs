@@ -1,18 +1,14 @@
-// 実装は docs/12 §8.1 参照
-// allowed-tools / disallowed-tools の降格エンジン。
-// ツール種別ごとに降格先を振り分ける。
-
 use crate::core::ir::{DiagLevel, Diagnostic, SideArtifact};
 
-/// ツールパターンを解析して降格先を決定し、SideArtifact と Diagnostic を返す。
+/// Classifies each tool pattern and produces the corresponding SideArtifact and Diagnostic.
 ///
-/// # 降格先マッピング（§8.1 参照）
-/// - Bash(<cmd>) → .codex/rules/<skill>.rules（execpolicy Starlark 形式）
-/// - Write(<glob>) / Edit(<glob>) → [permissions.<name>].filesystem.<glob> = "write"
-/// - Read(<glob>) → [permissions.<name>].filesystem.<glob> = "read"
-/// - WebFetch / WebSearch → [permissions.<name>].network または features.web_search
-/// - mcp__<server>__<tool> → [mcp_servers.<server>].enabled_tools / disabled_tools
-/// - 組み込み（AskUserQuestion 等）→ dropped
+/// Degradation targets by pattern:
+/// - `Bash(<cmd>)` → `.codex/rules/<skill>.rules` (execpolicy Starlark)
+/// - `Write(<glob>)` / `Edit(<glob>)` → `[permissions.<name>].filesystem.<glob> = "write"`
+/// - `Read(<glob>)` → `[permissions.<name>].filesystem.<glob> = "read"`
+/// - `WebFetch` / `WebSearch` → `[permissions.<name>].network` or `features.web_search`
+/// - `mcp__<server>__<tool>` → `[mcp_servers.<server>].enabled_tools` / `disabled_tools`
+/// - Built-ins (e.g. `AskUserQuestion`) → dropped
 pub fn degrade_allowed_tools(
     skill_name: &str,
     tools: &[String],
@@ -23,7 +19,6 @@ pub fn degrade_allowed_tools(
 
     let decision = if is_allow { "allow" } else { "forbidden" };
 
-    // Bash パターンの処理
     let bash_tools: Vec<&str> = tools
         .iter()
         .filter_map(|t| {
@@ -85,7 +80,6 @@ pub fn degrade_allowed_tools(
         });
     }
 
-    // Write/Edit パターン
     let write_tools: Vec<&str> = tools
         .iter()
         .filter_map(|t| {
@@ -114,7 +108,6 @@ pub fn degrade_allowed_tools(
         }
     }
 
-    // Read パターン
     let read_tools: Vec<&str> = tools
         .iter()
         .filter_map(|t| {
@@ -139,7 +132,6 @@ pub fn degrade_allowed_tools(
         }
     }
 
-    // WebFetch → [permissions.<name>].network または features.web_search (§8.1)
     let has_web_fetch = tools.iter().any(|t| t == "WebFetch");
     if has_web_fetch {
         diagnostics.push(Diagnostic {
@@ -160,7 +152,6 @@ pub fn degrade_allowed_tools(
         });
     }
 
-    // WebSearch → features.web_search (§8.1)
     let has_web_search = tools.iter().any(|t| t == "WebSearch");
     if has_web_search {
         diagnostics.push(Diagnostic {
@@ -180,7 +171,6 @@ pub fn degrade_allowed_tools(
         });
     }
 
-    // mcp__<server>__<tool> → [mcp_servers.<server>].enabled_tools / disabled_tools (§8.1)
     for t in tools {
         if t.starts_with("mcp__") {
             let parts: Vec<&str> = t.splitn(3, "__").collect();
@@ -208,7 +198,7 @@ pub fn degrade_allowed_tools(
                     ),
                 });
             } else {
-                // malformed mcp__ pattern → warn
+                // Pattern does not match mcp__<server>__<tool>; flag for manual review.
                 diagnostics.push(Diagnostic {
                     level: DiagLevel::Warn,
                     id: Some(format!(
@@ -228,7 +218,7 @@ pub fn degrade_allowed_tools(
         }
     }
 
-    // 組み込みツール（AskUserQuestion 等）→ dropped
+    // Built-ins have no Codex equivalent; collect them separately so each gets an explicit Drop diagnostic.
     let builtin_tools: Vec<&str> = tools
         .iter()
         .filter_map(|t| {

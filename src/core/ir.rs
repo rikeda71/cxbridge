@@ -1,18 +1,15 @@
-// 実装は docs/12 §5 参照
 use std::collections::HashMap;
 
 use serde_json::Value;
 
 use crate::scanner::body::BodyFinding;
 
-/// 変換元ツールを示す。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Tool {
     Claude,
     Codex,
 }
 
-/// 変換の損失レベル。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Loss {
     Lossless,
@@ -20,7 +17,6 @@ pub enum Loss {
     Dropped,
 }
 
-/// IR ノードの種別。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Kind {
     Skill,
@@ -32,7 +28,7 @@ pub enum Kind {
     Settings,
 }
 
-/// IR フィールド（mappings の1エントリに対応する正規化済み値）。
+/// mappings の1エントリに対応する正規化済み変換単位。
 #[derive(Debug, Clone)]
 pub struct IRField {
     /// mappings の entry id（例: "mcp.timeout"）
@@ -51,7 +47,7 @@ pub struct IRField {
     pub dropped: Option<DroppedInfo>,
 }
 
-/// 降格情報（degrade エンジン経由で別スコープへ移送された場合）。
+/// 降格エンジン経由で別スコープへ移送された場合に付与される情報。
 #[derive(Debug, Clone)]
 pub struct DegradeInfo {
     /// 降格先の種別（例: "session", "subagent"）
@@ -60,14 +56,12 @@ pub struct DegradeInfo {
     pub target: String,
 }
 
-/// dropped フィールドの理由情報。
 #[derive(Debug, Clone)]
 pub struct DroppedInfo {
     pub reason: String,
 }
 
 /// skill/command/prompt 本文の解析結果。
-/// §9 の本文スキャナが生成する。
 #[derive(Debug, Clone)]
 pub struct BodySegment {
     /// 元の本文テキスト（未加工）
@@ -76,45 +70,38 @@ pub struct BodySegment {
     pub findings: Vec<BodyFinding>,
 }
 
-/// IR の中間ノード。あらゆる領域（skill/mcp/hooks/plugin）を統一的に表す。
+/// あらゆる領域（skill/mcp/hooks/plugin）を統一的に表す中間表現ノード。
 #[derive(Debug, Clone)]
 pub struct IRNode {
     pub kind: Kind,
     pub source_tool: Tool,
     pub source_path: String,
-    /// フィールドの id → IRField マップ（順序不要な検索用）
     pub fields: HashMap<String, IRField>,
-    /// skill/command 本文の解析結果
     pub body: Option<BodySegment>,
     /// plugin が内包する skills/hooks/mcp の子ノード
     pub children: Vec<IRNode>,
-    /// 降格で生成する追加ファイル（.rules / agents.toml 等）
     pub side_artifacts: Vec<SideArtifact>,
-    /// warn / dropped / degrade の診断記録
     pub diagnostics: Vec<Diagnostic>,
 }
 
-/// 降格や変換で生成される追加ファイル（出力ルートからの相対パスで保持）。
+/// 降格や変換で生成される追加ファイル。パスは出力ルートからの相対パス。
 #[derive(Debug, Clone)]
 pub struct SideArtifact {
-    /// 出力ルートからの相対パス
     pub path: String,
-    /// ファイル内容
     pub content: String,
     /// レポート用の補足説明
     pub note: String,
 }
 
-/// 診断エントリ（変換中に発生した警告・dropped・degrade の記録）。
+/// 変換中に発生した警告・dropped・degrade の診断エントリ。
 #[derive(Debug, Clone)]
 pub struct Diagnostic {
     pub level: DiagLevel,
-    /// mappings の entry id（関連する場合）
+    /// 関連する mappings の entry id
     pub id: Option<String>,
     pub message: String,
 }
 
-/// 診断レベル。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DiagLevel {
     Info,
@@ -122,7 +109,6 @@ pub enum DiagLevel {
     Drop,
 }
 
-/// 新しい空の IRNode を生成するヘルパ。
 pub fn new_node(kind: Kind, source_tool: Tool, source_path: &str) -> IRNode {
     IRNode {
         kind,

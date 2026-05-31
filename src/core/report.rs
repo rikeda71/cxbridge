@@ -1,4 +1,3 @@
-// 実装は docs/12 §10 参照
 use crate::core::ir::{DiagLevel, IRNode, Loss};
 use crate::handlers::EmitPlan;
 
@@ -36,7 +35,6 @@ pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
     let mut degraded = Vec::new();
     let mut body_warnings = Vec::new();
 
-    // IRField からの集計
     for (id, field) in &ir.fields {
         match field.loss {
             Loss::Lossless => {
@@ -74,7 +72,6 @@ pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
         }
     }
 
-    // diagnostics からの集計（診断エントリ: Drop / Warn / Info）
     for diag in &ir.diagnostics {
         match diag.level {
             DiagLevel::Drop => {
@@ -84,8 +81,7 @@ pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
                 });
             }
             DiagLevel::Warn => {
-                // body finding か通常 warn かを判定
-                // "body L" で始まる message は body_warnings に分類
+                // Route body-scanner findings to body_warnings rather than lossy
                 if diag.message.contains("body L") || diag.message.starts_with("body ") {
                     body_warnings.push(DiagEntry {
                         id: diag.id.clone(),
@@ -102,7 +98,6 @@ pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
         }
     }
 
-    // side_artifacts からの降格情報
     for artifact in &ir.side_artifacts {
         degraded.push(DiagEntry {
             id: None,
@@ -110,7 +105,6 @@ pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
         });
     }
 
-    // body findings（BodySegment が存在する場合）
     if let Some(body_seg) = &ir.body {
         use crate::scanner::body::Action;
         for finding in &body_seg.findings {
@@ -128,7 +122,6 @@ pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
         }
     }
 
-    // EmitPlan の diagnostics も集計
     for diag in &plan.diagnostics {
         match diag.level {
             DiagLevel::Drop => {
@@ -147,7 +140,6 @@ pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
         }
     }
 
-    // 子ノードも再帰的に集計
     for child in &ir.children {
         let child_report = build_report(
             child,
@@ -196,35 +188,29 @@ pub fn print_report(report: &Report, fmt: Option<&str>) {
 }
 
 fn print_report_text(report: &Report) {
-    // lossless フィールド
     if !report.lossless.is_empty() {
         println!("  \u{25ce} {}  lossless", report.lossless.join(", "));
     }
 
-    // lossy フィールド
     for entry in &report.lossy {
         let id = entry.id.as_deref().unwrap_or("?");
         println!("  \u{25cb} {}  lossy  {}", id, entry.message);
     }
 
-    // degraded フィールド
     for entry in &report.degraded {
         let id = entry.id.as_deref().unwrap_or("?");
         println!("  \u{25b3} {}  lossy (degrade)  {}", id, entry.message);
     }
 
-    // dropped フィールド
     for entry in &report.dropped {
         let id = entry.id.as_deref().unwrap_or("?");
         println!("  \u{2715} {}  dropped  {}", id, entry.message);
     }
 
-    // body warnings
     for entry in &report.body_warnings {
         println!("  \u{26a0} {}", entry.message);
     }
 
-    // サマリ
     println!(
         "Summary: {} lossless, {} lossy({} degraded), {} dropped, {} body-warning",
         report.lossless.len(),

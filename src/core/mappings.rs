@@ -1,4 +1,3 @@
-// 実装は docs/12 §6.1 参照
 use std::collections::HashMap;
 use std::path::Path;
 

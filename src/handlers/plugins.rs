@@ -1,4 +1,3 @@
-// 実装は docs/12 §7.5 参照
 use std::path::Path;
 
 use anyhow::Context;
@@ -11,8 +10,8 @@ use crate::core::mappings::{applies_direction, DomainMap, LossSpec};
 use crate::core::transforms::{apply_transforms, ConvDir, TransformCtx};
 use crate::handlers::{EmitFile, EmitPlan, Handler, LowerOpts};
 
-/// plugins ドメインのハンドラ（統合点）。
-/// §7.5 に従い plugin.json の lift/lower + 配下の skills/hooks/.mcp.json を
+/// plugins ドメインのハンドラ。
+/// plugin.json の lift/lower に加え、配下の skills/hooks/.mcp.json を
 /// 各ハンドラに委譲して再帰変換し、children に格納する。
 pub struct PluginsHandler {
     pub map: DomainMap,

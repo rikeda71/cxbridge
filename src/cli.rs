@@ -1,4 +1,3 @@
-// 実装は docs/12 §11 §16 参照
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 
@@ -10,8 +9,6 @@ use crate::core::{
 };
 use crate::handlers::{pick_handler, EmitPlan, LowerOpts, Scope, SkillTargetMode};
 
-/// mappings/ ディレクトリへのパス（バイナリ相対 or cargo manifest 相対）。
-/// 実装時は `env!("CARGO_MANIFEST_DIR")` 等で解決する。
 const MAPPINGS_DIR: &str = "mappings";
 
 #[derive(Parser)]
@@ -45,7 +42,6 @@ pub enum Commands {
 }
 
 /// 変換オプション（c2x / x2c 共通）。
-/// §11 の全オプションを網羅する。
 #[derive(Parser, Debug, Clone)]
 pub struct ConvertOpts {
     /// 出力先ディレクトリ（省略時: *.converted/ サブディレクトリ）
@@ -101,7 +97,6 @@ pub struct ConvertOpts {
     pub force: bool,
 }
 
-/// CLI エントリポイント。main.rs から呼ばれる。
 pub fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -111,7 +106,6 @@ pub fn run() -> anyhow::Result<()> {
     }
 }
 
-/// 変換パイプライン本体（§16 のスケルトンに準拠）。
 fn run_convert(dir: ConvDir, path: &str, opts: &ConvertOpts) -> anyhow::Result<()> {
     let maps = load_mappings(Path::new(MAPPINGS_DIR));
     let kind = detect(path)?;
@@ -137,24 +131,22 @@ fn run_convert(dir: ConvDir, path: &str, opts: &ConvertOpts) -> anyhow::Result<(
     Ok(())
 }
 
-/// check サブコマンド: 書き込まず dropped 件数のみ報告する（§11 参照）。
+/// check サブコマンド: 書き込まず dropped 件数のみ報告する。
 fn run_check(path: &str) -> anyhow::Result<()> {
     let maps = load_mappings(Path::new(MAPPINGS_DIR));
     let kind = detect(path)?;
     let handler = pick_handler(&kind, &maps);
     let parsed = handler.parse(Path::new(path))?;
 
-    // c2x 方向で lift（check はどちらの方向も診断する。デフォルト c2x）
+    // check はどちらの方向も診断できるが、デフォルト c2x で lift する
     let ir = handler.lift(&parsed, ConvDir::C2x)?;
 
-    // EmitPlan は空（書き込まない）
     let empty_plan = EmitPlan {
         files: vec![],
         diagnostics: vec![],
     };
     let report = build_report(&ir, &empty_plan);
 
-    // dropped 件数をサマリとして出力
     println!("check: {}", path);
     println!(
         "  dropped: {}, degraded: {}, lossy: {}, lossless: {}",
@@ -179,7 +171,6 @@ fn run_check(path: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// ConvertOpts → LowerOpts への変換ヘルパ。
 fn build_lower_opts(opts: &ConvertOpts) -> LowerOpts {
     LowerOpts {
         out: opts.out.clone(),
@@ -204,21 +195,18 @@ fn build_lower_opts(opts: &ConvertOpts) -> LowerOpts {
     }
 }
 
-/// 出力先への書き込み（上書き保護含む）。
-/// §11.0 に従い出力ルートを解決し、各 EmitFile を書き込む。
-/// --force なし時は既存ファイルへの上書きを拒否する。
-/// config.toml/.rules は append/merge（toml_edit）。
+/// `--force` なし時は既存ファイルへの上書きを拒否する。
+/// config.toml と .rules は append 対象のため上書き保護対象外。
 pub fn write_plan(plan: &EmitPlan, opts: &ConvertOpts) -> anyhow::Result<()> {
     for file in &plan.files {
         let dest = PathBuf::from(&file.path);
 
-        // 親ディレクトリを作成
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
         }
 
-        // 上書き保護チェック（config.toml と .rules は例外: 追記/マージ）
+        // config.toml と .rules はハンドラ側でマージ済みなので上書き保護を免除する
         let is_append_target = dest
             .file_name()
             .and_then(|n| n.to_str())
@@ -232,16 +220,8 @@ pub fn write_plan(plan: &EmitPlan, opts: &ConvertOpts) -> anyhow::Result<()> {
             );
         }
 
-        if is_append_target && dest.exists() {
-            // config.toml / .rules は既存を保持しつつ追記
-            // （実際の非破壊マージは各 handler の lower で toml_edit を使って行う。
-            //  ここでは単純追記のフォールバックとして write する）
-            std::fs::write(&dest, &file.content)
-                .with_context(|| format!("Failed to write file: {}", dest.display()))?;
-        } else {
-            std::fs::write(&dest, &file.content)
-                .with_context(|| format!("Failed to write file: {}", dest.display()))?;
-        }
+        std::fs::write(&dest, &file.content)
+            .with_context(|| format!("Failed to write file: {}", dest.display()))?;
     }
     Ok(())
 }
