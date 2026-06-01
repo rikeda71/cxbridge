@@ -288,7 +288,60 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Claude's Auto memory (the ~/.claude/projects/.../memory/MEMORY.md file that Claude writes autonomously) has no Codex equivalent. dropped. If CLAUDE.md contains references to Auto memory, those references will survive conversion, so detect them and emit a warning. The /memory command and the autoMemoryEnabled setting are likewise unsupported by Codex."
+    notes: |
+      Claude's Auto memory (the ~/.claude/projects/.../memory/MEMORY.md file that Claude
+      writes autonomously) has no Codex equivalent. dropped. If CLAUDE.md contains references
+      to Auto memory, those references will survive conversion, so detect them and emit a
+      warning. The /memory command and the autoMemoryEnabled setting are likewise unsupported
+      by Codex.
+      Structure note (2026): Auto memory now uses a MEMORY.md hub file plus per-topic
+      sub-files (e.g. memory/git-preferences.md). The combined load is capped at 200 lines
+      or 25 KB — content beyond the limit is silently truncated by Claude. The env var
+      CLAUDE_CODE_DISABLE_AUTO_MEMORY=1 disables the entire auto-memory subsystem.
+    source: "https://code.claude.com/docs/en/memory"
+
+  - id: memory.claudeMd-setting
+    claude:
+      field: "claudeMd (managed-settings.json — inline managed CLAUDE.md content)"
+      type: "string"
+      scope: managed
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: false
+    notes: |
+      Claude supports a claudeMd string key in managed-settings.json that injects an
+      inline managed CLAUDE.md string (set by organization administrators). This is part
+      of the Claude Code managed-settings facility (MDM / enterprise deployment). Codex
+      has no equivalent inline-content mechanism; the closest workaround is distributing
+      a ~/.codex/AGENTS.md via MDM/Ansible. dropped (no automatic conversion possible).
+    source: "https://code.claude.com/docs/en/memory"
+
+  - id: memory.auto-memory-directory
+    claude:
+      field: "autoMemoryDirectory (settings.json — redirect auto-memory storage path)"
+      type: "string"
+      scope: user
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      The autoMemoryDirectory setting in settings.json redirects where Claude stores its
+      auto-generated memory files (default: ~/.claude/projects/<project>/memory/). Codex
+      has no auto-memory subsystem at all, so this path redirection has no equivalent.
+      dropped + warn. During conversion, note in the report that auto-memory storage
+      redirection will not take effect on the Codex side.
     source: "https://code.claude.com/docs/en/memory"
 
 notes:

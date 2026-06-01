@@ -42,7 +42,7 @@
 
 **ccx** is a Rust CLI that bidirectionally converts configuration files between Claude Code (`.claude/`, JSON) and OpenAI Codex CLI (`.codex/`, TOML). It covers Skills, Plugins, Hooks, MCP servers, Memory files, Subagents, and Settings.
 
-Conversion rules are declared in `mappings/*.yaml` (301 entries). The CLI is an engine that interprets those declarations. New field support requires only YAML edits, not code changes (mappings-driven design).
+Conversion rules are declared in `mappings/*.yaml` (304 entries). The CLI is an engine that interprets those declarations. New field support requires only YAML edits, not code changes (mappings-driven design).
 
 Every conversion produces a **conversion report** that enumerates what was lossless, lossy, degraded, dropped, and any body-scan warnings. Silent data loss is prohibited.
 
@@ -157,7 +157,7 @@ Key design principles:
 ```
 ccx/
 ├── Cargo.toml
-├── mappings/           # ← YAML truth tables (301 entries)
+├── mappings/           # ← YAML truth tables (304 entries)
 │   ├── SCHEMA.md
 │   └── *.yaml
 ├── src/
@@ -957,13 +957,13 @@ All writes to `config.toml` use `toml_edit::DocumentMut`. No string-patching (se
 
 ## 16. Feature & Loss Matrix Summary
 
-Total entries across all `mappings/*.yaml`: **301**
+Total entries across all `mappings/*.yaml`: **304**
 
 | Loss level | Count | % |
 |---|---|---|
-| lossless | 70 | 23% |
+| lossless | 72 | 24% |
 | lossy | 90 | 30% |
-| dropped | 141 | 47% |
+| dropped | 142 | 47% |
 
 **Directional asymmetry:**
 - **Codex → Claude:** Near-lossless. Codex vocabulary is smaller; Claude has receptacles for most concepts.
@@ -977,10 +977,10 @@ Total entries across all `mappings/*.yaml`: **301**
 | Hooks | 83 | 34 | 6 | 43 | Core — JSON↔TOML structural conversion |
 | MCP | 32 | 10 | 4 | 18 | Lightweight mechanical transforms |
 | Plugins | 48 | 12 | 16 | 20 | Integration point; recursive |
-| Memory | 16 | 3 | 5 | 8 | File rename + @import expansion |
+| Memory | 18 | 3 | 5 | 10 | File rename + @import expansion |
 | Subagents | 25 | 4 | 10 | 11 | Large structural divergence |
 | Settings/Config | 60 | 2 (3%) | 31 | 27 | Hardest; permission axis mismatch |
-| Variables | 14 | 0 | 5 | 9 | No standalone handler. All variable-related transformations are performed by the body scanner within the Skills handler. |
+| Variables | 15 | 2 | 5 | 8 | No standalone handler. All variable-related transformations are performed by the body scanner within the Skills handler. |
 
 **Implementation value/complexity concentration:**
 - **Skills** = new logic (degrade engine, body scanner).
@@ -1038,7 +1038,7 @@ Claude uses description semantic matching for automatic subagent dispatch. Codex
 
 ## 18. Testing Strategy
 
-1. **Mappings invariant tests** (at startup + CI): assert globally unique `id`, valid `direction`/`loss` values, `degrade` implies `loss:lossy`, `loss:dropped` has no `transform`, `source` field present. 301 entries; 0 issues confirmed.
+1. **Mappings invariant tests** (at startup + CI): assert globally unique `id`, valid `direction`/`loss` values, `degrade` implies `loss:lossy`, `loss:dropped` has no `transform`, `source` field present. 304 entries; 0 issues confirmed.
 
 2. **Unit tests:**
    - Each transform function (`unit:ms_to_sec`, `polarity:invert`, `enum_map`, `index_shift`, etc.)

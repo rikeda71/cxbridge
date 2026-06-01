@@ -193,20 +193,47 @@ entries:
       type: "string"
       scope: plugin
     codex:
-      field: null
-      type: null
-      scope: null
-    direction: claude_to_codex
-    loss: dropped
+      field: "PLUGIN_ROOT (also exposed as ${CLAUDE_PLUGIN_ROOT} compat alias)"
+      type: "string"
+      scope: plugin
+    direction: both
+    loss: lossless
     degrade: null
     transform: null
-    warn: true
+    warn: false
     notes: |
-      No equivalent plugin root variable exists in Codex. Outside plugins, Claude also
-      returns an empty string for this variable.
-      While Codex has plugin-scoped skills, there is no variable injection mechanism for them.
-      List in the conversion report.
-    source: "https://code.claude.com/docs/en/skills"
+      Codex sets PLUGIN_ROOT (and the compat alias CLAUDE_PLUGIN_ROOT) in plugin-sourced
+      hook commands. This mapping is therefore lossless within that specific scope.
+      IMPORTANT scope restriction: this variable is only available inside plugin-sourced hook
+      commands. In general skill bodies (SKILL.md), ${CLAUDE_PLUGIN_ROOT} is NOT set by Codex
+      and must still be treated as unsupported. The body scanner (scanner/body.rs) does not
+      yet distinguish plugin-hook context from skill-body context; until that is fixed,
+      occurrences in skill bodies should be reported as unsupported. See maintainer note in
+      /tmp/issue29_followup.txt.
+    source: "https://developers.openai.com/codex/plugins/build"
+
+  - id: variables.plugin-data
+    claude:
+      field: "${CLAUDE_PLUGIN_DATA}"
+      type: "string"
+      scope: plugin
+    codex:
+      field: "PLUGIN_DATA (also exposed as ${CLAUDE_PLUGIN_DATA} compat alias)"
+      type: "string"
+      scope: plugin
+    direction: both
+    loss: lossless
+    degrade: null
+    transform: null
+    warn: false
+    notes: |
+      Codex sets PLUGIN_DATA (and the compat alias CLAUDE_PLUGIN_DATA) in plugin-sourced
+      hook commands. This mapping is therefore lossless within that specific scope.
+      IMPORTANT scope restriction: identical to variables.plugin-root — this variable is
+      only available inside plugin-sourced hook commands. In general skill bodies (SKILL.md),
+      ${CLAUDE_PLUGIN_DATA} is NOT set by Codex. The body scanner caveat from
+      variables.plugin-root applies here too.
+    source: "https://developers.openai.com/codex/plugins/build"
 
   - id: variables.inline-injection
     claude:
@@ -333,5 +360,6 @@ notes:
   - "Index offset (0-indexed vs 1-indexed) is the most easily overlooked and most severe pitfall in machine translation. A missed index_shift:+1 application invariably becomes a silent logic bug."
   - "Dynamic shell injection (!`cmd` / ```! blocks) was explicitly declared 'not planned' in Codex Issue #5019. If left unconverted they become literals and cause misbehavior; it is recommended that the conversion CLI treat detected cases as requiring the user to manually handle them before proceeding."
   - "The Agent Skills standard (agentskills.io) does not include variables or dynamic injection specifications. These are proprietary extensions on both sides and are not part of open-standard-based interoperability."
-  - "Custom Prompts are deprecated and OpenAI recommends migrating to Skills. Note that using Custom Prompts as a conversion intermediary is only a transitional workaround."
+  - "Codex Custom Prompts ($ARGUMENTS/$1-$9/$$) are officially deprecated as of 2026. OpenAI recommends migrating all Custom Prompt usage to Skills. The $ARGUMENTS/$N/$$ entries above apply only to that deprecated path; in a Skill→Skill conversion they are effectively non-functional. Do not use Custom Prompts as a conversion intermediary except as a short-term transitional workaround."
   - "The Codex-side specification is fluid (new features from 2025-2026). In particular, $ARGUMENTS support in Skill bodies may change in the future. Verify version dependencies against the source URL."
+  - "variables.plugin-root and variables.plugin-data are lossless ONLY inside plugin-sourced hook commands (Codex sets PLUGIN_ROOT/PLUGIN_DATA env vars there). In general Skill bodies these variables remain unsupported by Codex; the body scanner must be extended to distinguish these two contexts before reporting them as safe."

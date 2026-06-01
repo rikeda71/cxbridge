@@ -6,7 +6,7 @@
 [Claude Code](https://code.claude.com/docs) (`.claude/`, JSON) and
 [OpenAI Codex CLI](https://developers.openai.com/codex) (`.codex/`, TOML).
 It covers Skills, Plugins, Hooks, MCP servers, Memory files, Subagents, and Settings.
-Conversion rules are declared in `mappings/*.yaml` (301 entries); the CLI is an engine
+Conversion rules are declared in `mappings/*.yaml` (304 entries); the CLI is an engine
 that interprets those declarations.
 
 ```
@@ -115,7 +115,7 @@ Summary: 2 lossless, 3 lossy (2 degraded), 2 dropped, 1 body-warning
 - **[docs/spec.md](docs/spec.md)** — full design & implementation specification (IR model,
   transform registry, domain handler contracts, degrade engine, CLI flags, exit codes,
   testing strategy, and more)
-- **[mappings/](mappings/)** — canonical conversion table (301 entries across
+- **[mappings/](mappings/)** — canonical conversion table (304 entries across
   `skills.yaml`, `hooks.yaml`, `mcp.yaml`, `plugins.yaml`, `memory.yaml`,
   `subagents.yaml`, `settings-config.yaml`); schema defined in
   [mappings/SCHEMA.md](mappings/SCHEMA.md)
