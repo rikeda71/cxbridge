@@ -42,7 +42,7 @@
 
 **ccx** is a Rust CLI that bidirectionally converts configuration files between Claude Code (`.claude/`, JSON) and OpenAI Codex CLI (`.codex/`, TOML). It covers Skills, Plugins, Hooks, MCP servers, Memory files, Subagents, and Settings.
 
-Conversion rules are declared in `mappings/*.yaml` (287 entries). The CLI is an engine that interprets those declarations. New field support requires only YAML edits, not code changes (mappings-driven design).
+Conversion rules are declared in `mappings/*.yaml` (289 entries). The CLI is an engine that interprets those declarations. New field support requires only YAML edits, not code changes (mappings-driven design).
 
 Every conversion produces a **conversion report** that enumerates what was lossless, lossy, degraded, dropped, and any body-scan warnings. Silent data loss is prohibited.
 
@@ -157,7 +157,7 @@ Key design principles:
 ```
 ccx/
 ├── Cargo.toml
-├── mappings/           # ← YAML truth tables (287 entries)
+├── mappings/           # ← YAML truth tables (289 entries)
 │   ├── SCHEMA.md
 │   └── *.yaml
 ├── src/
@@ -957,13 +957,13 @@ All writes to `config.toml` use `toml_edit::DocumentMut`. No string-patching (se
 
 ## 16. Feature & Loss Matrix Summary
 
-Total entries across all `mappings/*.yaml`: **287**
+Total entries across all `mappings/*.yaml`: **289**
 
 | Loss level | Count | % |
 |---|---|---|
 | lossless | 70 | 24% |
-| lossy | 88 | 31% |
-| dropped | 129 | 45% |
+| lossy | 88 | 30% |
+| dropped | 131 | 45% |
 
 **Directional asymmetry:**
 - **Codex → Claude:** Near-lossless. Codex vocabulary is smaller; Claude has receptacles for most concepts.
@@ -975,7 +975,7 @@ Total entries across all `mappings/*.yaml`: **287**
 |---|---|---|---|---|---|
 | Skills | 22 | 5 | 12 | 5 | Core — degrade engine + body scanner |
 | Hooks | 83 | 34 | 6 | 43 | Core — JSON↔TOML structural conversion |
-| MCP | 30 | 10 | 4 | 16 | Lightweight mechanical transforms |
+| MCP | 32 | 10 | 4 | 18 | Lightweight mechanical transforms |
 | Plugins | 48 | 12 | 16 | 20 | Integration point; recursive |
 | Memory | 16 | 3 | 5 | 8 | File rename + @import expansion |
 | Subagents | 25 | 4 | 10 | 11 | Large structural divergence |
@@ -1038,7 +1038,7 @@ Claude uses description semantic matching for automatic subagent dispatch. Codex
 
 ## 18. Testing Strategy
 
-1. **Mappings invariant tests** (at startup + CI): assert globally unique `id`, valid `direction`/`loss` values, `degrade` implies `loss:lossy`, `loss:dropped` has no `transform`, `source` field present. 287 entries; 0 issues confirmed.
+1. **Mappings invariant tests** (at startup + CI): assert globally unique `id`, valid `direction`/`loss` values, `degrade` implies `loss:lossy`, `loss:dropped` has no `transform`, `source` field present. 289 entries; 0 issues confirmed.
 
 2. **Unit tests:**
    - Each transform function (`unit:ms_to_sec`, `polarity:invert`, `enum_map`, `index_shift`, etc.)

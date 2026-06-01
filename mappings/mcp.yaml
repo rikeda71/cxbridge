@@ -353,6 +353,40 @@ entries:
     notes: "Local port for the OAuth callback. Claude uses a per-server field (`oauth.callbackPort`). Codex uses a top-level field (`mcp_oauth_callback_port`, shared across all MCP servers). When converting a Claude configuration where multiple servers have different `callbackPort` values to Codex, only the last value takes effect (collision is lossy). Include a warning in the conversion report if a collision is detected."
     source: "https://github.com/openai/codex/blob/main/codex-rs/config/src/config_toml.rs"
 
+  - id: mcp.oauth.callback_url
+    claude:
+      field: null
+      type: null
+      scope: null
+    codex:
+      field: "mcp_oauth_callback_url"
+      type: "string (URL)"
+      scope: user
+    direction: codex_to_claude
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: "Codex-only top-level field that overrides the local listener address in the MCP OAuth authorization request (the local callback still binds to 127.0.0.1). No Claude equivalent. Codex→Claude conversion results in dropped + warn."
+    source: "https://github.com/openai/codex/blob/main/codex-rs/config/src/config_toml.rs"
+
+  - id: mcp.oauth.credentials_store
+    claude:
+      field: null
+      type: null
+      scope: null
+    codex:
+      field: "mcp_oauth_credentials_store"
+      type: "enum(auto|file|keyring)"
+      scope: user
+    direction: codex_to_claude
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: false
+    notes: "Codex-only top-level field selecting the OAuth-credentials storage backend (OS keyring / file in CODEX_HOME / auto, default `auto`). No Claude equivalent. Codex→Claude conversion results in dropped."
+    source: "https://github.com/openai/codex/blob/main/codex-rs/config/src/config_toml.rs"
+
   - id: mcp.oauth.scopes
     claude:
       field: "oauth.scopes"
@@ -520,7 +554,7 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Codex-specific field (experimental). Specifies the execution environment for the MCP server. `\"local\"` (default) or `\"remote\"` (run stdio in a remote executor). Claude has no equivalent. Codex→Claude conversion results in dropped + warn."
+    notes: "Codex-specific field. Specifies the execution environment for the MCP server. `\"local\"` (default) or `\"remote\"` (run stdio in a remote executor). The field was renamed from `experimental_environment` to `environment_id` in PR #23583 (2026-05-21) and is no longer experimental. Claude has no equivalent. Codex→Claude conversion results in dropped + warn."
     source: "https://github.com/openai/codex/blob/main/codex-rs/config/src/mcp_types.rs"
 
 notes:
