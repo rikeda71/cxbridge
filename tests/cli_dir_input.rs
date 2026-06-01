@@ -116,4 +116,17 @@ fn test_cli_x2c_directory_exits_zero_and_produces_skill_output() {
         "ccx x2c <dir> must exit 0, got: {}",
         status
     );
+
+    // Verify the converted Claude skill was produced.
+    let output_skill = out_dir
+        .path()
+        .join(".claude")
+        .join("skills")
+        .join("s")
+        .join("SKILL.md");
+    assert!(
+        output_skill.exists(),
+        "Expected output skill at {}, but it was not produced",
+        output_skill.display()
+    );
 }

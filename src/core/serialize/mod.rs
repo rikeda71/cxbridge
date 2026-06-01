@@ -6,6 +6,8 @@ pub mod json;
 /// Converts a `toml::Value` to a `serde_json::Value`.
 ///
 /// All TOML types map 1:1 to JSON types; `Datetime` is stringified.
+/// Non-finite TOML floats (NaN, infinity) are not representable in JSON and
+/// fall back to 0.0 via `from_f64` returning `None`.
 pub fn toml_to_json(v: &toml::Value) -> anyhow::Result<serde_json::Value> {
     match v {
         toml::Value::String(s) => Ok(serde_json::Value::String(s.clone())),

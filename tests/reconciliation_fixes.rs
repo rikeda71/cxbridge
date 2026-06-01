@@ -108,8 +108,11 @@ fn dry_run_prints_report_default_is_quiet() {
         .output()
         .unwrap();
     let quiet_stdout = String::from_utf8_lossy(&quiet.stdout);
-    assert!(
-        !quiet_stdout.contains("lossless"),
-        "default run should not print the report, got:\n{quiet_stdout}"
-    );
+    for marker in &["lossless", "lossy", "dropped", "degraded", "Summary"] {
+        assert!(
+            !quiet_stdout.contains(marker),
+            "default run must not print any report markers (found '{}'), got:\n{quiet_stdout}",
+            marker
+        );
+    }
 }

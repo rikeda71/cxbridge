@@ -1034,13 +1034,8 @@ impl SettingsHandler {
                     path: format!("{}/.claude/CLAUDE.md", out_root),
                     content: claude_md_content,
                 });
-                diagnostics.push(Diagnostic {
-                    level: DiagLevel::Warn,
-                    id: Some("settings.codex.developer_instructions".to_string()),
-                    message:
-                        "developer_instructions degraded to CLAUDE.md (lossy: scope fixed to project)"
-                            .to_string(),
-                });
+                // The warning diagnostic is already emitted during lift_x2c.
+                // Emitting it again here would cause duplicate entries in the report.
             }
         }
 
@@ -1452,15 +1447,15 @@ developer_instructions = "Always respond in English. Focus on clear answers."
             content
         );
 
-        // A diagnostic with the correct id must be emitted
-        let has_diag = plan
+        // The warning diagnostic is emitted during lift (ir.diagnostics), not lower.
+        let has_diag = ir
             .diagnostics
             .iter()
             .any(|d| d.id.as_deref() == Some("settings.codex.developer_instructions"));
         assert!(
             has_diag,
-            "Expected developer_instructions diagnostic in plan; got: {:?}",
-            plan.diagnostics
+            "Expected developer_instructions diagnostic in ir.diagnostics; got: {:?}",
+            ir.diagnostics
                 .iter()
                 .map(|d| d.id.as_deref().unwrap_or("<none>"))
                 .collect::<Vec<_>>()

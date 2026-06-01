@@ -254,58 +254,63 @@ impl PluginsHandler {
         dir: ConvDir,
         node: &mut IRNode,
     ) {
-        // Resolve the skills path from the manifest's skills field, or default to ./skills/
-        let skills_dir = frontmatter
-            .get("skills")
-            .and_then(|v| v.as_str())
-            .unwrap_or("./skills/");
-
-        // Normalize the path (./skills/ → skills)
-        let skills_rel = skills_dir.trim_start_matches("./").trim_end_matches('/');
-
-        let skills_path = format!("{}/{}", plugin_root, skills_rel);
-        let skills_path = Path::new(&skills_path);
-
-        if !skills_path.exists() {
-            return;
-        }
+        // The `skills` manifest field is string|array.  Collect all paths.
+        let skills_dirs: Vec<String> = match frontmatter.get("skills") {
+            Some(Value::String(s)) => vec![s.clone()],
+            Some(Value::Array(arr)) => arr
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect(),
+            _ => vec!["./skills/".to_string()],
+        };
 
         let maps = crate::core::mappings::load_mappings(Path::new("mappings"));
         let skills_handler = crate::handlers::skills::SkillsHandler {
             map: maps["skills"].clone(),
         };
 
-        // Process each SKILL.md under skills/
-        if let Ok(entries) = std::fs::read_dir(skills_path) {
-            for entry in entries.flatten() {
-                let skill_dir = entry.path();
-                if !skill_dir.is_dir() {
-                    continue;
-                }
-                let skill_md = skill_dir.join("SKILL.md");
-                if !skill_md.exists() {
-                    continue;
-                }
+        for skills_dir in &skills_dirs {
+            // Normalize: ./skills/ → skills
+            let skills_rel = skills_dir.trim_start_matches("./").trim_end_matches('/');
+            let skills_path_str = format!("{}/{}", plugin_root, skills_rel);
+            let skills_path = Path::new(&skills_path_str);
 
-                match skills_handler.parse(&skill_md) {
-                    Ok(parsed) => match skills_handler.lift(&parsed, dir) {
-                        Ok(child_ir) => {
-                            node.children.push(child_ir);
-                        }
+            if !skills_path.exists() {
+                continue;
+            }
+
+            // Process each SKILL.md under the resolved skills directory
+            if let Ok(entries) = std::fs::read_dir(skills_path) {
+                for entry in entries.flatten() {
+                    let skill_dir = entry.path();
+                    if !skill_dir.is_dir() {
+                        continue;
+                    }
+                    let skill_md = skill_dir.join("SKILL.md");
+                    if !skill_md.exists() {
+                        continue;
+                    }
+
+                    match skills_handler.parse(&skill_md) {
+                        Ok(parsed) => match skills_handler.lift(&parsed, dir) {
+                            Ok(child_ir) => {
+                                node.children.push(child_ir);
+                            }
+                            Err(e) => {
+                                node.diagnostics.push(Diagnostic {
+                                    level: DiagLevel::Warn,
+                                    id: None,
+                                    message: format!("Failed to lift skill {:?}: {}", skill_md, e),
+                                });
+                            }
+                        },
                         Err(e) => {
                             node.diagnostics.push(Diagnostic {
                                 level: DiagLevel::Warn,
                                 id: None,
-                                message: format!("Failed to lift skill {:?}: {}", skill_md, e),
+                                message: format!("Failed to parse skill {:?}: {}", skill_md, e),
                             });
                         }
-                    },
-                    Err(e) => {
-                        node.diagnostics.push(Diagnostic {
-                            level: DiagLevel::Warn,
-                            id: None,
-                            message: format!("Failed to parse skill {:?}: {}", skill_md, e),
-                        });
                     }
                 }
             }

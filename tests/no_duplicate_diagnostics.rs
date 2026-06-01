@@ -121,6 +121,19 @@ fn test_plugin_c2x_six_dropped_fields_no_duplicates() {
             .map(|e| (e.id.as_deref().unwrap_or("<none>"), e.message.as_str()))
             .collect::<Vec<_>>()
     );
+
+    // Summary dropped count must equal the total number of distinct dropped entries.
+    assert_eq!(
+        report.dropped.len(),
+        6,
+        "summary dropped count must be 6; got {}. Full dropped: {:?}",
+        report.dropped.len(),
+        report
+            .dropped
+            .iter()
+            .map(|e| (e.id.as_deref().unwrap_or("<none>"), e.message.as_str()))
+            .collect::<Vec<_>>()
+    );
 }
 
 /// Dropped fields that do NOT have a secondary warn diagnostic (lspServers,

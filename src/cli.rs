@@ -157,11 +157,15 @@ fn run_convert(dir: ConvDir, path: &str, opts: &ConvertOpts) -> anyhow::Result<(
     let pairs = detect_files(path)?;
 
     // Compute the spec-mandated default output root when --out is omitted.
-    // Use the dominant (first detected) kind to determine the naming convention.
-    let effective_out: Option<String> = opts
-        .out
-        .clone()
-        .or_else(|| pairs.first().map(|(kind, _)| default_out_dir(path, kind)));
+    // For directory inputs the output is always <path>/.codex-converted.
+    // For single-file inputs, use the per-kind naming from default_out_dir.
+    let effective_out: Option<String> = opts.out.clone().or_else(|| {
+        if Path::new(path).is_dir() {
+            Some(format!("{}/.codex-converted", path))
+        } else {
+            pairs.first().map(|(kind, _)| default_out_dir(path, kind))
+        }
+    });
     let mut resolved_opts = opts.clone();
     resolved_opts.out = effective_out;
 

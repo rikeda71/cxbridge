@@ -55,8 +55,17 @@ pub(crate) fn detect_dir_files(p: &Path) -> anyhow::Result<Vec<(Kind, PathBuf)>>
         if !entry.file_type().is_file() {
             continue;
         }
-        if let Ok(kind) = detect_file(entry.path()) {
-            results.push((kind, entry.path().to_path_buf()));
+        // Only files whose kind is determined by parsing (settings.json,
+        // config.toml) can produce a meaningful error. Other unrecognized
+        // files are silently skipped.
+        let file_name = entry.file_name().to_str().unwrap_or("");
+        let is_parsed_config = matches!(file_name, "settings.json" | "config.toml");
+        match detect_file(entry.path()) {
+            Ok(kind) => results.push((kind, entry.path().to_path_buf())),
+            Err(e) if is_parsed_config => {
+                eprintln!("warning: skipping {}: {}", entry.path().display(), e);
+            }
+            Err(_) => {}
         }
     }
 

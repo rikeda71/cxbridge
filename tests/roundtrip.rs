@@ -3591,14 +3591,16 @@ fn test_mcp_c2x_bearer_auth_remaining_var_headers_in_output() {
         "env_http_headers['X-Api-Key'] must be 'API_KEY'"
     );
 
-    // http_headers (if present) must contain X-Static
-    if server["http_headers"].is_object() {
-        assert_eq!(
-            server["http_headers"]["X-Static"],
-            serde_json::Value::String("literal".to_string()),
-            "http_headers['X-Static'] must be 'literal'"
-        );
-    }
+    // http_headers must exist and contain X-Static → "literal"
+    assert!(
+        server["http_headers"].is_object(),
+        "http_headers must be present and be an object in output"
+    );
+    assert_eq!(
+        server["http_headers"]["X-Static"],
+        serde_json::Value::String("literal".to_string()),
+        "http_headers['X-Static'] must be 'literal'"
+    );
 }
 
 /// x2c: Non-.md auxiliary files in skill dir (excluding agents/openai.yaml) are

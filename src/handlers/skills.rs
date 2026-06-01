@@ -55,6 +55,10 @@ impl Handler for SkillsHandler {
             }
         };
 
+        // Preserve original values so --keep-claude-frontmatter can write them
+        // without accidentally writing post-transform (e.g. polarity-inverted) values.
+        node.raw_frontmatter = Some(frontmatter.clone());
+
         for (key, value) in frontmatter {
             let Some(entry) = idx.get(key.as_str()) else {
                 node.diagnostics.push(Diagnostic {
@@ -136,7 +140,20 @@ impl Handler for SkillsHandler {
 
         // x2c: process agents/openai.yaml when present
         if dir == ConvDir::X2c {
-            if let Some(openai_val) = load_openai_yaml(&source_path) {
+            let openai_result = load_openai_yaml(&source_path);
+            if let OpenaiYamlResult::Broken(msg) = &openai_result {
+                // A present-but-broken companion file must surface a warning so
+                // that data loss from policy.*/interface.*/dependencies.tools is visible.
+                node.diagnostics.push(Diagnostic {
+                    level: DiagLevel::Warn,
+                    id: Some("skills.openai-yaml".to_string()),
+                    message: format!(
+                        "fail-open WARNING: {} — policy.*/interface.*/dependencies.tools data may be lost",
+                        msg
+                    ),
+                });
+            }
+            if let OpenaiYamlResult::Ok(openai_val) = openai_result {
                 // policy.allow_implicit_invocation → disable-model-invocation (polarity invert)
                 if let Some(allow_implicit) =
                     openai_val["policy"]["allow_implicit_invocation"].as_bool()
@@ -388,6 +405,9 @@ impl SkillsHandler {
 
         // When requested, retain the original Claude-specific frontmatter keys so
         // that Codex can ignore them via fail-open while they remain readable.
+        // Values are taken from raw_frontmatter (pre-transform) to avoid writing
+        // semantically wrong data — e.g. a polarity-inverted boolean for
+        // disable-model-invocation.
         if opts.keep_claude_frontmatter {
             for entry in &self.map.entries {
                 // Only entries whose Claude side has a real (non-pseudo) field name
@@ -406,10 +426,19 @@ impl SkillsHandler {
                     continue;
                 }
 
-                // Only insert if the IR actually carries this field
-                if let Some(ir_field) = ir.fields.get(&entry.id) {
-                    fm.entry(claude_field.to_string())
-                        .or_insert_with(|| ir_field.value.clone());
+                // Only insert if the IR carries this field (field was present in source)
+                if ir.fields.contains_key(&entry.id) {
+                    // Use the original pre-transform value from raw_frontmatter so
+                    // transformed fields (e.g. polarity-inverted booleans) are not
+                    // written back with the wrong polarity.
+                    if let Some(raw_val) = ir
+                        .raw_frontmatter
+                        .as_ref()
+                        .and_then(|fm_raw| fm_raw.get(claude_field))
+                    {
+                        fm.entry(claude_field.to_string())
+                            .or_insert_with(|| raw_val.clone());
+                    }
                 }
             }
         }
@@ -654,16 +683,40 @@ fn extract_skill_name(source_path: &str) -> String {
     "skill".to_string()
 }
 
-/// Loads the full `agents/openai.yaml` alongside a SKILL.md and returns the
-/// parsed value. Returns `None` when the file does not exist or cannot be parsed.
-fn load_openai_yaml(source_path: &str) -> Option<Value> {
-    let skill_dir = Path::new(source_path).parent()?;
+/// Outcome of attempting to load `agents/openai.yaml` alongside a SKILL.md.
+enum OpenaiYamlResult {
+    /// File is absent — not an error.
+    Missing,
+    /// File is present but could not be read or parsed.
+    Broken(String),
+    /// File loaded and parsed successfully.
+    Ok(Value),
+}
+
+/// Loads `agents/openai.yaml` from the skill directory.
+///
+/// Returns `Missing` when the file does not exist, `Broken` when the file
+/// exists but cannot be read or parsed (callers should surface a warning), and
+/// `Ok` on success.
+fn load_openai_yaml(source_path: &str) -> OpenaiYamlResult {
+    let skill_dir = match Path::new(source_path).parent() {
+        Some(d) => d,
+        None => return OpenaiYamlResult::Missing,
+    };
     let openai_yaml = skill_dir.join("agents").join("openai.yaml");
     if !openai_yaml.exists() {
-        return None;
+        return OpenaiYamlResult::Missing;
     }
-    let content = std::fs::read_to_string(&openai_yaml).ok()?;
-    serde_saphyr::from_str(&content).ok()
+    let content = match std::fs::read_to_string(&openai_yaml) {
+        Ok(c) => c,
+        Err(e) => {
+            return OpenaiYamlResult::Broken(format!("agents/openai.yaml: failed to read: {}", e))
+        }
+    };
+    match serde_saphyr::from_str::<Value>(&content) {
+        Ok(v) => OpenaiYamlResult::Ok(v),
+        Err(e) => OpenaiYamlResult::Broken(format!("agents/openai.yaml: failed to parse: {}", e)),
+    }
 }
 
 #[cfg(test)]

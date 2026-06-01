@@ -152,6 +152,12 @@ fn test_c2x_skill_without_out_uses_converted_dir() {
     let ir = handler.lift(&parsed, ConvDir::C2x).unwrap();
     let plan = handler.lower(&ir, ConvDir::C2x, &opts).unwrap();
 
+    // The plan must contain at least one file so the loop below is non-vacuous.
+    assert!(
+        !plan.files.is_empty(),
+        "Expected at least one output file from lower, got none"
+    );
+
     // All output paths must start with the computed out dir (not CWD)
     for emit_file in &plan.files {
         let emit_path = Path::new(&emit_file.path);

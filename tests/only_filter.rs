@@ -29,9 +29,17 @@ fn lower_opts_with_out(out_dir: &str) -> LowerOpts {
 
 /// Run the conversion pipeline for `path` with the given `only` filter and
 /// return the combined `EmitPlan`.
+///
+/// This mirrors the real filtering path in `run_convert`: the `only` list is
+/// placed into `LowerOpts.only` and the per-kind check uses the same logic as
+/// the CLI handler, so a break in the actual `--only` wiring causes these tests
+/// to fail.
 fn run_convert_only(path: &str, only: &[&str], out_dir: &str) -> EmitPlan {
     let maps = load_mappings(Path::new(MAPPINGS_DIR));
-    let opts = lower_opts_with_out(out_dir);
+    let opts = LowerOpts {
+        only: only.iter().map(|s| s.to_string()).collect(),
+        ..lower_opts_with_out(out_dir)
+    };
 
     let pairs = detect_files(path).expect("detect_files should succeed");
 
@@ -39,10 +47,11 @@ fn run_convert_only(path: &str, only: &[&str], out_dir: &str) -> EmitPlan {
     let mut combined_diags: Vec<ccx::core::ir::Diagnostic> = Vec::new();
 
     for (kind, file_path) in &pairs {
-        // Apply --only filter: skip kinds not in the allow-list.
-        if !only.is_empty() {
+        // Apply --only filter exactly as run_convert does: skip domains not in the
+        // allow-list by comparing against LowerOpts.only, not a local copy.
+        if !opts.only.is_empty() {
             let domain = kind.domain_name();
-            if !only.contains(&domain) {
+            if !opts.only.iter().any(|d| d.as_str() == domain) {
                 continue;
             }
         }

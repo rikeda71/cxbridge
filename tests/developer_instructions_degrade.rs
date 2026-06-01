@@ -50,11 +50,15 @@ fn test_developer_instructions_produces_claude_md() {
         .lower(&ir, ConvDir::X2c, &opts)
         .expect("lower should succeed");
 
-    // CLAUDE.md must be generated
-    let claude_md = plan.files.iter().find(|f| f.path.ends_with("CLAUDE.md"));
+    // CLAUDE.md must be generated at the exact relative path .claude/CLAUDE.md.
+    let expected_suffix = std::path::Path::new(".claude").join("CLAUDE.md");
+    let claude_md = plan
+        .files
+        .iter()
+        .find(|f| std::path::Path::new(&f.path).ends_with(&expected_suffix));
     assert!(
         claude_md.is_some(),
-        "Expected CLAUDE.md in output files when developer_instructions is set; got: {:?}",
+        "Expected a file ending with .claude/CLAUDE.md in output when developer_instructions is set; got: {:?}",
         plan.files.iter().map(|f| &f.path).collect::<Vec<_>>()
     );
 
@@ -103,18 +107,20 @@ fn test_developer_instructions_degrade_diagnostic_present() {
 
     let out_dir = tempfile::TempDir::new().unwrap();
     let opts = default_lower_opts(out_dir.path().to_str().unwrap());
-    let plan = handler
+    let _plan = handler
         .lower(&ir, ConvDir::X2c, &opts)
         .expect("lower should succeed");
 
-    let has_degrade_diag = plan
+    // The degrade diagnostic is emitted during lift (ir.diagnostics), not lower,
+    // to avoid duplicating it in the report.
+    let has_degrade_diag = ir
         .diagnostics
         .iter()
         .any(|d| d.id.as_deref() == Some("settings.codex.developer_instructions"));
     assert!(
         has_degrade_diag,
-        "Expected degrade diagnostic for developer_instructions; got: {:?}",
-        plan.diagnostics
+        "Expected degrade diagnostic for developer_instructions in ir.diagnostics; got: {:?}",
+        ir.diagnostics
             .iter()
             .map(|d| (d.id.as_deref().unwrap_or("<none>"), &d.message))
             .collect::<Vec<_>>()

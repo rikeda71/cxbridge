@@ -155,6 +155,26 @@ pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
         body_warnings.extend(child_report.body_warnings);
     }
 
+    // Defense-in-depth: deduplicate dropped by id (keep first occurrence).
+    // A field may be recorded both via IRField{loss:Dropped} and via a
+    // DiagLevel::Drop diagnostic; collapse them here regardless of source.
+    let mut seen_dropped_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    dropped.retain(|e| {
+        if let Some(id) = &e.id {
+            seen_dropped_ids.insert(id.clone())
+        } else {
+            true
+        }
+    });
+
+    // Defense-in-depth: a field classified as Dropped must never also appear
+    // in lossy. Remove any lossy entry whose id matches a dropped id.
+    lossy.retain(|e| {
+        e.id.as_ref()
+            .map(|id| !seen_dropped_ids.contains(id.as_str()))
+            .unwrap_or(true)
+    });
+
     Report {
         lossless,
         lossy,
@@ -411,30 +431,33 @@ mod tests {
             "skills.user-invocable must appear in dropped"
         );
 
-        // The diagnostic with DiagLevel::Warn does get routed to lossy by the
-        // current build_report logic (from ir.diagnostics). This test documents
-        // the expected post-fix behavior: the lift() fix prevents the spurious
-        // Warn diagnostic from being emitted, so in the real pipeline this entry
-        // does NOT appear in lossy. The unit test for the report builder itself
-        // only tests the IRField routing (Dropped → dropped section).
-        //
-        // The integration test test_skill_c2x_dropped_warn_fields_not_in_lossy
-        // verifies the full pipeline produces zero lossy entries for dropped fields.
+        // Must NOT appear in lossy: build_report enforces that a dropped field
+        // is never also listed as lossy, even when a spurious DiagLevel::Warn
+        // diagnostic carrying the same id is present.
+        assert!(
+            !report
+                .lossy
+                .iter()
+                .any(|e| e.id.as_deref() == Some("skills.user-invocable")),
+            "skills.user-invocable must NOT appear in lossy when it is classified as Dropped"
+        );
+
+        // dropped must have exactly one entry for this id (no duplicates).
+        let count = report
+            .dropped
+            .iter()
+            .filter(|e| e.id.as_deref() == Some("skills.user-invocable"))
+            .count();
+        assert_eq!(
+            count, 1,
+            "skills.user-invocable must appear exactly once in dropped, found {} times",
+            count
+        );
     }
 
-    // gap 32/42: a dropped field must appear exactly once in report.dropped,
-    // regardless of any accompanying DiagLevel::Drop diagnostic pushed by lower().
-    //
-    // When the handler pushes an IRField with loss:Dropped AND a plan diagnostic
-    // with DiagLevel::Drop carrying the same id, build_report must not count the
-    // field twice.
-    //
-    // After the fix: lower() no longer pushes a DiagLevel::Drop for fields that
-    // are already represented by an IRField with loss:Dropped.  This test verifies
-    // that if both sources are present (e.g. from an unfixed handler), the two
-    // contributions still result in two separate entries (because build_report
-    // cannot deduplicate without knowing intent), but confirms that the IRField
-    // path produces exactly one entry on its own.
+    // A dropped field must appear exactly once in report.dropped regardless of
+    // whether a duplicate DiagLevel::Drop diagnostic with the same id is also
+    // present (defense-in-depth dedup inside build_report).
     #[test]
     fn test_build_report_dropped_field_once_from_ir_fields_only() {
         let mut node = new_node(Kind::Plugin, Tool::Claude, "/test/plugin.json");
@@ -467,6 +490,59 @@ mod tests {
             count, 1,
             "plugins.lspServers must appear exactly once in report.dropped when only \
              the IRField source is present; found {} times",
+            count
+        );
+
+        // Also not in lossy.
+        assert!(
+            !report
+                .lossy
+                .iter()
+                .any(|e| e.id.as_deref() == Some("plugins.lspServers")),
+            "plugins.lspServers must NOT appear in lossy"
+        );
+    }
+
+    // When BOTH an IRField{loss:Dropped} AND a DiagLevel::Drop diagnostic with
+    // the same id are present, build_report must deduplicate to exactly one entry.
+    #[test]
+    fn test_build_report_dropped_dedup_when_both_ir_field_and_diag_present() {
+        let mut node = new_node(Kind::Plugin, Tool::Claude, "/test/plugin.json");
+
+        node.fields.insert(
+            "plugins.lspServers".to_string(),
+            IRField {
+                id: "plugins.lspServers".to_string(),
+                value: serde_json::json!("./lsp.json"),
+                loss: Loss::Dropped,
+                transforms_applied: vec![],
+                degrade: None,
+                warning: None,
+                dropped: Some(DroppedInfo {
+                    reason: "lspServers has no Codex equivalent".to_string(),
+                }),
+            },
+        );
+
+        // Simulate a handler that also pushes a DiagLevel::Drop for the same id.
+        node.diagnostics.push(Diagnostic {
+            level: DiagLevel::Drop,
+            id: Some("plugins.lspServers".to_string()),
+            message: "plugins.lspServers: dropped (duplicate diag)".to_string(),
+        });
+
+        let plan = empty_plan();
+        let report = build_report(&node, &plan);
+
+        let count = report
+            .dropped
+            .iter()
+            .filter(|e| e.id.as_deref() == Some("plugins.lspServers"))
+            .count();
+        assert_eq!(
+            count, 1,
+            "plugins.lspServers must appear exactly once in report.dropped even when \
+             both IRField and DiagLevel::Drop sources are present; found {} times",
             count
         );
     }

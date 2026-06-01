@@ -33,7 +33,7 @@
 | Project instruction memory | `CLAUDE.md` | `AGENTS.md` (open standard) | ○ Same philosophy, different name |
 | Explicit override | (CLAUDE.md hierarchy priority) | `AGENTS.override.md` | △ Codex has dedicated file |
 | Slash commands (legacy) | `.claude/commands/*.md` | `~/.codex/prompts/*.md` (**deprecated**) | △ |
-| Lifecycle hooks | **Hooks** (enabled by default, 30+ events) | **Hooks** (`features.hooks=true` opt-in, 10 events) | ○ Claude is broader |
+| Lifecycle hooks | **Hooks** (enabled by default, 30+ events) | **Hooks** (enabled by default, 10 events; `features.hooks = false` to disable) | ○ Claude is broader |
 | MCP servers | `.mcp.json` (JSON) | `[mcp_servers.*]` (TOML) | ○ STDIO keys shared |
 | Subagents | **Agents** (`agents/*.md`) | `[agents.*]` (config.toml) + `agents/openai.yaml` | △ Different design |
 | Core settings | `settings.json` (JSON) | `config.toml` (TOML) | △ Format and granularity differ significantly |
@@ -50,7 +50,7 @@ Legend: ◎ Nearly lossless conversion / ○ Meaning preserved with format conve
 
 **Claude Code**
 
-```
+```text
 ~/.claude/skills/<name>/SKILL.md         # personal (all projects)
 .claude/skills/<name>/SKILL.md           # project
 <plugin-root>/skills/<name>/SKILL.md     # within plugin (namespace plugin:name)
@@ -96,7 +96,7 @@ Both sides share the same structure of YAML frontmatter + Markdown body in SKILL
 | `effort` | enum(low/medium/high/xhigh/max) | **`model_reasoning_effort` (subagent/profile)** | △ degrade (§2.6B) | `max` rounded to Codex maximum `xhigh` (Codex has no `max`) |
 | `context: fork` | enum(fork) | **standalone agent TOML + `spawn_agent`** | △ partial (§2.6B) | No auto-fork; requires explicit spawn; needs `features.multi_agent=true`; default `max_depth` is 1 |
 | `agent` | string (subagent type when forking) | **subagent name (agent TOML / `[agents.*]`)** | △ (§2.6B) | Maps to subagent |
-| `hooks` | object (skill-scoped hooks) | **Codex hooks (session/project scope)** | △ scope degrade (§2.6C) | Codex hooks are not limited to skill scope; requires `features.hooks=true` |
+| `hooks` | object (skill-scoped hooks) | **Codex hooks (session/project scope)** | △ scope degrade (§2.6C) | Codex hooks are not limited to skill scope; enabled by default (`features.hooks = false` to disable) |
 | `paths` | string/list (glob auto-trigger conditions) | **No equivalent** (AGENTS.md dirname hierarchy placement is the closest) | ✕ no equivalent (§2.6C) | File-operation-event-driven auto-trigger does not exist in Codex |
 | `shell` | enum(bash/powershell) | hooks `commandWindows` (Windows override) | △ partial (§2.6C) | Not a shell selection mechanism per se |
 | `${CLAUDE_SKILL_DIR}` etc. | — | Codex side has equivalent variables with different names | △ | Variable substitutions in body require mapping |
@@ -228,7 +228,7 @@ Codex has **2 lineages** of per-subagent configuration, both implemented (Issue 
 |---|---|---|---|
 | `paths` (glob auto-trigger) | **No equivalent**. Closest is AGENTS.md directory hierarchy scoping (place AGENTS.md in glob's dirname). `child_agents_md` is hierarchical guidance and is not a substitute | directory (cwd-dependent) | **Not possible** (not event-driven by file operations) |
 | `arguments` / `argument-hint` | Custom Prompts `$1`-`$9`/`$ARGUMENTS`/`argument-hint` (**deprecated**); no argument mechanism in skill body | prompt | **Form only / discard** |
-| `hooks` (skill scope) | Codex hooks (`features.hooks=true` opt-in, `[[hooks.*]]`). **Session/project scope; not limited to skill scope** | session/project | **Partial** (scope degrade; warning required) |
+| `hooks` (skill scope) | Codex hooks (enabled by default, `[[hooks.*]]`). **Session/project scope; not limited to skill scope** | session/project | **Partial** (scope degrade; warning required) |
 | `shell` (bash/powershell) | hooks `commandWindows` (Windows command override; not a shell selection mechanism) | hook handler | **Partial** |
 
 #### Summary of Scope Degrade
@@ -308,7 +308,7 @@ my-plugin/
 | `plugins[]` (required) | `plugins[]` (required) | ◎ |
 | `plugins[].name` | `plugins[].name` | ◎ |
 | `plugins[].source` (string / github / url / git-subdir / npm) | `plugins[].source` (`{source:"local"/"github"/..., path/repo}`) | ○ Source type format differs |
-| (not in Claude) | `plugins[].policy` (`installation: AVAILABLE`, `authentication: ON_INSTALL`) | — | Codex-specific |
+| (not in Claude) | `plugins[].policy` (`installation: AVAILABLE`, `authentication: ON_INSTALL`) | — (Codex-specific) |
 | `metadata.pluginRoot` / `version` / `description` | (similar) | ○ |
 | `allowCrossMarketplaceDependenciesOn` | (unconfirmed) | △ |
 | `plugins[]` `category`/`tags`/`strict`/`defaultEnabled` etc. | (partial only) | △ |
@@ -341,7 +341,7 @@ my-plugin/
 |---|---|---|
 | Shared | PreToolUse, PostToolUse, Stop, SessionStart, SubagentStart, SubagentStop, UserPromptSubmit, PreCompact, PostCompact, PermissionRequest | Supports the same 10 types |
 | Claude-specific | Setup, UserPromptExpansion, PermissionDenied, PostToolUseFailure, PostToolBatch, Notification, MessageDisplay, TaskCreated, TaskCompleted, StopFailure, TeammateIdle, InstructionsLoaded, ConfigChange, CwdChanged, FileChanged, WorktreeCreate/Remove, Elicitation(Result), SessionEnd (30+ total) | Absent |
-| Activation | Enabled by default | Opt-in via `features.hooks = true` |
+| Activation | Enabled by default | Enabled by default; set `features.hooks = false` to disable |
 | Format | JSON (`hooks.json`), matcher is string/regex | TOML (`[[hooks.<Event>]]`), matcher is regex, `command_windows` override |
 | Hook types | command / http / mcp_tool / prompt / agent | command (primary) |
 | Output control | Exit code 0/2/other, JSON `permissionDecision` etc. | `continue`, `permissionDecision`, `updatedInput`, `decision:block` etc. |
