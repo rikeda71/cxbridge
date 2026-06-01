@@ -3,6 +3,23 @@ use regex::Regex;
 
 use crate::core::transforms::ConvDir;
 
+/// The context in which a body is being scanned.
+///
+/// Codex injects `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PLUGIN_DATA}` as env-var
+/// aliases when executing plugin-sourced hook commands, so those two variables are
+/// lossless in that context. In a general skill body Codex provides no such
+/// injection, so they must still be flagged for removal.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BodyContext {
+    /// A regular skill/prompt body (default). All `${CLAUDE_*}` variables are
+    /// flagged as dropped — Codex provides no equivalents.
+    SkillBody,
+    /// A plugin-sourced hook command body. `${CLAUDE_PLUGIN_ROOT}` and
+    /// `${CLAUDE_PLUGIN_DATA}` are set by Codex and are therefore lossless; all
+    /// other `${CLAUDE_*}` variables are still flagged.
+    PluginHook,
+}
+
 /// The category of a pattern detected in skill/command/prompt body text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FindingKind {
@@ -78,22 +95,29 @@ static RE_INVOKE_SLASH: Lazy<Regex> = Lazy::new(|| Regex::new(r"/[\w-]+").unwrap
 /// Scans `body` for patterns that differ between Claude Code and Codex CLI syntaxes.
 /// Returns findings without modifying the input; callers apply rewrites via [`rewrite_body`].
 ///
+/// `context` controls how `${CLAUDE_PLUGIN_ROOT}` and `${CLAUDE_PLUGIN_DATA}` are treated:
+/// in `BodyContext::PluginHook` those two variables are lossless (Codex sets them); in
+/// `BodyContext::SkillBody` they are flagged as dropped like all other `${CLAUDE_*}` vars.
+///
 /// Detection actions per pattern in the `c2x` direction:
 ///
-/// | Pattern | Action |
-/// |---|---|
-/// | `$ARGUMENTS[N]` (N ≥ 1) | Rewrite → `$N+1` |
-/// | `$ARGUMENTS[0]` | Warn + propose `$1` (not auto-rewritten; `$0` is the shell script name) |
-/// | bare `$ARGUMENTS` | Warn (Codex only supports positional form in Custom Prompts) |
-/// | `$name` named arg | Warn (callers must switch to `KEY=value` invocation) |
-/// | `${CLAUDE_*}` env var | Drop (no Codex equivalent) |
-/// | `!`cmd`` inline injection | Warn (Codex treats it as a literal string) |
-/// | ` ```! ` block injection | Warn |
-/// | `/skill-name` slash call | Warn + propose `$skill-name` |
-/// | `/namespace:skill` | Drop (no namespace concept in Codex) |
+/// | Pattern | Context | Action |
+/// |---|---|---|
+/// | `$ARGUMENTS[N]` (N ≥ 1) | any | Rewrite → `$N+1` |
+/// | `$ARGUMENTS[0]` | any | Warn + propose `$1` (not auto-rewritten; `$0` is the shell script name) |
+/// | bare `$ARGUMENTS` | any | Warn (Codex only supports positional form in Custom Prompts) |
+/// | `$name` named arg | any | Warn (callers must switch to `KEY=value` invocation) |
+/// | `${CLAUDE_PLUGIN_ROOT}` or `${CLAUDE_PLUGIN_DATA}` | PluginHook | (no finding — lossless) |
+/// | `${CLAUDE_PLUGIN_ROOT}` or `${CLAUDE_PLUGIN_DATA}` | SkillBody | Drop |
+/// | other `${CLAUDE_*}` env var | any | Drop (no Codex equivalent) |
+/// | `!`cmd`` inline injection | any | Warn (Codex treats it as a literal string) |
+/// | ` ```! ` block injection | any | Warn |
+/// | `/skill-name` slash call | any | Warn + propose `$skill-name` |
+/// | `/namespace:skill` | any | Drop (no namespace concept in Codex) |
 ///
 /// In the `x2c` direction: `$$` → `$` (Rewrite); `$N` → `$ARGUMENTS[N-1]` (Rewrite).
-pub fn scan_body(body: &str, dir: ConvDir) -> Vec<BodyFinding> {
+/// The `context` parameter is unused in the `x2c` direction.
+pub fn scan_body(body: &str, dir: ConvDir, context: BodyContext) -> Vec<BodyFinding> {
     let mut findings = Vec::new();
 
     for (line_idx, line) in body.lines().enumerate() {
@@ -101,7 +125,7 @@ pub fn scan_body(body: &str, dir: ConvDir) -> Vec<BodyFinding> {
 
         match dir {
             ConvDir::C2x => {
-                scan_c2x_line(line, line_no, &mut findings);
+                scan_c2x_line(line, line_no, context, &mut findings);
             }
             ConvDir::X2c => {
                 scan_x2c_line(line, line_no, &mut findings);
@@ -112,7 +136,16 @@ pub fn scan_body(body: &str, dir: ConvDir) -> Vec<BodyFinding> {
     findings
 }
 
-fn scan_c2x_line(line: &str, line_no: usize, findings: &mut Vec<BodyFinding>) {
+/// Variables provided by Codex in plugin-hook command environments. References
+/// to these are lossless when the scan context is `BodyContext::PluginHook`.
+const PLUGIN_HOOK_VARS: &[&str] = &["${CLAUDE_PLUGIN_ROOT}", "${CLAUDE_PLUGIN_DATA}"];
+
+fn scan_c2x_line(
+    line: &str,
+    line_no: usize,
+    context: BodyContext,
+    findings: &mut Vec<BodyFinding>,
+) {
     // Namespaced calls must be collected first so their byte ranges can be
     // excluded when scanning for plain slash calls below.
     for cap in RE_INVOKE_NAMESPACED.find_iter(line) {
@@ -128,16 +161,19 @@ fn scan_c2x_line(line: &str, line_no: usize, findings: &mut Vec<BodyFinding>) {
     }
 
     for cap in RE_ENV_VAR.find_iter(line) {
+        let var = cap.as_str();
+        // In a plugin-hook context Codex sets CLAUDE_PLUGIN_ROOT and
+        // CLAUDE_PLUGIN_DATA, so those two are lossless there.
+        if context == BodyContext::PluginHook && PLUGIN_HOOK_VARS.contains(&var) {
+            continue;
+        }
         findings.push(BodyFinding {
             kind: FindingKind::EnvVar,
-            matched: cap.as_str().to_string(),
+            matched: var.to_string(),
             line: line_no,
             action: Action::Drop,
             rewrite: None,
-            note: format!(
-                "{} has no Codex equivalent and must be removed.",
-                cap.as_str()
-            ),
+            note: format!("{} has no Codex equivalent and must be removed.", var),
         });
     }
 
@@ -346,7 +382,7 @@ mod tests {
     #[test]
     fn test_scan_body_arg_indexed_c2x() {
         let body = "Use $ARGUMENTS[0] and $ARGUMENTS[1] here";
-        let findings = scan_body(body, ConvDir::C2x);
+        let findings = scan_body(body, ConvDir::C2x, BodyContext::SkillBody);
         let indexed: Vec<_> = findings
             .iter()
             .filter(|f| f.kind == FindingKind::ArgIndexed)
@@ -370,7 +406,7 @@ mod tests {
     #[test]
     fn test_scan_body_bare_arguments_c2x() {
         let body = "Pass $ARGUMENTS to the command";
-        let findings = scan_body(body, ConvDir::C2x);
+        let findings = scan_body(body, ConvDir::C2x, BodyContext::SkillBody);
         let bare: Vec<_> = findings
             .iter()
             .filter(|f| f.kind == FindingKind::ArgIndexed && f.matched == "$ARGUMENTS")
@@ -382,7 +418,7 @@ mod tests {
     #[test]
     fn test_scan_body_env_var_c2x() {
         let body = "Session: ${CLAUDE_SESSION_ID}";
-        let findings = scan_body(body, ConvDir::C2x);
+        let findings = scan_body(body, ConvDir::C2x, BodyContext::SkillBody);
         let env: Vec<_> = findings
             .iter()
             .filter(|f| f.kind == FindingKind::EnvVar)
@@ -394,7 +430,7 @@ mod tests {
     #[test]
     fn test_scan_body_dynamic_inline_c2x() {
         let body = "Run !`git diff` to see changes";
-        let findings = scan_body(body, ConvDir::C2x);
+        let findings = scan_body(body, ConvDir::C2x, BodyContext::SkillBody);
         let inline: Vec<_> = findings
             .iter()
             .filter(|f| f.kind == FindingKind::DynamicInline)
@@ -406,7 +442,7 @@ mod tests {
     #[test]
     fn test_scan_body_namespaced_c2x() {
         let body = "Call /claude:deploy to deploy";
-        let findings = scan_body(body, ConvDir::C2x);
+        let findings = scan_body(body, ConvDir::C2x, BodyContext::SkillBody);
         let ns: Vec<_> = findings
             .iter()
             .filter(|f| f.kind == FindingKind::InvokeNamespaced)
@@ -418,7 +454,7 @@ mod tests {
     #[test]
     fn test_scan_body_slash_c2x() {
         let body = "Use /deploy command";
-        let findings = scan_body(body, ConvDir::C2x);
+        let findings = scan_body(body, ConvDir::C2x, BodyContext::SkillBody);
         let slash: Vec<_> = findings
             .iter()
             .filter(|f| f.kind == FindingKind::InvokeSlash)
@@ -431,7 +467,7 @@ mod tests {
     #[test]
     fn test_scan_body_dollar_dollar_x2c() {
         let body = "Escaped $$ dollar sign";
-        let findings = scan_body(body, ConvDir::X2c);
+        let findings = scan_body(body, ConvDir::X2c, BodyContext::SkillBody);
         let dd: Vec<_> = findings.iter().filter(|f| f.matched == "$$").collect();
         assert_eq!(dd.len(), 1);
         assert_eq!(dd[0].action, Action::Rewrite);
@@ -441,7 +477,7 @@ mod tests {
     #[test]
     fn test_scan_body_positional_x2c() {
         let body = "Use $1 and $2 here";
-        let findings = scan_body(body, ConvDir::X2c);
+        let findings = scan_body(body, ConvDir::X2c, BodyContext::SkillBody);
         let pos: Vec<_> = findings
             .iter()
             .filter(|f| f.kind == FindingKind::ArgIndexed)
@@ -456,7 +492,7 @@ mod tests {
     #[test]
     fn test_rewrite_body() {
         let body = "Use $ARGUMENTS[1] here\n";
-        let findings = scan_body(body, ConvDir::C2x);
+        let findings = scan_body(body, ConvDir::C2x, BodyContext::SkillBody);
         let result = rewrite_body(body, &findings);
         assert!(result.contains("$2"), "Expected $2 in result: {}", result);
     }
@@ -464,7 +500,7 @@ mod tests {
     #[test]
     fn test_rewrite_body_no_rewrites() {
         let body = "No special patterns here\n";
-        let findings = scan_body(body, ConvDir::C2x);
+        let findings = scan_body(body, ConvDir::C2x, BodyContext::SkillBody);
         let result = rewrite_body(body, &findings);
         assert_eq!(result, body);
     }
@@ -472,12 +508,104 @@ mod tests {
     #[test]
     fn test_scan_body_line_numbers() {
         let body = "line 1\nRun $ARGUMENTS[1]\nline 3\n";
-        let findings = scan_body(body, ConvDir::C2x);
+        let findings = scan_body(body, ConvDir::C2x, BodyContext::SkillBody);
         let indexed: Vec<_> = findings
             .iter()
             .filter(|f| f.kind == FindingKind::ArgIndexed)
             .collect();
         assert!(!indexed.is_empty());
         assert_eq!(indexed[0].line, 2);
+    }
+
+    // ── BodyContext::PluginHook tests ─────────────────────────────────────────
+
+    /// ${CLAUDE_PLUGIN_ROOT} in PluginHook context must produce NO finding
+    /// (Codex sets this env var in plugin-hook commands → lossless).
+    #[test]
+    fn test_plugin_root_plugin_hook_context_no_finding() {
+        let body = "exec ${CLAUDE_PLUGIN_ROOT}/bin/tool";
+        let findings = scan_body(body, ConvDir::C2x, BodyContext::PluginHook);
+        let env: Vec<_> = findings
+            .iter()
+            .filter(|f| f.kind == FindingKind::EnvVar && f.matched == "${CLAUDE_PLUGIN_ROOT}")
+            .collect();
+        assert!(
+            env.is_empty(),
+            "${{CLAUDE_PLUGIN_ROOT}} must not be flagged in PluginHook context; got: {:?}",
+            env
+        );
+    }
+
+    /// ${CLAUDE_PLUGIN_DATA} in PluginHook context must produce NO finding.
+    #[test]
+    fn test_plugin_data_plugin_hook_context_no_finding() {
+        let body = "config=${CLAUDE_PLUGIN_DATA}/config.json";
+        let findings = scan_body(body, ConvDir::C2x, BodyContext::PluginHook);
+        let env: Vec<_> = findings
+            .iter()
+            .filter(|f| f.kind == FindingKind::EnvVar && f.matched == "${CLAUDE_PLUGIN_DATA}")
+            .collect();
+        assert!(
+            env.is_empty(),
+            "${{CLAUDE_PLUGIN_DATA}} must not be flagged in PluginHook context; got: {:?}",
+            env
+        );
+    }
+
+    /// ${CLAUDE_PLUGIN_ROOT} in SkillBody context must still yield a Drop finding.
+    #[test]
+    fn test_plugin_root_skill_body_context_is_dropped() {
+        let body = "exec ${CLAUDE_PLUGIN_ROOT}/bin/tool";
+        let findings = scan_body(body, ConvDir::C2x, BodyContext::SkillBody);
+        let env: Vec<_> = findings
+            .iter()
+            .filter(|f| f.kind == FindingKind::EnvVar && f.matched == "${CLAUDE_PLUGIN_ROOT}")
+            .collect();
+        assert_eq!(
+            env.len(),
+            1,
+            "${{CLAUDE_PLUGIN_ROOT}} must be flagged as dropped in SkillBody context"
+        );
+        assert_eq!(env[0].action, Action::Drop);
+    }
+
+    /// ${CLAUDE_SESSION_ID} must yield a Drop finding in BOTH contexts because
+    /// Codex does not provide it in any hook environment.
+    #[test]
+    fn test_session_id_dropped_in_both_contexts() {
+        let body = "id=${CLAUDE_SESSION_ID}";
+        for ctx in [BodyContext::SkillBody, BodyContext::PluginHook] {
+            let findings = scan_body(body, ConvDir::C2x, ctx);
+            let env: Vec<_> = findings
+                .iter()
+                .filter(|f| f.kind == FindingKind::EnvVar && f.matched == "${CLAUDE_SESSION_ID}")
+                .collect();
+            assert_eq!(
+                env.len(),
+                1,
+                "${{CLAUDE_SESSION_ID}} must be dropped in context {:?}",
+                ctx
+            );
+            assert_eq!(env[0].action, Action::Drop);
+        }
+    }
+
+    /// Mixed: a line with both ${CLAUDE_PLUGIN_ROOT} and ${CLAUDE_SESSION_ID} in
+    /// PluginHook context must flag only SESSION_ID, not PLUGIN_ROOT.
+    #[test]
+    fn test_plugin_hook_mixed_vars() {
+        let body = "exec ${CLAUDE_PLUGIN_ROOT}/bin/tool --session ${CLAUDE_SESSION_ID}";
+        let findings = scan_body(body, ConvDir::C2x, BodyContext::PluginHook);
+        let env: Vec<_> = findings
+            .iter()
+            .filter(|f| f.kind == FindingKind::EnvVar)
+            .collect();
+        assert_eq!(
+            env.len(),
+            1,
+            "Only SESSION_ID should be flagged; got: {:?}",
+            env.iter().map(|f| &f.matched).collect::<Vec<_>>()
+        );
+        assert_eq!(env[0].matched, "${CLAUDE_SESSION_ID}");
     }
 }

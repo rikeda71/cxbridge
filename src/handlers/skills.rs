@@ -14,7 +14,7 @@ use crate::core::transforms::{apply_transforms, ConvDir, TransformCtx};
 use crate::degrade::rules::degrade_allowed_tools;
 use crate::degrade::subagent::{decide_skill_target, degrade_to_subagent, SkillTarget};
 use crate::handlers::{EmitFile, EmitPlan, Handler, LowerOpts};
-use crate::scanner::body::{rewrite_body, scan_body};
+use crate::scanner::body::{rewrite_body, scan_body, BodyContext};
 
 /// Handler for the skills domain.
 pub struct SkillsHandler {
@@ -268,7 +268,7 @@ impl Handler for SkillsHandler {
 
         // Body scan
         let body_raw = parsed["body"].as_str().unwrap_or("").to_string();
-        let findings = scan_body(&body_raw, dir);
+        let findings = scan_body(&body_raw, dir, BodyContext::SkillBody);
         node.body = Some(BodySegment {
             raw: body_raw,
             findings,

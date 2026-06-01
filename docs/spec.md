@@ -788,24 +788,32 @@ pub enum FindingKind {
 }
 
 pub enum Action { Rewrite, Warn, Drop }
+
+/// Controls context-sensitive env-var handling (see Detection Table below).
+pub enum BodyContext {
+    SkillBody,   // default: all ${CLAUDE_*} variables are dropped
+    PluginHook,  // ${CLAUDE_PLUGIN_ROOT} and ${CLAUDE_PLUGIN_DATA} are lossless
+}
 ```
 
 ### Detection Table (c2x direction)
 
-| Pattern (regex sketch) | Kind | Action | Notes |
-|---|---|---|---|
-| `\$ARGUMENTS\[(\d+)\]` | ArgIndexed | **Rewrite** (index+1) | `$ARGUMENTS[0]` → `$1`. Exception: `[0]` is warn+propose only (conflicts with `$0` = shell script name). |
-| `\$(\d+)` (positional) | ArgIndexed | **Rewrite** (index+1) | Same index-shift rule |
-| `\$ARGUMENTS(?!\[)` (bare, c2x only) | ArgIndexed | **Warn** | Bare `$ARGUMENTS` without `[N]` — Codex supports this only in Custom Prompts, not in Skill bodies. Do not rewrite. |
-| `\$\$` (x2c only) | — | Rewrite → `$` | Codex Custom Prompts escape |
-| `\$([a-z][a-z0-9_]*)` | ArgNamed | Warn | Invocation syntax changes to `KEY=value` in Codex |
-| `\$\{CLAUDE_[A-Z_]+\}` | EnvVar | **Drop** | No Codex equivalent; literal residue causes misoperation |
-| `` (^|\s)!`[^`]+` `` | DynamicInline | Warn | Codex issue #5019: "not planned". Literal residue is high-risk misoperation. |
-| ` ```! ` | DynamicBlock | Warn | Same |
-| `/[\w-]+` (in body prose) | InvokeSlash | Warn → propose `$name` | False-positive risk; detection+proposal only |
-| `/[\w-]+:[\w-]+` | InvokeNamespaced | Drop | No namespace concept in Codex |
+| Pattern (regex sketch) | Context | Kind | Action | Notes |
+|---|---|---|---|---|
+| `\$ARGUMENTS\[(\d+)\]` | any | ArgIndexed | **Rewrite** (index+1) | `$ARGUMENTS[0]` → `$1`. Exception: `[0]` is warn+propose only (conflicts with `$0` = shell script name). |
+| `\$(\d+)` (positional) | any | ArgIndexed | **Rewrite** (index+1) | Same index-shift rule |
+| `\$ARGUMENTS(?!\[)` (bare, c2x only) | any | ArgIndexed | **Warn** | Bare `$ARGUMENTS` without `[N]` — Codex supports this only in Custom Prompts, not in Skill bodies. Do not rewrite. |
+| `\$\$` (x2c only) | any | — | Rewrite → `$` | Codex Custom Prompts escape |
+| `\$([a-z][a-z0-9_]*)` | any | ArgNamed | Warn | Invocation syntax changes to `KEY=value` in Codex |
+| `${CLAUDE_PLUGIN_ROOT}` or `${CLAUDE_PLUGIN_DATA}` | PluginHook | EnvVar | *(no finding)* | Codex injects these in plugin-sourced hook commands → lossless in that context |
+| `${CLAUDE_PLUGIN_ROOT}` or `${CLAUDE_PLUGIN_DATA}` | SkillBody | EnvVar | **Drop** | Not injected in skill bodies |
+| other `\$\{CLAUDE_[A-Z_]+\}` | any | EnvVar | **Drop** | No Codex equivalent; literal residue causes misoperation |
+| `` (^|\s)!`[^`]+` `` | any | DynamicInline | Warn | Codex issue #5019: "not planned". Literal residue is high-risk misoperation. |
+| ` ```! ` | any | DynamicBlock | Warn | Same |
+| `/[\w-]+` (in body prose) | any | InvokeSlash | Warn → propose `$name` | False-positive risk; detection+proposal only |
+| `/[\w-]+:[\w-]+` | any | InvokeNamespaced | Drop | No namespace concept in Codex |
 
-**`scan_body(body, dir)` is detection-only.** When `opts.rewrite_body == true`, the handler's lower additionally calls `rewrite_body(raw, findings)` which applies only `Action::Rewrite` findings and returns the rewritten string. The default (rewrite_body=false) emits `Warn` diagnostics only; the original body is emitted unchanged.
+**`scan_body(body, dir, context)` is detection-only.** When `opts.rewrite_body == true`, the handler's lower additionally calls `rewrite_body(raw, findings)` which applies only `Action::Rewrite` findings and returns the rewritten string. The default (rewrite_body=false) emits `Warn` diagnostics only; the original body is emitted unchanged. Skill-body scans always pass `BodyContext::SkillBody`; plugin-hook-command scans pass `BodyContext::PluginHook`.
 
 **False-positive mitigation:** `\$([a-z][a-z0-9_]*)` may match shell script variables (`$HOME`, `$PATH`). Code blocks should be excluded or flagged for manual review.
 
