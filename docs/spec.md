@@ -436,17 +436,19 @@ Model names are not automatically inferred from ID strings. Instead, models are 
 pub enum Tier { High, Mid, Low }
 
 // Claude: opus → High, sonnet → Mid, haiku → Low
-// Codex: -high/-xhigh suffix → High, -mini suffix → Low, other → Mid
+// Codex: explicit lookup against CODEX_LATEST first (roundtrip invariant);
+//        fallback heuristic for unknown names: "mini" in name → Low, else Mid.
+//        No suffix-based rule (-high/-xhigh) — current Codex models do not use such suffixes.
 
 const CODEX_LATEST: &[(Tier, &str)] = &[
-    (Tier::High, "gpt-5.x-high"),   // update at CLI release
-    (Tier::Mid,  "gpt-5.x"),
-    (Tier::Low,  "gpt-5.x-mini"),
+    (Tier::High, "gpt-5.5"),      // current frontier flagship; update at Codex release
+    (Tier::Mid,  "gpt-5.4"),      // balanced default
+    (Tier::Low,  "gpt-5.4-mini"), // fast/lightweight
 ];
 const CLAUDE_LATEST: &[(Tier, &str)] = &[
-    (Tier::High, "claude-opus-latest"),
-    (Tier::Mid,  "claude-sonnet-latest"),
-    (Tier::Low,  "claude-haiku-latest"),
+    (Tier::High, "claude-opus-4-8"),
+    (Tier::Mid,  "claude-sonnet-4-6"),
+    (Tier::Low,  "claude-haiku-4-5"),
 ];
 ```
 
