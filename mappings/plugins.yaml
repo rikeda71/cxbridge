@@ -296,20 +296,21 @@ entries:
       type: "string|array"
       scope: plugin
     codex:
-      field: null
-      type: null
-      scope: null
-    direction: claude_to_codex
-    loss: lossy
+      field: "commands"
+      type: "string"
+      scope: plugin
+    direction: both
+    loss: lossless
     degrade: null
-    transform: null
-    warn: true
+    transform: "path:remap"
+    warn: false
     notes: >
-      Claude's flat `.md` command files (`commands/`) have no equivalent concept in Codex.
-      Porting to a `skills/` directory (with added SKILL.md wrappers) is the closest
-      approximation, but directory-structure conversion is required.
-      Must be noted in the conversion report.
-    source: "https://code.claude.com/docs/en/plugins-reference"
+      Both Claude and Codex auto-discover a `commands/` directory at the plugin root and treat
+      flat `.md` files identically — no SKILL.md wrapper is required.
+      Conversion is a straight path-remap between `.claude-plugin/commands/` and
+      `.codex-plugin/commands/`. Minor frontmatter differences (if any) are handled by the
+      skills domain rules applied to each file; no wrapper generation is needed.
+    source: "https://developers.openai.com/codex/plugins/build"
 
   - id: plugins.agents
     claude:
@@ -317,20 +318,21 @@ entries:
       type: "string|array"
       scope: plugin
     codex:
-      field: null
-      type: null
-      scope: null
-    direction: claude_to_codex
+      field: "agents"
+      type: "string"
+      scope: plugin
+    direction: both
     loss: lossy
     degrade: null
-    transform: null
+    transform: "path:remap"
     warn: true
     notes: >
-      Codex also has an agents directory, but its frontmatter schema is converted according
-      to the correspondence table defined in the skills domain. At the plugin manifest level,
-      a direct counterpart key for the `agents` path field has not been confirmed in Codex
-      (needs verification).
-    source: "https://code.claude.com/docs/en/plugins-reference"
+      Confirmed: Codex plugins auto-discover an `agents/` directory at the plugin root
+      (no `agents` manifest field required; official plugins such as figma/vercel/zoom ship
+      agent `.md` files this way). The agent `.md` files share the same name+description+body
+      shape on both sides. Per-file frontmatter fields are converted via the subagents domain
+      mapping rules, which are themselves lossy — hence this entry remains lossy.
+    source: "https://developers.openai.com/codex/plugins/build"
 
   - id: plugins.apps
     claude:
@@ -838,13 +840,15 @@ entries:
     notes: >
       Claude source type → Codex source type mapping:
         relative path (string) → `{source:"local",path:"..."}`
-        `github` → `github` (fields are largely compatible but `sha` vs `commit` needs verification)
+        `github` → no direct Codex equivalent; approximate with `git-subdir` or `url`
+                   (Codex `marketplace.json` supports only `local`, `url`, and `git-subdir` —
+                   there is no `github` shorthand source type)
         `url` → `url`
         `git-subdir` → `git-subdir`
         `npm` → no Codex equivalent (dropped + warn)
       Codex → Claude:
         `local` → relative path (string)
-        others are largely mappable
+        `url` / `git-subdir` → approximate with the closest Claude source type
       The sha field: Claude uses `sha`, Codex uses `commit` or `sha` (verify at implementation time).
     source: "https://github.com/openai/plugins"
 
