@@ -8,12 +8,12 @@ files:
   codex:
     - ".codex-plugin/plugin.json"
     - ".agents/plugins/marketplace.json"
-    - ".claude-plugin/marketplace.json"  # Codex が互換読み込みする Claude 側パス
+    - ".claude-plugin/marketplace.json"  # Path on the Claude side that Codex reads for compatibility
 format:
   claude: [json]
   codex: [json]
 entries:
-  # ─── マニフェスト配置 ───────────────────────────────────────────────────
+  # ─── Manifest placement ────────────────────────────────────────────────────
   - id: plugins.manifest-path
     claude:
       field: ".claude-plugin/plugin.json"
@@ -29,17 +29,17 @@ entries:
     transform: "path:remap"
     warn: false
     notes: >
-      マニフェストディレクトリは `.claude-plugin/` ⇔ `.codex-plugin/`。
-      ファイル名 `plugin.json` は共通。
-      両対応プラグインは `.claude-plugin/plugin.json`（Claude 用）と
-      `.codex-plugin/plugin.json`（Codex 用）を別々に持つデュアルマニフェスト戦略が必要。
-      `openai/codex-plugin-cc` は Claude Code 専用プラグイン（`.claude-plugin/plugin.json` のみ）で
-      ハイブリッドの実例ではない。
-      Codex は `.claude-plugin/marketplace.json` を "legacy-compatible marketplace" として
-      カタログ発見に使用するが、これはマニフェスト（`plugin.json`）の互換読み込みではない。
+      Manifest directories are `.claude-plugin/` ↔ `.codex-plugin/`.
+      The filename `plugin.json` is shared between both.
+      Plugins that support both sides need a dual-manifest strategy: a separate
+      `.claude-plugin/plugin.json` (for Claude) and `.codex-plugin/plugin.json` (for Codex).
+      `openai/codex-plugin-cc` is a Claude Code-only plugin (with only `.claude-plugin/plugin.json`)
+      and is not an example of a hybrid dual-manifest plugin.
+      Codex reads `.claude-plugin/marketplace.json` as a "legacy-compatible marketplace" for
+      catalog discovery, but this is not compatibility loading of the manifest (`plugin.json`) itself.
     source: "https://code.claude.com/docs/en/plugins-reference"
 
-  # ─── plugin.json 必須フィールド ─────────────────────────────────────────
+  # ─── plugin.json required fields ───────────────────────────────────────────
   - id: plugins.name
     claude:
       field: "name"
@@ -55,8 +55,8 @@ entries:
     transform: null
     warn: false
     notes: >
-      両者で必須。Claude は kebab-case を推奨（コンポーネント名前空間として使用）。
-      Codex は kebab-case ≤64 文字が必須。
+      Required by both sides. Claude recommends kebab-case (used as the component namespace).
+      Codex requires kebab-case of ≤64 characters.
     source: "https://www.schemastore.org/claude-code-plugin-manifest.json"
 
   - id: plugins.version
@@ -74,9 +74,9 @@ entries:
     transform: null
     warn: true
     notes: >
-      Claude は任意（省略時 git SHA）。Codex は strict semver 必須。
-      Claude→Codex 変換で `version` が省略されている場合は semver 形式の補完が必要
-      （例: `"0.0.0"` や git SHA からの導出）。変換レポートに明記すること。
+      Claude: optional (defaults to git SHA if omitted). Codex: strict semver required.
+      When converting Claude→Codex and `version` is absent, semver completion is needed
+      (e.g. supply `"0.0.0"` or derive from git SHA). Must be noted in the conversion report.
     source: "https://developers.openai.com/codex/plugins/build"
 
   - id: plugins.description
@@ -94,11 +94,11 @@ entries:
     transform: null
     warn: false
     notes: >
-      Claude は任意、Codex は必須。内容はそのまま転写可能（lossless）。
-      Claude→Codex で省略されている場合は空文字列または `name` からの補完が必要。
+      Claude: optional. Codex: required. The content can be copied verbatim (lossless).
+      When converting Claude→Codex and the field is absent, supply an empty string or derive from `name`.
     source: "https://www.schemastore.org/claude-code-plugin-manifest.json"
 
-  # ─── plugin.json 共通メタデータ ─────────────────────────────────────────
+  # ─── plugin.json common metadata ───────────────────────────────────────────
   - id: plugins.author
     claude:
       field: "author"
@@ -113,7 +113,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "両者のスキーマが同一（name 必須、email/url 任意）。lossless。"
+    notes: "Both sides share the same schema (name required, email/url optional). Lossless."
     source: "https://www.schemastore.org/claude-code-plugin-manifest.json"
 
   - id: plugins.homepage
@@ -164,7 +164,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "SPDX 識別子。lossless。"
+    notes: "SPDX identifier. Lossless."
     source: null
 
   - id: plugins.keywords
@@ -184,7 +184,7 @@ entries:
     notes: null
     source: null
 
-  # ─── displayName (rename 変換) ───────────────────────────────────────────
+  # ─── displayName (rename transform) ────────────────────────────────────────
   - id: plugins.display-name
     claude:
       field: "displayName"
@@ -200,8 +200,8 @@ entries:
     transform: "rename"
     warn: false
     notes: >
-      Claude `displayName` ⇔ Codex `interface.displayName`。
-      キー名の rename のみ。Claude 側は v2.1.143+ 必須。
+      Claude `displayName` ↔ Codex `interface.displayName`.
+      Key rename only. Requires Claude v2.1.143+.
     source: "https://code.claude.com/docs/en/plugins-reference"
 
   - id: plugins.short-description
@@ -219,13 +219,13 @@ entries:
     transform: null
     warn: true
     notes: >
-      Claude の `description` と Codex の `interface.shortDescription` は意味的に近い。
-      Claude→Codex: `description` を `interface.shortDescription` にもコピー（重複してもよい）。
-      Codex→Claude: `interface.shortDescription` があれば `description` への転用で近似。
-      完全な 1:1 対応ではないため lossy。
+      Claude's `description` and Codex's `interface.shortDescription` are semantically close.
+      Claude→Codex: also copy `description` into `interface.shortDescription` (duplication is acceptable).
+      Codex→Claude: if `interface.shortDescription` is present, repurpose it as `description` for an approximation.
+      Not a strict 1:1 mapping, hence lossy.
     source: "https://github.com/openai/plugins"
 
-  # ─── コンポーネントパス ──────────────────────────────────────────────────
+  # ─── Component paths ────────────────────────────────────────────────────────
   - id: plugins.skills
     claude:
       field: "skills"
@@ -241,9 +241,9 @@ entries:
     transform: "path:remap"
     warn: false
     notes: >
-      デフォルト `./skills/` は両者共通。Claude は複数パス（array）を許可し
-      デフォルトに追加する動作だが、Codex は単一パスのみ。
-      array 指定時は最初のパスを使用し warn。
+      The default `./skills/` directory is shared by both sides. Claude allows multiple paths
+      (array) which are appended to the default, but Codex accepts only a single path.
+      When an array is provided, use the first path and emit a warning.
     source: "https://code.claude.com/docs/en/plugins-reference"
 
   - id: plugins.mcpServers
@@ -261,10 +261,12 @@ entries:
     transform: "path:remap"
     warn: true
     notes: >
-      Claude はインラインオブジェクト・複数パス・単一パスの 3 形式を許可。
-      Codex は `.mcp.json` への単一パスのみ。
-      インライン指定の場合は `.mcp.json` として書き出して参照に変換が必要。
-      MCP サーバー設定の内容（command/args/env）は両者とも同形式で lossless。
+      Claude allows three forms: inline object, multiple paths, or a single path.
+      Codex accepts only a single path to a `.mcp.json` file.
+      When the value is an inline object, it must be written out as `.mcp.json` and replaced
+      with a reference path.
+      The MCP server configuration content (command/args/env) has the same shape on both sides
+      and is lossless.
     source: "https://developers.openai.com/codex/plugins/build"
 
   - id: plugins.hooks
@@ -282,9 +284,10 @@ entries:
     transform: "path:remap"
     warn: true
     notes: >
-      フック設定ファイルのパス付け替え。
-      イベント名・フックタイプのマッピングはスキル領域と同様の変換ルールを適用。
-      Claude はインラインオブジェクト形式も許可するため、Codex 向けにはファイルへの書き出しが必要な場合がある。
+      Path remapping for hook configuration files.
+      Event name and hook-type mapping follows the same conversion rules as the skills domain.
+      Claude also allows an inline object form, which may need to be written out to a file
+      before referencing from Codex.
     source: "https://code.claude.com/docs/en/plugins-reference"
 
   - id: plugins.commands
@@ -302,9 +305,10 @@ entries:
     transform: null
     warn: true
     notes: >
-      Claude のフラット `.md` コマンドファイル（`commands/`）は Codex に概念がない。
-      `skills/` ディレクトリへの移植（SKILL.md ラッパー追加）で近似可能だが
-      ディレクトリ構造の変換が必要。変換レポートに明記すること。
+      Claude's flat `.md` command files (`commands/`) have no equivalent concept in Codex.
+      Porting to a `skills/` directory (with added SKILL.md wrappers) is the closest
+      approximation, but directory-structure conversion is required.
+      Must be noted in the conversion report.
     source: "https://code.claude.com/docs/en/plugins-reference"
 
   - id: plugins.agents
@@ -322,9 +326,10 @@ entries:
     transform: null
     warn: true
     notes: >
-      Codex にもエージェントディレクトリは存在するが、frontmatter スキーマが
-      スキル領域で定義した対応表に従って変換される。プラグイン manifest レベルの
-      `agents` パスフィールドは Codex には直接対応するキーが確認されていない（要検証）。
+      Codex also has an agents directory, but its frontmatter schema is converted according
+      to the correspondence table defined in the skills domain. At the plugin manifest level,
+      a direct counterpart key for the `agents` path field has not been confirmed in Codex
+      (needs verification).
     source: "https://code.claude.com/docs/en/plugins-reference"
 
   - id: plugins.apps
@@ -342,13 +347,14 @@ entries:
     transform: null
     warn: true
     notes: >
-      Codex の `apps` フィールドは `.app.json` コネクタ設定へのパス。
-      `.app.json` は OAuth コネクタ（connector_*）または Agent SDK アプリ（asdk_app_*）の ID を宣言。
-      Claude の `channels` と概念が近いが、スキーマが根本的に異なり直接変換不可。
-      Codex→Claude 変換時は dropped + warn。
+      Codex's `apps` field is a path to a `.app.json` connector configuration.
+      `.app.json` declares IDs for OAuth connectors (connector_*) or Agent SDK apps (asdk_app_*).
+      Conceptually close to Claude's `channels`, but the schemas differ fundamentally and direct
+      conversion is not possible.
+      Codex→Claude conversion: dropped + warn.
     source: "https://github.com/openai/plugins"
 
-  # ─── Claude 固有フィールド（Codex に無い → dropped）────────────────────
+  # ─── Claude-only fields (no Codex equivalent → dropped) ────────────────────
   - id: plugins.lspServers
     claude:
       field: "lspServers"
@@ -364,8 +370,8 @@ entries:
     transform: null
     warn: true
     notes: >
-      Codex に LSP (Language Server Protocol) サポートなし。
-      Claude→Codex で完全に破棄。変換レポートに列挙すること。
+      Codex has no LSP (Language Server Protocol) support.
+      Completely dropped on Claude→Codex conversion. Must be listed in the conversion report.
     source: "https://code.claude.com/docs/en/plugins-reference"
 
   - id: plugins.outputStyles
@@ -382,7 +388,7 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Codex に出力スタイル機能なし。dropped。"
+    notes: "Codex has no output-style feature. Dropped."
     source: "https://code.claude.com/docs/en/plugins-reference"
 
   - id: plugins.experimental.themes
@@ -399,7 +405,7 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Codex にカラーテーマ機能なし。dropped。"
+    notes: "Codex has no color-theme feature. Dropped."
     source: "https://code.claude.com/docs/en/plugins-reference"
 
   - id: plugins.experimental.monitors
@@ -416,7 +422,7 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Codex にバックグラウンドモニター機能なし。dropped。"
+    notes: "Codex has no background-monitor feature. Dropped."
     source: "https://code.claude.com/docs/en/plugins-reference"
 
   - id: plugins.userConfig
@@ -434,10 +440,10 @@ entries:
     transform: null
     warn: true
     notes: >
-      Codex にユーザー設定プロンプト機能なし。
-      `${user_config.KEY}` 変数参照を含む MCP/LSP/フック設定は
-      変換後に未解決変数として残るため、追加の warn が必要。
-      `CLAUDE_PLUGIN_OPTION_<KEY>` 環境変数エクスポートも Codex では機能しない。
+      Codex has no user-configuration prompt feature.
+      MCP/LSP/hook configurations that contain `${user_config.KEY}` variable references
+      will have unresolved variables after conversion, requiring additional warnings.
+      `CLAUDE_PLUGIN_OPTION_<KEY>` environment variable exports also do not function in Codex.
     source: "https://code.claude.com/docs/en/plugins-reference"
 
   - id: plugins.channels
@@ -455,9 +461,9 @@ entries:
     transform: null
     warn: true
     notes: >
-      Claude の channels は MCP サーバーを会話注入チャネルとしてバインドする機能。
-      Codex の `.app.json` （OAuth/Agent SDK コネクタ）と概念は近いが
-      スキーマが根本的に異なり変換不可。dropped + warn。
+      Claude's `channels` feature binds MCP servers as conversation-injection channels.
+      Conceptually close to Codex's `.app.json` (OAuth/Agent SDK connectors), but the schemas
+      differ fundamentally and conversion is not possible. Dropped + warn.
     source: "https://code.claude.com/docs/en/plugins-reference"
 
   - id: plugins.settings
@@ -475,9 +481,9 @@ entries:
     transform: null
     warn: true
     notes: >
-      Claude の `settings` はプラグイン有効時にユーザー設定にマージされる値。
-      現状は `agent` と `subagentStatusLine` キーのみ対応。
-      Codex にプラグインレベルの設定マージ機能なし。dropped。
+      Claude's `settings` are values merged into user settings when the plugin is enabled.
+      Currently only the `agent` and `subagentStatusLine` keys are supported.
+      Codex has no plugin-level settings-merge feature. Dropped.
     source: "https://code.claude.com/docs/en/plugins-reference"
 
   - id: plugins.defaultEnabled
@@ -495,10 +501,10 @@ entries:
     transform: null
     warn: true
     notes: >
-      Codex の marketplace entry の `policy.installation: INSTALLED_BY_DEFAULT` で
-      「インストール時に有効」の近似が可能だが、プラグイン単体 manifest レベルでの
-      `defaultEnabled: false` に対応する Codex 機能はない。lossy + warn。
-      Claude v2.1.154+ 必須フィールド。
+      A rough approximation of "enabled on install" is possible via `policy.installation: INSTALLED_BY_DEFAULT`
+      in a Codex marketplace entry, but there is no Codex feature at the individual plugin manifest level
+      that corresponds to `defaultEnabled: false`. Lossy + warn.
+      Required field as of Claude v2.1.154+.
     source: "https://code.claude.com/docs/en/plugins-reference"
 
   - id: plugins.dependencies
@@ -516,11 +522,11 @@ entries:
     transform: null
     warn: true
     notes: >
-      Codex にプラグイン依存解決機能なし。
-      依存先プラグインの手動インストールが必要になる旨を変換レポートに明記すること。
+      Codex has no plugin dependency-resolution feature.
+      The conversion report must note that dependent plugins will need to be installed manually.
     source: "https://code.claude.com/docs/en/plugins-reference"
 
-  # ─── Codex 固有 interface フィールド（Claude に無い → dropped）────────
+  # ─── Codex-only interface fields (no Claude equivalent → dropped) ───────────
   - id: plugins.interface.brandColor
     claude:
       field: null
@@ -535,7 +541,7 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Claude にブランドカラー概念なし。Codex→Claude で dropped。"
+    notes: "Claude has no brand-color concept. Dropped on Codex→Claude conversion."
     source: "https://github.com/openai/plugins"
 
   - id: plugins.interface.composerIcon
@@ -552,7 +558,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "Codex→Claude で dropped。"
+    notes: "Dropped on Codex→Claude conversion."
     source: "https://github.com/openai/plugins"
 
   - id: plugins.interface.logo
@@ -569,7 +575,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "Codex→Claude で dropped。"
+    notes: "Dropped on Codex→Claude conversion."
     source: "https://github.com/openai/plugins"
 
   - id: plugins.interface.capabilities
@@ -587,8 +593,8 @@ entries:
     transform: null
     warn: false
     notes: >
-      `Interactive` / `Read` / `Write` の能力宣言。Claude に受け皿なし。
-      Codex→Claude で dropped。
+      Capability declarations for `Interactive` / `Read` / `Write`. Claude has no counterpart.
+      Dropped on Codex→Claude conversion.
     source: "https://github.com/openai/plugins"
 
   - id: plugins.interface.screenshots
@@ -605,7 +611,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "Codex→Claude で dropped。"
+    notes: "Dropped on Codex→Claude conversion."
     source: "https://github.com/openai/plugins"
 
   - id: plugins.interface.websiteURL
@@ -623,9 +629,9 @@ entries:
     transform: "rename"
     warn: true
     notes: >
-      Codex→Claude: `interface.websiteURL` → `homepage` への近似変換。
-      Claude に既存の `homepage` がある場合は重複 warn。
-      Claude→Codex: `homepage` を `interface.websiteURL` にもコピーする near-lossless 変換が可能。
+      Codex→Claude: approximate conversion of `interface.websiteURL` → `homepage`.
+      Emit a duplicate warning if Claude already has a `homepage` value.
+      Claude→Codex: a near-lossless conversion is possible by also copying `homepage` to `interface.websiteURL`.
     source: "https://github.com/openai/plugins"
 
   - id: plugins.interface.privacyPolicyURL
@@ -642,7 +648,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "Claude に受け皿なし。Codex→Claude で dropped。"
+    notes: "No counterpart in Claude. Dropped on Codex→Claude conversion."
     source: "https://github.com/openai/plugins"
 
   - id: plugins.interface.termsOfServiceURL
@@ -659,7 +665,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "Claude に受け皿なし。Codex→Claude で dropped。"
+    notes: "No counterpart in Claude. Dropped on Codex→Claude conversion."
     source: "https://github.com/openai/plugins"
 
   - id: plugins.interface.defaultPrompt
@@ -677,9 +683,9 @@ entries:
     transform: null
     warn: false
     notes: >
-      Codex→Claude: スキル本文への注記追加で近似可能（lossy）。
-      array の場合は最大 3 件、各 128 文字制限。
-      Claude→Codex: 直接対応フィールドなし（dropped）。
+      Codex→Claude: can be approximated by appending a note to the skill body (lossy).
+      When an array, at most 3 items, each up to 128 characters.
+      Claude→Codex: no direct counterpart field (dropped).
     source: "https://github.com/openai/plugins"
 
   - id: plugins.interface.developerName
@@ -697,8 +703,8 @@ entries:
     transform: null
     warn: false
     notes: >
-      Codex→Claude: `author.name` への近似変換が可能（lossy）。
-      Claude→Codex: `author.name` から `interface.developerName` へのコピー。
+      Codex→Claude: approximate conversion to `author.name` is possible (lossy).
+      Claude→Codex: copy `author.name` to `interface.developerName`.
     source: "https://github.com/openai/plugins"
 
   - id: plugins.interface.category
@@ -716,8 +722,8 @@ entries:
     transform: null
     warn: false
     notes: >
-      Codex→Claude: `keywords` 配列への追加で近似可能（lossy）。
-      Claude→Codex: `keywords` から推定変換は難しい。
+      Codex→Claude: can be approximated by appending to the `keywords` array (lossy).
+      Claude→Codex: inferring a category from `keywords` is difficult.
     source: "https://github.com/openai/plugins"
 
   - id: plugins.interface.longDescription
@@ -735,11 +741,11 @@ entries:
     transform: null
     warn: false
     notes: >
-      Codex→Claude: `interface.longDescription` を `description` に転用（lossy）。
-      Claude→Codex: `description` を `interface.longDescription` にもコピーする近似。
+      Codex→Claude: repurpose `interface.longDescription` as `description` (lossy).
+      Claude→Codex: approximate by also copying `description` to `interface.longDescription`.
     source: "https://github.com/openai/plugins"
 
-  # ─── marketplace.json ────────────────────────────────────────────────────
+  # ─── marketplace.json ────────────────────────────────────────────────────────
   - id: plugins.marketplace.path
     claude:
       field: ".claude-plugin/marketplace.json"
@@ -755,10 +761,11 @@ entries:
     transform: "path:remap"
     warn: false
     notes: >
-      Codex は `.agents/plugins/marketplace.json` をネイティブパスとして使用するが、
-      `.claude-plugin/marketplace.json` も互換読み込みするため、
-      Claude 向けマーケットプレイス構造をそのまま Codex で利用できる可能性が高い。
-      ただし `source` スキーマの正規化（Claude `relative` → Codex `local` 等）は必要。
+      Codex uses `.agents/plugins/marketplace.json` as its native path, but also reads
+      `.claude-plugin/marketplace.json` for compatibility, so a Claude marketplace structure
+      is likely usable in Codex as-is.
+      However, normalization of the `source` schema
+      (e.g. Claude `relative` → Codex `local`) is still required.
     source: "https://github.com/openai/plugins"
 
   - id: plugins.marketplace.name
@@ -775,7 +782,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "両者必須。lossless。"
+    notes: "Required by both sides. Lossless."
     source: null
 
   - id: plugins.marketplace.owner
@@ -792,7 +799,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "Codex marketplace に `owner` フィールドなし。Claude→Codex で dropped。"
+    notes: "Codex marketplace has no `owner` field. Dropped on Claude→Codex conversion."
     source: "https://www.schemastore.org/claude-code-marketplace.json"
 
   - id: plugins.marketplace.interface.displayName
@@ -810,8 +817,8 @@ entries:
     transform: null
     warn: false
     notes: >
-      Codex→Claude: Claude の `name` または `description` フィールドへの近似。
-      Claude marketplace に `interface.displayName` に相当するフィールドはない。
+      Codex→Claude: approximate conversion to Claude's `name` or `description` field.
+      Claude marketplace has no field equivalent to `interface.displayName`.
     source: "https://github.com/openai/plugins"
 
   - id: plugins.marketplace.plugins.source
@@ -829,16 +836,16 @@ entries:
     transform: "path:remap"
     warn: true
     notes: >
-      Claude source タイプ → Codex source タイプのマッピング:
-        相対パス（string） → `{source:"local",path:"..."}`
-        `github` → `github`（フィールド名は概ね互換だが `sha` vs `commit` 要確認）
+      Claude source type → Codex source type mapping:
+        relative path (string) → `{source:"local",path:"..."}`
+        `github` → `github` (fields are largely compatible but `sha` vs `commit` needs verification)
         `url` → `url`
         `git-subdir` → `git-subdir`
-        `npm` → Codex に対応なし（dropped + warn）
+        `npm` → no Codex equivalent (dropped + warn)
       Codex → Claude:
-        `local` → 相対パス（string）
-        その他は概ね対応可
-      sha フィールドは Claude が `sha`、Codex が `commit` または `sha` を使用（要実装時検証）。
+        `local` → relative path (string)
+        others are largely mappable
+      The sha field: Claude uses `sha`, Codex uses `commit` or `sha` (verify at implementation time).
     source: "https://github.com/openai/plugins"
 
   - id: plugins.marketplace.plugins.policy
@@ -856,11 +863,11 @@ entries:
     transform: null
     warn: true
     notes: >
-      Codex の `policy.installation`（AVAILABLE/INSTALLED_BY_DEFAULT/NOT_AVAILABLE）・
-      `policy.authentication`（ON_INSTALL/ON_USE）・`policy.products` は
-      Claude marketplace にない概念。
-      Codex→Claude で完全に dropped。
-      Claude→Codex では `policy` の手動設定が必要（変換レポートに明記）。
+      Codex's `policy.installation` (AVAILABLE/INSTALLED_BY_DEFAULT/NOT_AVAILABLE),
+      `policy.authentication` (ON_INSTALL/ON_USE), and `policy.products` are concepts
+      that do not exist in Claude marketplace.
+      Completely dropped on Codex→Claude conversion.
+      On Claude→Codex conversion, `policy` must be configured manually (note in conversion report).
     source: "https://github.com/openai/plugins"
 
   - id: plugins.marketplace.plugins.category
@@ -894,7 +901,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "Codex に対応なし。Claude→Codex で dropped。"
+    notes: "No Codex equivalent. Dropped on Claude→Codex conversion."
     source: "https://www.schemastore.org/claude-code-marketplace.json"
 
   - id: plugins.marketplace.forceRemoveDeletedPlugins
@@ -911,7 +918,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "Codex に対応なし。Claude→Codex で dropped。"
+    notes: "No Codex equivalent. Dropped on Claude→Codex conversion."
     source: "https://www.schemastore.org/claude-code-marketplace.json"
 
   - id: plugins.marketplace.metadata.pluginRoot
@@ -929,36 +936,40 @@ entries:
     transform: null
     warn: false
     notes: >
-      Codex に `metadata.pluginRoot` 相当フィールドはない。
-      各プラグインエントリの `source.path` を展開した形に正規化することで
-      情報を吸収できる。lossy（メタ情報が失われる）。
+      Codex has no field equivalent to `metadata.pluginRoot`.
+      The information can be absorbed by expanding each plugin entry's `source.path` to its
+      fully resolved form. Lossy (the meta-information itself is lost).
     source: "https://www.schemastore.org/claude-code-marketplace.json"
 
 notes:
   - >
-    Claude と Codex は plugin.json の基本メタデータ（name/version/description/author 等）は
-    ほぼ lossless で相互変換できる。最大の差分は「Claude 固有の統合機能群
-    (lspServers/outputStyles/themes/monitors/userConfig/channels/settings/dependencies)」と
-    「Codex 固有の UI/ブランド情報群 (interface.brandColor/logo/capabilities/screenshots 等)」の
-    いずれも相手側に受け皿がなく完全に dropped になる点。
+    Claude and Codex can convert the basic plugin.json metadata
+    (name/version/description/author, etc.) between each other nearly losslessly.
+    The largest differences are: the Claude-only integration features
+    (lspServers/outputStyles/themes/monitors/userConfig/channels/settings/dependencies)
+    and the Codex-only UI/brand fields (interface.brandColor/logo/capabilities/screenshots, etc.)
+    — neither set has a counterpart on the other side and all are completely dropped.
   - >
-    マーケットプレイスの source スキーマは Claude と Codex で名称・構造が微妙に異なる
-    （Claude `relative` 相対パス → Codex `{source:"local",...}` など）。
-    変換エンジンは source タイプ名の正規化と sha/commit フィールド名の統一を行うこと。
+    The marketplace `source` schema differs subtly in naming and structure between Claude and Codex
+    (e.g. Claude relative path → Codex `{source:"local",...}`).
+    The conversion engine must normalize source type names and unify the sha/commit field names.
   - >
-    `openai/codex-plugin-cc` は Claude Code 専用プラグイン（`.claude-plugin/plugin.json` を持つ）。
-    Claude Code セッションから Codex CLI をサブプロセス起動する一方向ブリッジ
-    （`/codex:review` 等のコマンド + Stop hook によるレビューゲート）。
-    ハイブリッド対応プラグインの実例ではなく、Codex plugin marketplace からインストールするものでもない。
-    両対応プラグインはデュアルマニフェスト戦略（`.claude-plugin/plugin.json` + `.codex-plugin/plugin.json`）が必要。
+    `openai/codex-plugin-cc` is a Claude Code-only plugin (it has `.claude-plugin/plugin.json`).
+    It is a one-way bridge that launches Codex CLI as a subprocess from a Claude Code session
+    (using commands like `/codex:review` plus a Stop hook as a review gate).
+    It is not an example of a hybrid dual-manifest plugin, nor is it installed from the
+    Codex plugin marketplace.
+    Plugins that support both sides require the dual-manifest strategy
+    (`.claude-plugin/plugin.json` + `.codex-plugin/plugin.json`).
   - >
-    Codex plugin.json は `version` が strict semver で必須。
-    Claude→Codex 変換で `version` が省略されている場合は
-    `"0.0.0"` を補完するか git SHA からの変換が必要（warn 必須）。
+    Codex plugin.json requires `version` as strict semver.
+    When converting Claude→Codex and `version` is absent,
+    either supply `"0.0.0"` or derive it from the git SHA (a warning is mandatory).
   - >
-    Codex の `policy` フィールドはマーケットプレイスエントリに必須。
-    Claude→Codex 変換では policy を自動補完（既定値: installation=AVAILABLE, authentication=ON_INSTALL）
-    することを推奨。変換レポートに自動補完した旨を明記すること。
+    The Codex `policy` field is required in marketplace entries.
+    On Claude→Codex conversion it is recommended to auto-populate `policy` with defaults
+    (installation=AVAILABLE, authentication=ON_INSTALL).
+    The conversion report must note that auto-population was performed.
   - >
-    Codex Plugins は 2025-2026 年追加の新機能で仕様が流動的。
-    `source` URL とともにバージョン依存性を確認すること。
+    Codex Plugins is a new feature added in 2025-2026 and the specification is still evolving.
+    Always verify version dependencies together with the `source` URLs.

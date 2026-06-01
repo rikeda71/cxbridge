@@ -10,9 +10,10 @@ use crate::core::mappings::{applies_direction, DomainMap};
 use crate::core::transforms::{apply_transforms, ConvDir, TransformCtx};
 use crate::handlers::{EmitFile, EmitPlan, Handler, LowerOpts};
 
-/// plugins ドメインのハンドラ。
-/// plugin.json の lift/lower に加え、配下の skills/hooks/.mcp.json を
-/// 各ハンドラに委譲して再帰変換し、children に格納する。
+/// Handler for the plugins domain.
+/// In addition to lifting/lowering plugin.json, it recursively converts
+/// the nested skills/hooks/.mcp.json by delegating to the respective handlers
+/// and stores the results as children.
 pub struct PluginsHandler {
     pub map: DomainMap,
 }
@@ -44,29 +45,29 @@ impl Handler for PluginsHandler {
             None => return Ok(node),
         };
 
-        // scope:"plugin" のエントリのみを索引する（marketplace などの同名フィールドと衝突しないため）
+        // Index only scope:"plugin" entries to avoid collisions with same-named fields in marketplace etc.
         let idx = build_plugin_scope_index(&self.map, dir);
 
-        // manifest フィールドを mappings 駆動で lift する
+        // Lift manifest fields driven by mappings
         self.lift_manifest_fields(frontmatter, &idx, dir, &mut node);
 
-        // 配下の子コンポーネントを再帰変換する
-        // plugin.json の親ディレクトリをプラグインルートとして使用
+        // Recursively convert nested child components.
+        // Use the parent directory of plugin.json as the plugin root.
         let plugin_root = Path::new(&source_path)
             .parent()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
 
-        // skills/ ディレクトリを SkillsHandler で再帰変換
+        // Recursively convert skills/ directory via SkillsHandler
         self.lift_child_skills(&plugin_root, frontmatter, dir, &mut node);
 
-        // hooks ファイルを HooksHandler で再帰変換
+        // Recursively convert hooks file via HooksHandler
         self.lift_child_hooks(&plugin_root, frontmatter, dir, &mut node);
 
-        // .mcp.json を McpHandler で再帰変換
+        // Recursively convert .mcp.json via McpHandler
         self.lift_child_mcp(&plugin_root, frontmatter, dir, &mut node);
 
-        // marketplace.json を処理（同一ディレクトリに存在すれば）
+        // Process marketplace.json if present in the same directory
         self.lift_marketplace(&plugin_root, dir, &mut node);
 
         Ok(node)
@@ -80,8 +81,8 @@ impl Handler for PluginsHandler {
     }
 }
 
-/// scope:"plugin" のエントリのみを索引する（marketplace などの同名フィールドと衝突しないため）。
-/// c2x なら claude フィールド、x2c なら codex フィールドで索引する。
+/// Indexes only scope:"plugin" entries to avoid collisions with same-named fields in marketplace etc.
+/// Indexes by the claude field for c2x, or the codex field for x2c.
 fn build_plugin_scope_index(
     map: &DomainMap,
     dir: ConvDir,
@@ -93,25 +94,25 @@ fn build_plugin_scope_index(
             ConvDir::X2c => entry.codex.as_ref(),
         };
         let Some(spec) = spec else { continue };
-        // scope:"plugin" のみ対象（marketplace / null を除外）
+        // Only include scope:"plugin" entries (exclude marketplace / null)
         if spec.scope.as_deref() != Some("plugin") {
             continue;
         }
         let Some(field) = spec.field.as_ref() else {
             continue;
         };
-        // 全角括弧（U+FF08）で始まるプレースホルダはスキップ
+        // Skip placeholder fields starting with a fullwidth left parenthesis (U+FF08)
         if field.starts_with('\u{FF08}') {
             continue;
         }
-        // 先に登録されたエントリを優先（後から来た重複フィールドは上書きしない）
+        // First-registered entry wins; later duplicates for the same field are ignored
         idx.entry(field.clone()).or_insert_with(|| entry.clone());
     }
     idx
 }
 
 impl PluginsHandler {
-    /// manifest フィールドを mappings 駆動で lift する。
+    /// Lifts manifest fields driven by mappings.
     fn lift_manifest_fields(
         &self,
         frontmatter: &Map<String, Value>,
@@ -119,7 +120,7 @@ impl PluginsHandler {
         dir: ConvDir,
         node: &mut IRNode,
     ) {
-        // userConfig の未解決変数チェックを後で行うため、userConfig を保存
+        // Save userConfig so we can warn about unresolved variable references later
         let user_config = frontmatter.get("userConfig");
 
         for (key, value) in frontmatter {
@@ -149,7 +150,7 @@ impl PluginsHandler {
             self.lift_single_field(key, value, idx, dir, node);
         }
 
-        // c2x: userConfig が存在し、MCP/hooks 本文などに ${user_config.KEY} が残る可能性を warn
+        // c2x: warn if userConfig is present; ${user_config.KEY} references in MCP/hooks may remain unresolved
         if dir == ConvDir::C2x {
             if let Some(uc) = user_config {
                 if uc.is_object() || uc.is_array() {
@@ -172,7 +173,7 @@ impl PluginsHandler {
         node: &mut IRNode,
     ) {
         let Some(entry) = idx.get(key) else {
-            // 未知フィールド: dropped 扱い
+            // Unknown field: treat as dropped
             node.diagnostics.push(Diagnostic {
                 level: DiagLevel::Drop,
                 id: None,
@@ -245,7 +246,7 @@ impl PluginsHandler {
         );
     }
 
-    /// skills/ ディレクトリを再帰変換して children に追加する。
+    /// Recursively converts the skills/ directory and appends the results to children.
     fn lift_child_skills(
         &self,
         plugin_root: &str,
@@ -253,13 +254,13 @@ impl PluginsHandler {
         dir: ConvDir,
         node: &mut IRNode,
     ) {
-        // skills パスを決定（manifest の skills フィールド or デフォルト ./skills/）
+        // Resolve the skills path from the manifest's skills field, or default to ./skills/
         let skills_dir = frontmatter
             .get("skills")
             .and_then(|v| v.as_str())
             .unwrap_or("./skills/");
 
-        // パスを正規化（./skills/ → skills）
+        // Normalize the path (./skills/ → skills)
         let skills_rel = skills_dir.trim_start_matches("./").trim_end_matches('/');
 
         let skills_path = format!("{}/{}", plugin_root, skills_rel);
@@ -274,7 +275,7 @@ impl PluginsHandler {
             map: maps["skills"].clone(),
         };
 
-        // skills/ 配下の各 SKILL.md を処理
+        // Process each SKILL.md under skills/
         if let Ok(entries) = std::fs::read_dir(skills_path) {
             for entry in entries.flatten() {
                 let skill_dir = entry.path();
@@ -311,7 +312,7 @@ impl PluginsHandler {
         }
     }
 
-    /// hooks ファイルを再帰変換して children に追加する。
+    /// Recursively converts the hooks file and appends the result to children.
     fn lift_child_hooks(
         &self,
         plugin_root: &str,
@@ -319,7 +320,7 @@ impl PluginsHandler {
         dir: ConvDir,
         node: &mut IRNode,
     ) {
-        // hooks パスを決定（manifest の hooks フィールド or デフォルト ./hooks/hooks.json）
+        // Resolve the hooks path from the manifest's hooks field, or default to ./hooks/hooks.json
         let hooks_path_str = frontmatter
             .get("hooks")
             .and_then(|v| v.as_str())
@@ -333,7 +334,7 @@ impl PluginsHandler {
             return;
         }
 
-        // hooks がオブジェクト（インライン）の場合は warn のみ
+        // Warn only when hooks is an inline object
         if let Some(hooks_obj) = frontmatter.get("hooks").and_then(|v| v.as_object()) {
             node.diagnostics.push(Diagnostic {
                 level: DiagLevel::Warn,
@@ -353,7 +354,7 @@ impl PluginsHandler {
         match hooks_handler.parse(hooks_path) {
             Ok(parsed) => match hooks_handler.lift(&parsed, dir) {
                 Ok(child_ir) => {
-                    // hooks #16430 warn: plugin 同梱 hooks は Codex で読まれない可能性
+                    // hooks #16430 warn: plugin-bundled hooks may not be loaded by Codex
                     let mut child_ir = child_ir;
                     child_ir.diagnostics.push(Diagnostic {
                         level: DiagLevel::Warn,
@@ -380,7 +381,7 @@ impl PluginsHandler {
         }
     }
 
-    /// .mcp.json を再帰変換して children に追加する。
+    /// Recursively converts .mcp.json and appends the result to children.
     fn lift_child_mcp(
         &self,
         plugin_root: &str,
@@ -388,13 +389,13 @@ impl PluginsHandler {
         dir: ConvDir,
         node: &mut IRNode,
     ) {
-        // mcpServers パスを決定（manifest の mcpServers フィールド or デフォルト ./.mcp.json）
+        // Resolve the MCP path from the manifest's mcpServers field, or default to ./.mcp.json
         let mcp_path_str = frontmatter
             .get("mcpServers")
             .and_then(|v| v.as_str())
             .unwrap_or("./.mcp.json");
 
-        // インラインオブジェクト形式は lossy（パス参照のみ対応）
+        // Inline object form is lossy (only path references are supported)
         if frontmatter
             .get("mcpServers")
             .map(|v| v.is_object())
@@ -443,12 +444,12 @@ impl PluginsHandler {
         }
     }
 
-    /// marketplace.json を処理して side_artifacts に格納する。
-    /// plugin_root は plugin.json が存在するディレクトリ（例: `.claude-plugin/`）。
+    /// Processes marketplace.json and stores it in side_artifacts.
+    /// plugin_root is the directory containing plugin.json (e.g. `.claude-plugin/`).
     fn lift_marketplace(&self, plugin_root: &str, dir: ConvDir, node: &mut IRNode) {
-        // marketplace.json は plugin.json と同じディレクトリに置かれる
-        // Claude: .claude-plugin/marketplace.json（= {plugin_root}/marketplace.json）
-        // Codex: .agents/plugins/marketplace.json（= {plugin_root}/marketplace.json）
+        // marketplace.json lives in the same directory as plugin.json:
+        // Claude: .claude-plugin/marketplace.json (= {plugin_root}/marketplace.json)
+        // Codex:  .agents/plugins/marketplace.json (= {plugin_root}/marketplace.json)
         let local_marketplace = format!("{}/marketplace.json", plugin_root);
 
         let marketplace_path = match dir {
@@ -476,7 +477,7 @@ impl PluginsHandler {
 
         match std::fs::read_to_string(&mp_path) {
             Ok(content) => {
-                // marketplace.json を保存（lower で変換して emit する）
+                // Save marketplace.json for conversion and emission during lower
                 node.side_artifacts.push(SideArtifact {
                     path: mp_path.to_string_lossy().to_string(),
                     content,
@@ -493,19 +494,19 @@ impl PluginsHandler {
         }
     }
 
-    /// c2x: Claude plugin → Codex plugin 変換
+    /// c2x: Claude plugin → Codex plugin conversion
     fn lower_c2x(&self, ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPlan> {
         let mut files = Vec::new();
         let mut diagnostics = Vec::new();
 
         let out_root = opts.out.as_deref().unwrap_or(".");
 
-        // manifest JSON を構築
+        // Build the manifest JSON
         let codex_manifest = self.build_codex_manifest(ir, &mut diagnostics);
 
-        // --dual-manifest: .claude-plugin/ を残置しつつ .codex-plugin/ を追加生成
+        // --dual-manifest: retain .claude-plugin/ while also generating .codex-plugin/
         if opts.dual_manifest {
-            // Claude 側 manifest を残置（元ファイルから読み直して emit）
+            // Retain the Claude-side manifest by re-reading and emitting the original file
             if let Ok(content) = std::fs::read_to_string(&ir.source_path) {
                 files.push(EmitFile {
                     path: format!("{}/.claude-plugin/plugin.json", out_root),
@@ -514,7 +515,7 @@ impl PluginsHandler {
             }
         }
 
-        // Codex 側 manifest を生成
+        // Generate the Codex-side manifest
         let codex_json = serde_json::to_string_pretty(&codex_manifest)
             .with_context(|| "Failed to serialize Codex plugin.json")?;
         files.push(EmitFile {
@@ -522,7 +523,7 @@ impl PluginsHandler {
             content: codex_json,
         });
 
-        // 子ノードの EmitPlan をマージ
+        // Merge EmitPlans from child nodes
         // skills children
         let maps = crate::core::mappings::load_mappings(Path::new("mappings"));
         for child_ir in &ir.children {
@@ -585,7 +586,7 @@ impl PluginsHandler {
             }
         }
 
-        // marketplace.json の変換
+        // Convert marketplace.json
         for artifact in &ir.side_artifacts {
             if artifact.note == "marketplace.json" {
                 let transformed =
@@ -600,17 +601,17 @@ impl PluginsHandler {
         Ok(EmitPlan { files, diagnostics })
     }
 
-    /// x2c: Codex plugin → Claude plugin 変換
+    /// x2c: Codex plugin → Claude plugin conversion
     fn lower_x2c(&self, ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPlan> {
         let mut files = Vec::new();
         let mut diagnostics = Vec::new();
 
         let out_root = opts.out.as_deref().unwrap_or(".");
 
-        // manifest JSON を構築
+        // Build the manifest JSON
         let claude_manifest = self.build_claude_manifest(ir, &mut diagnostics);
 
-        // Claude 側 manifest を生成
+        // Generate the Claude-side manifest
         let claude_json = serde_json::to_string_pretty(&claude_manifest)
             .with_context(|| "Failed to serialize Claude plugin.json")?;
         files.push(EmitFile {
@@ -618,7 +619,7 @@ impl PluginsHandler {
             content: claude_json,
         });
 
-        // 子ノードの EmitPlan をマージ
+        // Merge EmitPlans from child nodes
         let maps = crate::core::mappings::load_mappings(Path::new("mappings"));
         for child_ir in &ir.children {
             match child_ir.kind {
@@ -680,7 +681,7 @@ impl PluginsHandler {
             }
         }
 
-        // marketplace.json の変換
+        // Convert marketplace.json
         for artifact in &ir.side_artifacts {
             if artifact.note == "marketplace.json" {
                 let transformed =
@@ -695,11 +696,11 @@ impl PluginsHandler {
         Ok(EmitPlan { files, diagnostics })
     }
 
-    /// IR から Codex 向け plugin.json を構築する（c2x）。
+    /// Builds a Codex-target plugin.json from the IR (c2x).
     fn build_codex_manifest(&self, ir: &IRNode, diagnostics: &mut Vec<Diagnostic>) -> Value {
         let mut manifest = Map::new();
 
-        // fields から Codex フィールドへ変換
+        // Convert IR fields to Codex fields
         for (id, field) in &ir.fields {
             // Dropped fields are already represented by IRField.loss == Dropped and
             // recorded via IRField.dropped.  build_report reads those directly, so
@@ -709,7 +710,7 @@ impl PluginsHandler {
                 continue;
             }
 
-            // entry から Codex フィールド名を取得
+            // Retrieve the Codex field name from the entry
             let codex_field = self
                 .map
                 .entries
@@ -723,7 +724,7 @@ impl PluginsHandler {
                 continue;
             };
 
-            // ネストフィールド（interface.displayName 等）の処理
+            // Handle nested fields (e.g. interface.displayName)
             if let Some(dot_pos) = cf.find('.') {
                 let parent = &cf[..dot_pos];
                 let child_key = &cf[dot_pos + 1..];
@@ -738,7 +739,7 @@ impl PluginsHandler {
             }
         }
 
-        // version が存在しない場合に semver "0.0.0" を補完する
+        // Fill in semver "0.0.0" if version is missing
         if !manifest.contains_key("version") {
             manifest.insert("version".to_string(), Value::String("0.0.0".to_string()));
             diagnostics.push(Diagnostic {
@@ -747,7 +748,7 @@ impl PluginsHandler {
                 message: "version field missing: auto-completed as '0.0.0' (Codex requires strict semver)".to_string(),
             });
         } else if let Some(ver) = manifest.get("version").and_then(|v| v.as_str()) {
-            // semver 補完: メジャー.マイナー.パッチ形式でなければ補完
+            // semver completion: complete to major.minor.patch if not already in that form
             let completed = complete_semver(ver);
             if completed != ver {
                 diagnostics.push(Diagnostic {
@@ -762,7 +763,7 @@ impl PluginsHandler {
             }
         }
 
-        // description がない場合は name から補完
+        // Fill in description from name if missing
         if !manifest.contains_key("description") {
             if let Some(name) = manifest.get("name").and_then(|v| v.as_str()) {
                 manifest.insert(
@@ -780,7 +781,7 @@ impl PluginsHandler {
         Value::Object(manifest)
     }
 
-    /// IR から Claude 向け plugin.json を構築する（x2c）。
+    /// Builds a Claude-target plugin.json from the IR (x2c).
     fn build_claude_manifest(&self, ir: &IRNode, _diagnostics: &mut Vec<Diagnostic>) -> Value {
         let mut manifest = Map::new();
 
@@ -791,7 +792,7 @@ impl PluginsHandler {
                 continue;
             }
 
-            // entry から Claude フィールド名を取得
+            // Retrieve the Claude field name from the entry
             let claude_field = self
                 .map
                 .entries
@@ -805,7 +806,7 @@ impl PluginsHandler {
                 continue;
             };
 
-            // ネストフィールド（experimental.themes 等）の処理
+            // Handle nested fields (e.g. experimental.themes)
             if let Some(dot_pos) = cf.find('.') {
                 let parent = &cf[..dot_pos];
                 let child_key = &cf[dot_pos + 1..];
@@ -823,10 +824,10 @@ impl PluginsHandler {
         Value::Object(manifest)
     }
 
-    /// marketplace.json を Codex 向けに変換する（c2x）。
+    /// Converts marketplace.json for Codex (c2x).
     /// - Claude-only top-level fields are dropped with DiagLevel::Drop diagnostics
-    /// - source スキーマを正規化（Claude `relative`/string → Codex `{source:"local",...}`）
-    /// - policy がなければデフォルト値を補完
+    /// - Normalizes the source schema (Claude `relative`/string → Codex `{source:"local",...}`)
+    /// - Fills in default policy values if missing
     fn transform_marketplace_c2x(
         &self,
         content: &str,
@@ -864,10 +865,10 @@ impl PluginsHandler {
         if let Some(plugins) = json.get_mut("plugins").and_then(|v| v.as_array_mut()) {
             for plugin_entry in plugins.iter_mut() {
                 if let Some(obj) = plugin_entry.as_object_mut() {
-                    // source スキーマ正規化
+                    // Normalize the source schema
                     normalize_marketplace_source_c2x(obj, diagnostics);
 
-                    // policy が未設定なら既定値を補完
+                    // Fill in default policy if not set
                     if !obj.contains_key("policy") {
                         obj.insert(
                             "policy".to_string(),
@@ -889,9 +890,9 @@ impl PluginsHandler {
         serde_json::to_string_pretty(&json).unwrap_or_else(|_| content.to_string())
     }
 
-    /// marketplace.json を Claude 向けに変換する（x2c）。
-    /// - source スキーマを正規化（Codex `local` → Claude 相対パス）
-    /// - policy は Claude に対応なし（dropped）
+    /// Converts marketplace.json for Claude (x2c).
+    /// - Normalizes the source schema (Codex `local` → Claude relative path)
+    /// - policy has no Claude equivalent (dropped)
     fn transform_marketplace_x2c(
         &self,
         content: &str,
@@ -904,10 +905,10 @@ impl PluginsHandler {
         if let Some(plugins) = json.get_mut("plugins").and_then(|v| v.as_array_mut()) {
             for plugin_entry in plugins.iter_mut() {
                 if let Some(obj) = plugin_entry.as_object_mut() {
-                    // source スキーマ正規化
+                    // Normalize the source schema
                     normalize_marketplace_source_x2c(obj);
 
-                    // policy は Claude に対応なし（dropped）
+                    // policy has no Claude equivalent (dropped)
                     if obj.remove("policy").is_some() {
                         diagnostics.push(Diagnostic {
                             level: DiagLevel::Drop,
@@ -924,9 +925,9 @@ impl PluginsHandler {
     }
 }
 
-/// semver を補完する（メジャーのみ → メジャー.0.0、メジャー.マイナー → メジャー.マイナー.0）。
+/// Completes a partial semver string (major-only → major.0.0; major.minor → major.minor.0).
 fn complete_semver(ver: &str) -> String {
-    // git SHA (40 hex chars) の場合は "0.0.0" に変換
+    // Convert a 40-char git SHA to "0.0.0"
     if ver.len() == 40 && ver.chars().all(|c| c.is_ascii_hexdigit()) {
         return "0.0.0".to_string();
     }
@@ -934,7 +935,7 @@ fn complete_semver(ver: &str) -> String {
     let parts: Vec<&str> = ver.split('.').collect();
     match parts.len() {
         1 => {
-            // メジャーのみ
+            // Major only
             if parts[0].parse::<u64>().is_ok() {
                 format!("{}.0.0", parts[0])
             } else {
@@ -942,21 +943,21 @@ fn complete_semver(ver: &str) -> String {
             }
         }
         2 => {
-            // メジャー.マイナー
+            // Major.minor
             if parts[0].parse::<u64>().is_ok() && parts[1].parse::<u64>().is_ok() {
                 format!("{}.{}.0", parts[0], parts[1])
             } else {
                 "0.0.0".to_string()
             }
         }
-        _ => ver.to_string(), // 3 要素以上はそのまま
+        _ => ver.to_string(), // 3 or more components: pass through unchanged
     }
 }
 
-/// marketplace.json の source スキーマを Codex 向けに正規化する。
-/// - 相対パス文字列 → `{source: "local", path: "..."}`
-/// - `github` は概ねそのまま（フィールド名の違いがあれば warn）
-/// - `npm` は Codex に対応なし: source フィールドを削除し Drop diagnostic を追加する
+/// Normalizes the marketplace.json source schema for Codex.
+/// - Relative path string → `{source: "local", path: "..."}`
+/// - `github` passes through mostly unchanged (warn if field names differ)
+/// - `npm` has no Codex equivalent: removes the source field and emits a Drop diagnostic
 fn normalize_marketplace_source_c2x(
     obj: &mut Map<String, Value>,
     diagnostics: &mut Vec<Diagnostic>,
@@ -964,7 +965,7 @@ fn normalize_marketplace_source_c2x(
     if let Some(source) = obj.get("source").cloned() {
         match &source {
             Value::String(s) => {
-                // 相対パス文字列 → Codex local 形式
+                // Relative path string → Codex local format
                 let normalized = serde_json::json!({
                     "source": "local",
                     "path": s
@@ -972,7 +973,7 @@ fn normalize_marketplace_source_c2x(
                 obj.insert("source".to_string(), normalized);
             }
             Value::Object(src_obj) => {
-                // すでにオブジェクト形式の場合は source タイプを確認
+                // Already in object form: inspect the source type
                 if let Some(src_type) = src_obj.get("source").and_then(|v| v.as_str()) {
                     if src_type == "relative" {
                         // Claude `relative` → Codex `local`
@@ -1004,14 +1005,14 @@ fn normalize_marketplace_source_c2x(
     }
 }
 
-/// marketplace.json の source スキーマを Claude 向けに正規化する。
-/// - `{source: "local", path: "..."}` → 相対パス文字列
+/// Normalizes the marketplace.json source schema for Claude.
+/// - `{source: "local", path: "..."}` → relative path string
 fn normalize_marketplace_source_x2c(obj: &mut Map<String, Value>) {
     if let Some(source) = obj.get("source").cloned() {
         if let Some(src_obj) = source.as_object() {
             if let Some(src_type) = src_obj.get("source").and_then(|v| v.as_str()) {
                 if src_type == "local" {
-                    // Codex `local` → Claude 相対パス文字列
+                    // Codex `local` → Claude relative path string
                     if let Some(path) = src_obj.get("path").and_then(|v| v.as_str()) {
                         obj.insert("source".to_string(), Value::String(path.to_string()));
                     }
@@ -1050,9 +1051,9 @@ mod tests {
         }
     }
 
-    /// 基本的なプラグインフィクスチャを作成する。
+    /// Creates a basic plugin fixture.
     fn create_claude_plugin_fixture(dir: &Path) -> std::path::PathBuf {
-        // .claude-plugin/plugin.json を作成
+        // Create .claude-plugin/plugin.json
         let plugin_dir = dir.join(".claude-plugin");
         fs::create_dir_all(&plugin_dir).unwrap();
         let plugin_json = plugin_dir.join("plugin.json");
@@ -1071,7 +1072,7 @@ mod tests {
         )
         .unwrap();
 
-        // skills/ ディレクトリと SKILL.md を作成
+        // Create skills/ directory and SKILL.md
         let skills_dir = dir.join(".claude-plugin").join("skills").join("my-skill");
         fs::create_dir_all(&skills_dir).unwrap();
         fs::write(
@@ -1080,7 +1081,7 @@ mod tests {
         )
         .unwrap();
 
-        // .mcp.json を作成
+        // Create .mcp.json
         let mcp_json = dir.join(".claude-plugin").join(".mcp.json");
         fs::write(
             &mcp_json,
@@ -1109,7 +1110,7 @@ mod tests {
         let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
 
         assert_eq!(ir.kind, Kind::Plugin);
-        // name, description, version は lossless で lift されるはず
+        // name, description, version should be lifted losslessly
         assert!(ir.fields.contains_key("plugins.name"));
         assert!(ir.fields.contains_key("plugins.version"));
         assert!(ir.fields.contains_key("plugins.description"));
@@ -1124,7 +1125,7 @@ mod tests {
         let plugin_dir = dir.path().join(".claude-plugin");
         fs::create_dir_all(&plugin_dir).unwrap();
         let plugin_json = plugin_dir.join("plugin.json");
-        // dropped フィールドを含む plugin.json
+        // plugin.json containing dropped fields
         fs::write(
             &plugin_json,
             r#"{
@@ -1184,7 +1185,7 @@ mod tests {
         assert!(has_deps_dropped, "dependencies should be dropped");
         assert!(has_user_config_dropped, "userConfig should be dropped");
 
-        // userConfig に対する追加 warn が出るはず
+        // An additional warn for userConfig should be emitted
         let has_user_config_warn = ir
             .diagnostics
             .iter()
@@ -1201,7 +1202,7 @@ mod tests {
         let parsed = h.parse(&plugin_json).unwrap();
         let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
 
-        // skills/ と .mcp.json が子ノードとして再帰変換される
+        // skills/ and .mcp.json should be recursively converted as child nodes
         let skill_children: Vec<_> = ir
             .children
             .iter()
@@ -1232,7 +1233,7 @@ mod tests {
         let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
         let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
 
-        // .codex-plugin/plugin.json が生成されているか確認
+        // Verify that .codex-plugin/plugin.json is generated
         let codex_manifest = plan
             .files
             .iter()
@@ -1261,7 +1262,7 @@ mod tests {
         let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
         let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
 
-        // .claude-plugin/plugin.json と .codex-plugin/plugin.json の両方が生成されているか確認
+        // Verify that both .claude-plugin/plugin.json and .codex-plugin/plugin.json are generated
         let has_claude = plan
             .files
             .iter()
@@ -1286,7 +1287,7 @@ mod tests {
         let plugin_dir = dir.path().join(".claude-plugin");
         fs::create_dir_all(&plugin_dir).unwrap();
         let plugin_json = plugin_dir.join("plugin.json");
-        // version が省略されている場合
+        // Case where version is omitted
         fs::write(
             &plugin_json,
             r#"{"name": "test-plugin", "description": "A test plugin"}"#,
@@ -1301,7 +1302,7 @@ mod tests {
         let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
         let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
 
-        // version 補完の warn が出るはず
+        // A version completion warn should be emitted
         let has_version_warn = plan
             .diagnostics
             .iter()
@@ -1311,7 +1312,7 @@ mod tests {
             "Expected version semver completion warning"
         );
 
-        // 生成された manifest の version が "0.0.0" になっているはず
+        // The generated manifest's version should be "0.0.0"
         let codex_manifest = plan
             .files
             .iter()
@@ -1357,7 +1358,7 @@ mod tests {
         let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
         let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
 
-        // marketplace.json が出力されているか確認
+        // Verify that marketplace.json is included in the output
         let marketplace_file = plan
             .files
             .iter()
@@ -1371,13 +1372,13 @@ mod tests {
         let plugins = content["plugins"].as_array().unwrap();
         assert!(!plugins.is_empty());
 
-        // policy が補完されているか確認
+        // Verify that policy was filled in
         let policy = &plugins[0]["policy"];
         assert!(policy.is_object(), "Expected policy object");
         assert_eq!(policy["installation"].as_str(), Some("AVAILABLE"));
         assert_eq!(policy["authentication"].as_str(), Some("ON_INSTALL"));
 
-        // policy 補完の warn が出るはず
+        // A policy auto-fill warn should be emitted
         let has_policy_warn = plan
             .diagnostics
             .iter()

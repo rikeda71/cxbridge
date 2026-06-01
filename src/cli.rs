@@ -13,7 +13,10 @@ use crate::handlers::{pick_handler, EmitPlan, LowerOpts, Scope, SkillTargetMode}
 const MAPPINGS_DIR: &str = "mappings";
 
 #[derive(Parser)]
-#[command(name = "ccx", about = "Claude Code ⇄ Codex 設定ファイル双方向変換 CLI")]
+#[command(
+    name = "ccx",
+    about = "Claude Code ⇄ Codex config file bidirectional conversion CLI"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -21,79 +24,79 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Claude → Codex 変換
+    /// Claude → Codex conversion
     C2x {
-        /// 変換対象のパス（ファイルまたはディレクトリ）
+        /// Path to convert (file or directory)
         path: String,
         #[command(flatten)]
         opts: ConvertOpts,
     },
-    /// Codex → Claude 変換
+    /// Codex → Claude conversion
     X2c {
-        /// 変換対象のパス（ファイルまたはディレクトリ）
+        /// Path to convert (file or directory)
         path: String,
         #[command(flatten)]
         opts: ConvertOpts,
     },
-    /// 変換可能性の事前診断（書き込まない）
+    /// Pre-conversion diagnostic (no writes)
     Check {
-        /// 診断対象のパス（ファイルまたはディレクトリ）
+        /// Path to diagnose (file or directory)
         path: String,
     },
 }
 
-/// 変換オプション（c2x / x2c 共通）。
+/// Conversion options (shared by c2x / x2c).
 #[derive(Parser, Debug, Clone)]
 pub struct ConvertOpts {
-    /// 出力先ディレクトリ（省略時: *.converted/ サブディレクトリ）
+    /// Output directory (default: *.converted/ subdirectory)
     #[arg(long)]
     pub out: Option<String>,
 
-    /// 変換対象ドメインをカンマ区切りで限定（例: skills,mcp）
+    /// Limit conversion to specific domains, comma-separated (e.g. skills,mcp)
     #[arg(long, value_delimiter = ',')]
     pub only: Vec<String>,
 
-    /// 降格先スコープ（.rules / agents の配置）。既定: project
+    /// Scope for degraded outputs (.rules / agents placement). Default: project
     #[arg(long)]
     pub scope: Option<String>,
 
-    /// skill の変換先選択（auto|skill|subagent）。既定: auto
+    /// Skill conversion target (auto|skill|subagent). Default: auto
     #[arg(long)]
     pub skill_target: Option<String>,
 
-    /// グレーケースを TTY 対話で確認する
+    /// Prompt interactively on TTY for ambiguous cases
     #[arg(long)]
     pub interactive: bool,
 
-    /// 本文の変数/記法を自動書き換え（既定: 検出のみ）
+    /// Auto-rewrite body variables/syntax (default: detect only)
     #[arg(long)]
     pub rewrite_body: bool,
 
-    /// plugin で .claude-plugin/ を残し .codex-plugin/ を追加生成
+    /// Keep .claude-plugin/ and also generate .codex-plugin/ for plugins
     #[arg(long)]
     pub dual_manifest: bool,
 
-    /// hooks の書き出し先（user|project）。既定: user
+    /// Destination for hooks output (user|project). Default: user
     #[arg(long)]
     pub hooks_target: Option<String>,
 
-    /// 詳細レポートを出力（--report=json で機械可読）
+    /// Print detailed report (--report=json for machine-readable output)
     #[arg(long)]
     pub report: Option<Option<String>>,
 
-    /// 書き込まず report のみ出力
+    /// Print report only without writing files
     #[arg(long)]
     pub dry_run: bool,
 
-    /// dropped が 1 件でもあれば非ゼロ終了（CI 用）
+    /// Exit with non-zero status if any fields are dropped (for CI)
     #[arg(long)]
     pub strict: bool,
 
-    /// Claude 固有 frontmatter キーを出力に残置
+    /// Preserve Claude-specific frontmatter keys in output
     #[arg(long)]
     pub keep_claude_frontmatter: bool,
 
-    /// 既存ファイルへの上書きを許可
+    /// Allow overwriting existing files
     #[arg(long)]
     pub force: bool,
 }
@@ -255,7 +258,7 @@ pub fn infer_conv_dir(path: &str) -> ConvDir {
     }
 }
 
-/// check サブコマンド: 書き込まず dropped 件数のみ報告する。
+/// check subcommand: reports dropped field counts without writing any files.
 fn run_check(path: &str) -> anyhow::Result<()> {
     let maps = load_mappings(Path::new(MAPPINGS_DIR));
 

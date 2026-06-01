@@ -14,7 +14,7 @@ use crate::core::transforms::{
 };
 use crate::handlers::{EmitFile, EmitPlan, Handler, LowerOpts};
 
-/// subagents ドメインのハンドラ。
+/// Handler for the subagents domain.
 pub struct SubagentHandler {
     pub map: DomainMap,
 }
@@ -941,7 +941,7 @@ You are a coding assistant.
         };
         let report = build_report(&ir, &empty_plan);
 
-        // dropped フィールドが report に列挙されていること
+        // Dropped fields should be enumerated in the report
         assert!(
             !report.dropped.is_empty(),
             "Expected dropped entries in report"

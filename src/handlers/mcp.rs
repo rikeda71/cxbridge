@@ -12,7 +12,7 @@ use crate::core::mappings::{
 use crate::core::transforms::{apply_transforms, ConvDir, TransformCtx};
 use crate::handlers::{EmitFile, EmitPlan, Handler, LowerOpts};
 
-/// MCP ドメインのハンドラ。
+/// Handler for the MCP domain.
 pub struct McpHandler {
     pub map: DomainMap,
 }
@@ -30,10 +30,10 @@ impl Handler for McpHandler {
     fn parse(&self, path: &Path) -> anyhow::Result<Value> {
         let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if file_name == "config.toml" {
-            // config.toml は TOML 形式でパース
+            // config.toml is parsed as TOML
             parse_toml_mcp_config(path)
         } else {
-            // .mcp.json は JSON 形式でパース
+            // .mcp.json is parsed as JSON
             crate::core::serialize::json::parse_json_file(path)
         }
     }
@@ -63,13 +63,13 @@ impl Handler for McpHandler {
 }
 
 impl McpHandler {
-    /// Claude .mcp.json → IR（c2x 方向）
+    /// Lift Claude .mcp.json → IR (c2x direction).
     fn lift_c2x(&self, parsed: &Value, node: &mut IRNode) -> anyhow::Result<()> {
         let frontmatter = parsed["frontmatter"]
             .as_object()
             .ok_or_else(|| anyhow::anyhow!("Expected object at top level of .mcp.json"))?;
 
-        // .mcp.json トップレベル: { "mcpServers": { "<name>": { ... } } }
+        // .mcp.json top level: { "mcpServers": { "<name>": { ... } } }
         let servers = match frontmatter.get("mcpServers").and_then(|v| v.as_object()) {
             Some(s) => s,
             None => return Ok(()),
@@ -77,7 +77,7 @@ impl McpHandler {
 
         let idx = index_by_claude_field(&self.map);
 
-        // mcp.format エントリの記録
+        // Record the mcp.format entry
         if let Some(entry) = idx.get("mcpServers") {
             if applies_direction(entry, ConvDir::C2x) {
                 let ctx = TransformCtx {
@@ -105,7 +105,7 @@ impl McpHandler {
             }
         }
 
-        // 各サーバーを子 IRNode として処理
+        // Process each server as a child IRNode
         for (server_name, server_cfg) in servers {
             let child = self.lift_server_c2x(server_name, server_cfg, &idx)?;
             node.children.push(child);
@@ -129,7 +129,7 @@ impl McpHandler {
 
         for (key, value) in cfg {
             match key.as_str() {
-                // transport 判定: type フィールドは特殊処理
+                // Transport determination: the "type" field requires special handling
                 "type" => {
                     let transport_type = value.as_str().unwrap_or("");
                     match transport_type {
@@ -180,7 +180,7 @@ impl McpHandler {
                             );
                         }
                         _ => {
-                            // stdio/http/streamable-http: type フィールドは Codex では暗黙なので記録だけ
+                            // stdio/http/streamable-http: the "type" field is implicit in Codex, so just record it
                             child.fields.insert(
                                 "mcp.transport_type".to_string(),
                                 IRField {
@@ -196,7 +196,7 @@ impl McpHandler {
                         }
                     }
                 }
-                // headers: Authorization Bearer の特殊処理
+                // headers: special handling for Authorization Bearer
                 "headers" => {
                     if let Some(headers) = value.as_object() {
                         self.lift_headers_c2x(headers, &mut child, idx);
@@ -208,7 +208,7 @@ impl McpHandler {
                         self.lift_oauth_c2x(oauth_obj, &mut child, idx);
                     }
                 }
-                // その他のフィールド
+                // All other fields
                 _ => {
                     if let Some(entry) = idx.get(key.as_str()) {
                         if !applies_direction(entry, ConvDir::C2x) {
@@ -289,7 +289,7 @@ impl McpHandler {
             }
         }
 
-        // server_name をタグとして保存
+        // Store server_name as a tag
         child.source_path = server_name.to_string();
 
         Ok(child)
@@ -378,8 +378,8 @@ impl McpHandler {
             }
         }
 
-        // Authorization に Bearer がない場合は全ヘッダを http_headers に変換
-        // ${VAR} パターンのヘッダは env_http_headers に変換
+        // When Authorization does not contain Bearer, convert all headers to http_headers.
+        // Headers with ${VAR} patterns are converted to env_http_headers.
         let mut env_http_headers: Map<String, Value> = Map::new();
         let mut static_headers: Map<String, Value> = Map::new();
 
@@ -388,7 +388,7 @@ impl McpHandler {
                 if let Some(var_name) = extract_env_var_ref(val_str) {
                     env_http_headers.insert(k.clone(), Value::String(var_name.to_string()));
                 } else {
-                    // リテラル値は warn
+                    // Literal value — warn
                     child.diagnostics.push(Diagnostic {
                         level: DiagLevel::Warn,
                         id: Some("mcp.env_http_headers".to_string()),
@@ -435,10 +435,10 @@ impl McpHandler {
         }
     }
 
-    /// Claude .mcp.json の oauth サブオブジェクトを IR フィールドに変換する。
+    /// Converts the oauth sub-object from Claude .mcp.json into IR fields.
     ///
-    /// 各サブキーを `"oauth.<sub_key>"` としてインデックスを引き、
-    /// `lift_server_c2x` の汎用 `_` アームと同じロジックで IR フィールドを生成する。
+    /// Each sub-key is looked up as `"oauth.<sub_key>"` in the index, and IR fields
+    /// are produced using the same logic as the generic `_` arm of `lift_server_c2x`.
     fn lift_oauth_c2x(
         &self,
         oauth_obj: &Map<String, Value>,
@@ -505,11 +505,11 @@ impl McpHandler {
         }
     }
 
-    /// Codex config.toml の oauth サブオブジェクトを IR フィールドに変換する。
+    /// Converts the oauth sub-object from Codex config.toml into IR fields.
     ///
-    /// 各サブキーを `"oauth.<sub_key>"` または bare `sub_key` として x2c インデックスを引く。
-    /// Codex の `scopes` は `mcp.oauth.scopes` のエントリで codex.field が `"scopes"` (bare)
-    /// なので、先に `"oauth.<sub_key>"` を試し、次に bare `sub_key` を試す。
+    /// Each sub-key is looked up in the x2c index as `"oauth.<sub_key>"` first, then as
+    /// the bare `sub_key`. Codex's `scopes` maps to the `mcp.oauth.scopes` entry whose
+    /// `codex.field` is `"scopes"` (bare), so the dot-prefixed form is tried first.
     fn lift_oauth_x2c(
         &self,
         oauth_obj: &Map<String, Value>,
@@ -645,14 +645,14 @@ impl McpHandler {
         }
     }
 
-    /// Codex config.toml → IR（x2c 方向）
+    /// Lift Codex config.toml → IR (x2c direction).
     fn lift_x2c(&self, parsed: &Value, node: &mut IRNode) -> anyhow::Result<()> {
-        // config.toml の場合は frontmatter に mcp_servers が格納されている
+        // For config.toml, mcp_servers is stored under "frontmatter"
         let frontmatter = parsed["frontmatter"]
             .as_object()
             .ok_or_else(|| anyhow::anyhow!("Expected object at frontmatter"))?;
 
-        // mcp_servers が存在しない場合も許容（空 map として処理）
+        // Tolerate missing mcp_servers (treat as empty map)
         let servers = match frontmatter.get("mcp_servers").and_then(|v| v.as_object()) {
             Some(s) => s,
             None => return Ok(()),
@@ -681,7 +681,7 @@ impl McpHandler {
             None => return Ok(child),
         };
 
-        // enabled: false のエントリは除外
+        // Exclude entries with enabled: false
         if let Some(enabled) = cfg.get("enabled") {
             if enabled == &Value::Bool(false) {
                 // Push exactly one Drop diagnostic so build_report records one entry.
@@ -699,7 +699,7 @@ impl McpHandler {
             }
         }
 
-        // transport 判定: command 有 → stdio、url 有 → http
+        // Transport determination: command present → stdio; url present → http
         let has_command = cfg.contains_key("command");
         let has_url = cfg.contains_key("url");
         let transport_type = if has_command {
@@ -853,7 +853,7 @@ impl McpHandler {
                             },
                         );
                     } else {
-                        // Codex 固有のフィールドはそのまま記録しておく（warn）
+                        // Record unknown Codex-specific fields with a warning
                         child.diagnostics.push(Diagnostic {
                             level: DiagLevel::Warn,
                             id: None,
@@ -868,7 +868,7 @@ impl McpHandler {
         Ok(child)
     }
 
-    /// Claude .mcp.json を生成（c2x 方向）
+    /// Generate Claude .mcp.json (c2x direction).
     fn lower_c2x(&self, ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPlan> {
         let mut files = Vec::new();
         let diagnostics = Vec::new();
@@ -897,19 +897,20 @@ impl McpHandler {
         Ok(EmitPlan { files, diagnostics })
     }
 
-    /// x2c: Codex config.toml の [mcp_servers.*] → Claude .mcp.json
+    /// x2c: Codex config.toml [mcp_servers.*] → Claude .mcp.json
     fn lower_x2c(&self, ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPlan> {
         let mut files = Vec::new();
         let diagnostics = Vec::new();
 
         let out_root = opts.out.as_deref().unwrap_or(".");
 
-        // x2c は .mcp.json のみ出力する（config.toml は出力しない）
+        // x2c outputs .mcp.json only (config.toml is not emitted)
         let mut mcp_servers_map: Map<String, Value> = Map::new();
 
         for child in &ir.children {
-            // enabled=false は除外。Drop diagnostic は lift_server_x2c が既に
-            // child.diagnostics に積んでいるため、ここで plan.diagnostics に追加しない。
+            // Skip entries with enabled=false. Drop diagnostics are already pushed
+            // to child.diagnostics by lift_server_x2c, so they are not added to
+            // plan.diagnostics here.
             let is_disabled = child
                 .diagnostics
                 .iter()
@@ -936,7 +937,7 @@ impl McpHandler {
         Ok(EmitPlan { files, diagnostics })
     }
 
-    /// IRNode(child) から Codex MCP サーバー設定を構築する（c2x）
+    /// Build Codex MCP server configuration from an IRNode child (c2x).
     fn build_codex_server_cfg(&self, child: &IRNode) -> anyhow::Result<Value> {
         let mut cfg: Map<String, Value> = Map::new();
 
@@ -964,14 +965,15 @@ impl McpHandler {
                     }
                 }
                 "mcp.env" => {
-                    // env は stdio 専用。http/streamable-http では env_http_headers に変換済みなのでスキップ。
+                    // env is stdio-only; for http/streamable-http it has already been
+                    // converted to env_http_headers, so skip it.
                     let transport = child
                         .fields
                         .get("mcp.transport_type")
                         .and_then(|f| f.value.as_str())
                         .unwrap_or("stdio");
                     if transport == "http" || transport == "streamable-http" {
-                        // http transport では env は env_http_headers に変換済みなのでスキップ
+                        // Already converted to env_http_headers for http transport
                     } else if let Some(entry) = self.map.entries.iter().find(|e| e.id == "mcp.env")
                     {
                         if let Some(codex_field) =
@@ -1038,11 +1040,11 @@ impl McpHandler {
         Ok(Value::Object(cfg))
     }
 
-    /// IRNode(child) から Claude MCP サーバー設定を構築する（x2c）
+    /// Build Claude MCP server configuration from an IRNode child (x2c).
     fn build_claude_server_cfg(&self, child: &IRNode) -> anyhow::Result<Value> {
         let mut cfg: Map<String, Value> = Map::new();
 
-        // transport_type → type フィールド
+        // transport_type → "type" field
         if let Some(f) = child.fields.get("mcp.transport_type") {
             cfg.insert("type".to_string(), f.value.clone());
         }
@@ -1135,21 +1137,20 @@ impl McpHandler {
     }
 }
 
-/// config.toml をパースして handler の parse() 契約に従う Value を返す。
-/// [mcp_servers.*] セクションを mcpServers として frontmatter に格納する。
+/// Parses config.toml and returns a Value conforming to the handler's parse() contract.
+/// The [mcp_servers.*] section is stored as "mcp_servers" under "frontmatter".
 fn parse_toml_mcp_config(path: &Path) -> anyhow::Result<Value> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read config.toml: {}", path.display()))?;
 
     let abs_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
 
-    // toml を serde_json::Value に変換
-    // toml クレートを使って型変換
+    // Convert TOML to serde_json::Value using the toml crate
     let toml_val: toml::Value = content
         .parse()
         .with_context(|| format!("Failed to parse TOML: {}", path.display()))?;
 
-    // TOML Value → JSON Value の変換
+    // Convert TOML Value → JSON Value
     let json_val = crate::core::serialize::toml_to_json(&toml_val)?;
 
     Ok(serde_json::json!({
@@ -1159,7 +1160,7 @@ fn parse_toml_mcp_config(path: &Path) -> anyhow::Result<Value> {
     }))
 }
 
-/// "Bearer ${VAR}" から VAR を抽出するヘルパ。
+/// Extracts VAR from a "Bearer ${VAR}" string.
 fn extract_bearer_env_var(s: &str) -> Option<String> {
     if let Some(rest) = s.strip_prefix("Bearer ${") {
         if let Some(end) = rest.rfind('}') {
@@ -1172,13 +1173,14 @@ fn extract_bearer_env_var(s: &str) -> Option<String> {
     None
 }
 
-/// "${VAR}" から VAR を抽出するヘルパ。
-/// 値全体が `${VAR}` 形式（純粋な環境変数参照）のみ抽出する。
-/// `${VAR} suffix` のような複合値は None を返す（部分マッチを防止するため末尾 '}' を検証）。
+/// Extracts VAR from a "${VAR}" string.
+/// Only pure environment-variable references of the form `${VAR}` are extracted.
+/// Composite values such as `${VAR} suffix` return None (the trailing `}` is
+/// verified to prevent partial matches).
 fn extract_env_var_ref(s: &str) -> Option<String> {
     if s.starts_with("${") && s.ends_with('}') {
         let inner = &s[2..s.len() - 1];
-        // ${VAR:-default} のデフォルト値部分は無視し VAR のみ取得
+        // For ${VAR:-default}, ignore the default part and extract only VAR
         let var_name = inner.split(":-").next().unwrap_or(inner);
         if !var_name.is_empty() {
             return Some(var_name.to_string());
@@ -1310,8 +1312,8 @@ mod tests {
         let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
         let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
 
-        // .mcp.json が生成されているか確認（c2x では Claude の .mcp.json のまま変換先）
-        // 実際は Codex 側への変換なので .mcp.json が生成される
+        // Verify that .mcp.json was generated.
+        // c2x converts to Codex, so .mcp.json is the output format.
         assert!(!plan.files.is_empty());
         let mcp_file = plan.files.iter().find(|f| f.path.ends_with(".mcp.json"));
         assert!(mcp_file.is_some(), "Expected .mcp.json in output");
@@ -1335,15 +1337,15 @@ mod tests {
         let parsed = h.parse(&mcp_path).unwrap();
         let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
 
-        // alwaysLoad, headersHelper は Claude 固有なので Drop 診断が出るか、
-        // or 未知フィールドとして Drop される
+        // alwaysLoad, headersHelper are Claude-specific, so either Drop diagnostics
+        // are emitted or they are dropped as unknown fields.
         let child = &ir.children[0];
         let drop_diags: Vec<_> = child
             .diagnostics
             .iter()
             .filter(|d| d.level == DiagLevel::Drop)
             .collect();
-        // alwaysLoad と headersHelper は unknown MCP fields or dropped
+        // alwaysLoad and headersHelper are either unknown MCP fields or dropped
         assert!(
             !drop_diags.is_empty()
                 || child

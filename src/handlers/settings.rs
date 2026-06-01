@@ -11,7 +11,7 @@ use crate::core::transforms::{apply_transforms, ConvDir, TransformCtx};
 use crate::degrade::rules::degrade_allowed_tools;
 use crate::handlers::{EmitFile, EmitPlan, Handler, LowerOpts};
 
-/// settings ドメインのハンドラ（部分変換サブセット）。
+/// Handler for the settings domain (partial-conversion subset).
 pub struct SettingsHandler {
     pub map: DomainMap,
 }
@@ -1268,7 +1268,7 @@ mod tests {
         };
         let report = build_report(&ir, &empty_plan);
 
-        // dropped フィールドが report に列挙されていること
+        // Dropped fields should be enumerated in the report
         assert!(
             !report.dropped.is_empty(),
             "Expected dropped fields in report"

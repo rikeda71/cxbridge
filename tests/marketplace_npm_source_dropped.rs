@@ -2,7 +2,7 @@
 //! emit a DiagLevel::Drop diagnostic and not silently set source to null.
 //!
 //! mappings/plugins.yaml entry:
-//!   plugins.marketplace.plugins.source  notes: 'npm → Codex に対応なし（dropped + warn）'
+//!   plugins.marketplace.plugins.source  notes: 'npm → no Codex equivalent (dropped + warn)'
 //!
 //! Spec invariant §7: dropped entries must ALWAYS be listed in the report;
 //! silent discard is prohibited.

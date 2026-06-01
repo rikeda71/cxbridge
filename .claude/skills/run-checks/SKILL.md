@@ -1,41 +1,41 @@
 ---
 name: run-checks
 description: >
-  Rust 実装を変更したとき、またはコミット前に fmt・clippy・test を回す。
-  「チェックして」「cargo チェック」「run checks」「CI を通して」と言われた場合に使用する。
+  Runs fmt, clippy, and tests after modifying the Rust implementation, or before committing.
+  Use when asked to "run checks", "cargo check", "run checks", or "make CI pass".
 allowed-tools:
   - Bash(cargo *)
 ---
 
-## 手順
+## Steps
 
-以下を順番に実行する。前のステップが失敗したら修正してから次に進む。
+Execute the following in order. If a step fails, fix the issue before proceeding to the next step.
 
-### 1. フォーマットチェック
+### 1. Format check
 
 ```bash
 cargo fmt --check
 ```
 
-失敗した場合は `cargo fmt` を実行してから再確認する。
+If this fails, run `cargo fmt` and then re-verify.
 
-### 2. Clippy（警告をエラーとして扱う）
+### 2. Clippy (warnings as errors)
 
 ```bash
 cargo clippy -- -D warnings
 ```
 
-失敗した場合は各 clippy 指摘を修正する。
-`#[allow(...)]` で抑制する場合は理由コメントを必ず添える。
+If this fails, fix each clippy finding.
+When suppressing with `#[allow(...)]`, always include a reason comment.
 
-### 3. テスト
+### 3. Tests
 
 ```bash
 cargo test
 ```
 
-失敗したテストを修正する。スナップショット（`insta`）が更新された場合は `cargo insta review` で差分を確認してから受理する。
+Fix any failing tests. If snapshots (`insta`) were updated, run `cargo insta review` to inspect the diff before accepting.
 
-### 完了条件
+### Completion condition
 
-3 ステップすべてが 0 exit で通れば完了を報告する。
+Report completion once all 3 steps pass with exit code 0.

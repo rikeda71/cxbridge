@@ -15,11 +15,11 @@ format:
 entries:
   - id: subagents.path
     claude:
-      field: "（ディレクトリパス + .md）"
+      field: "(directory path + .md)"
       type: "path"
       scope: agent
     codex:
-      field: "（ディレクトリパス + .toml）"
+      field: "(directory path + .toml)"
       type: "path"
       scope: subagent
     direction: both
@@ -27,7 +27,7 @@ entries:
     degrade: null
     transform: "path:remap; rename"
     warn: false
-    notes: "`.claude/agents/<name>.md` ⇄ `.codex/agents/<name>.toml` のパス付け替え + 拡張子変換（.md ⇄ .toml）+ ファイル形式変換（markdown+yaml-frontmatter ⇄ toml）。ディレクトリ再帰探索は両者とも対応。"
+    notes: "Path remapping of `.claude/agents/<name>.md` ↔ `.codex/agents/<name>.toml` + extension conversion (.md ↔ .toml) + file format conversion (markdown+yaml-frontmatter ↔ toml). Recursive directory traversal is supported by both sides."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.name
@@ -44,7 +44,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "両者とも必須フィールド。Claude 側は kebab-case が推奨、lowercase 英数ハイフン慣習あり。Codex 側の命名制約は緩いが ASCII 英数字・スペース・ハイフン・アンダースコアが安全。Claude の name は hooks の agent_type としても使われる。"
+    notes: "Required field on both sides. Claude recommends kebab-case with the convention of lowercase alphanumeric and hyphens. Codex naming constraints are looser, but ASCII alphanumeric characters, spaces, hyphens, and underscores are safe. Claude's name is also used as the agent_type in hooks."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.description
@@ -61,12 +61,12 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "両者とも必須フィールド。Claude 側は description のセマンティックマッチによる自動委譲トリガーを兼ねる（重要な機能差）。Codex 側は spawn_agent 呼び出し時のガイダンステキストとして機能するが、自動委譲には使われない。"
+    notes: "Required field on both sides. On the Claude side, the description also serves as the semantic-match trigger for automatic delegation (an important functional difference). On the Codex side it acts as guidance text when spawn_agent is called, but is not used for automatic delegation."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.body
     claude:
-      field: "（本文 Markdown - system prompt）"
+      field: "(body Markdown - system prompt)"
       type: "string"
       scope: agent
     codex:
@@ -78,7 +78,7 @@ entries:
     degrade: null
     transform: "format:json_to_toml"
     warn: false
-    notes: "Claude agents/*.md の frontmatter 以降の Markdown 本文が system prompt になる。Codex では standalone TOML の developer_instructions フィールドに相当。内容は lossless だが形式変換（Markdown → TOML 文字列）が必要。Codex→Claude 変換では TOML 文字列を Markdown body に展開する。"
+    notes: "The Markdown body after the frontmatter in Claude agents/*.md becomes the system prompt. In Codex this corresponds to the developer_instructions field in standalone TOML. Content is lossless but format conversion (Markdown → TOML string) is required. On Codex→Claude conversion, the TOML string is expanded into a Markdown body."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.model
@@ -93,9 +93,9 @@ entries:
     direction: both
     loss: lossy
     degrade: null
-    transform: "enum_map:{sonnet:（claude-sonnet フル ID）,opus:（claude-opus フル ID）,haiku:（claude-haiku フル ID）,inherit:（省略）}"
+    transform: "enum_map:{sonnet:(claude-sonnet full ID),opus:(claude-opus full ID),haiku:(claude-haiku full ID),inherit:(omit)}"
     warn: true
-    notes: "Claude は sonnet/opus/haiku エイリアスまたはフル model ID（例: claude-opus-4-8）または inherit を受け付ける。Codex standalone TOML の model はフル model ID 直書き（GPT 系 ID）のみ有効でエイリアス非対応。inherit はフィールド省略に相当。モデルプロバイダーが異なるため厳密な等価マッピングはない（lossy）。unmapped エイリアスは warn + 手動確認を促すこと。"
+    notes: "Claude accepts the sonnet/opus/haiku aliases, full model IDs (e.g. claude-opus-4-8), or inherit. Codex standalone TOML's model field only accepts a full model ID (GPT-family IDs) and does not support aliases. `inherit` corresponds to omitting the field. Model providers differ, so there is no strict equivalent mapping (lossy). Unmapped aliases should trigger a warning and prompt manual review."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.effort
@@ -112,7 +112,7 @@ entries:
     degrade: null
     transform: "enum_map:{max:xhigh,minimal:low}"
     warn: true
-    notes: "Claude の effort 値 `max` は Codex に存在しないため xhigh に丸める。Codex の `minimal` は Claude に存在しないため低い方 `low` に丸める。それ以外の low/medium/high/xhigh は lossless。"
+    notes: "Claude's effort value `max` does not exist in Codex and is rounded down to xhigh. Codex's `minimal` does not exist in Claude and is rounded up to `low`. All other values (low/medium/high/xhigh) are lossless."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.tools
@@ -128,10 +128,10 @@ entries:
     loss: lossy
     degrade:
       to: subagent
-      target: ".codex/agents/<name>.toml の sandbox_mode"
+      target: ".codex/agents/<name>.toml sandbox_mode field"
     transform: null
     warn: true
-    notes: "Codex に個別ツール許可リストの概念がない。tools リストの内容を sandbox_mode で粗く近似: Read 系のみ → read-only、Write 含む → workspace-write、全ツール → 省略（親継承）。Agent(x,y) 構文（spawn 可能エージェントの制限）は Codex に対応機構なし → dropped。MCP ツール名による制限も dropped。warn:true。"
+    notes: "Codex has no concept of an individual tool allowlist. The tools list is approximated coarsely with sandbox_mode: read-only-only tools → read-only; includes Write tools → workspace-write; all tools → omit (inherit from parent). The Agent(x,y) syntax for restricting which agents can be spawned has no Codex counterpart → dropped. Restrictions by MCP tool names are also dropped. warn:true."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.disallowedTools
@@ -148,7 +148,7 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Codex に個別ツール拒否リストの概念がない。変換時は破棄し、相当する sandbox_mode の設定を手動で検討するよう警告すること。"
+    notes: "Codex has no concept of an individual tool denylist. Discard on conversion and warn the user to consider equivalent sandbox_mode settings manually."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.permissionMode
@@ -164,10 +164,10 @@ entries:
     loss: lossy
     degrade:
       to: subagent
-      target: ".codex/agents/<name>.toml の sandbox_mode / approval_policy"
+      target: ".codex/agents/<name>.toml sandbox_mode / approval_policy"
     transform: "enum_map:{default:workspace-write,bypassPermissions:danger-full-access,plan:read-only}"
     warn: true
-    notes: "部分対応: default → sandbox_mode:workspace-write + approval_policy:on-request（近似）。bypassPermissions → sandbox_mode:danger-full-access（ただし Codex にも一部の circuit breaker はあるため完全等価ではない）。plan → sandbox_mode:read-only（近似）。acceptEdits/auto/dontAsk は Codex に対応機構なし → dropped。plugin エージェントでは Claude 側でもこのフィールドが無視されることを変換時に注記する。"
+    notes: "Partial mapping: default → sandbox_mode:workspace-write + approval_policy:on-request (approximation). bypassPermissions → sandbox_mode:danger-full-access (not fully equivalent, as Codex still has some circuit breakers). plan → sandbox_mode:read-only (approximation). acceptEdits/auto/dontAsk have no Codex counterpart → dropped. Note in the conversion output that this field is ignored by Claude itself for plugin agents."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.maxTurns
@@ -184,7 +184,7 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "ターン数上限は Codex に直接対応がない。Codex の agents.job_max_runtime_seconds（秒ベースのタイムアウト）が最も近いが、粒度が根本的に異なる（ターン数 vs 経過秒数）ため等価変換不可。dropped として処理し、対応する時間制限の手動設定を促すこと。"
+    notes: "There is no direct Codex counterpart for a turn-count limit. Codex's agents.job_max_runtime_seconds (a seconds-based timeout) is the closest analog, but the granularity is fundamentally different (turn count vs elapsed seconds), so equivalent conversion is not possible. Treat as dropped and prompt the user to configure a corresponding time limit manually."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.skills
@@ -201,7 +201,7 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Claude の skills フィールドは起動時にスキルのフル内容をコンテキストに inject する（実質的な system prompt 拡張）。Codex の skills.config はスキルの有効化オーバーライド（enabled/path フィールドを持つ object の配列）であり、内容 inject ではない。機能的に大きく異なるため近似にとどまる。warn:true。"
+    notes: "Claude's skills field injects the full skill content into the context at startup (effectively a system prompt extension). Codex's skills.config is an activation override for skills (an array of objects with enabled/path fields), not a content injection. The functionality differs significantly, so this is an approximation only. warn:true."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.mcpServers
@@ -218,7 +218,7 @@ entries:
     degrade: null
     transform: "rename; format:json_to_toml"
     warn: true
-    notes: "rename: mcpServers ⇄ mcp_servers。形式変換: JSON（Claude）⇄ TOML（Codex）。Claude の mcpServers は inline 定義（エージェント起動時に接続・終了時に切断）と名前参照（親セッションの接続を共有）の 2 形式を持つが、Codex は TOML の mcp_servers オブジェクトのみ。名前参照形式は standalone TOML では表現困難（lossy）。Claude plugin エージェントでは mcpServers が無視される点を注記すること。"
+    notes: "rename: mcpServers ↔ mcp_servers. Format conversion: JSON (Claude) ↔ TOML (Codex). Claude's mcpServers supports two forms: inline definition (connects on agent start and disconnects on end) and named reference (shares the parent session's connection). The named-reference form is difficult to express in standalone TOML (lossy). Note in the conversion output that mcpServers is ignored for Claude plugin agents."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.hooks
@@ -234,10 +234,10 @@ entries:
     loss: lossy
     degrade:
       to: session
-      target: "config.toml の hooks セクション または hooks.json（features.hooks = true 必須）"
+      target: "config.toml hooks section or hooks.json (features.hooks = true required)"
     transform: null
     warn: true
-    notes: "Claude はエージェント frontmatter 内に hooks を定義し、そのエージェント実行中だけ有効なエージェントスコープを実現できる。Codex では hooks は config.toml または hooks.json に書かれ session/project スコープになる。エージェントスコープに閉じることができないため情報損失。features.hooks = true（Codex 側で明示設定が必要）。Claude の Stop イベントは Codex の SubagentStop に相当するが設定先が変わる。変換後は hooks が全セッションに効くことを警告すること。plugin エージェントでは Claude 側でも hooks が無視される。"
+    notes: "Claude allows defining hooks inside the agent frontmatter, giving them agent-scoped lifetime (active only while that agent runs). In Codex, hooks are written in config.toml or hooks.json and are session/project scoped. They cannot be limited to agent scope, so information is lost. features.hooks = true must be explicitly set on the Codex side. Claude's Stop event corresponds to Codex's SubagentStop, but the configuration destination changes. Warn after conversion that hooks will apply to all sessions. For Claude plugin agents, hooks are also ignored on the Claude side."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.memory
@@ -253,10 +253,10 @@ entries:
     loss: lossy
     degrade:
       to: global
-      target: "config.toml の features.memories / memories.generate_memories / memories.use_memories"
+      target: "config.toml features.memories / memories.generate_memories / memories.use_memories"
     transform: null
     warn: true
-    notes: "Claude の memory は user（~/.claude/agent-memory/<name>/）・project（.claude/agent-memory/<name>/）・local（.claude/agent-memory-local/<name>/）の 3 スコープでディレクトリも独立。Codex は features.memories（機能全体の on/off）・memories.generate_memories（新スレッドをメモリ入力として保存）・memories.use_memories（既存メモリをセッションに inject）のグローバル設定のみでスコープ分離の概念がない。変換では lossy として扱い、スコープ意図を変換 notes に残すこと。"
+    notes: "Claude's memory has three scopes with independent directories: user (~/.claude/agent-memory/<name>/), project (.claude/agent-memory/<name>/), and local (.claude/agent-memory-local/<name>/). Codex provides only global settings: features.memories (master on/off), memories.generate_memories (save new threads as memory input), and memories.use_memories (inject existing memories into the session) — with no concept of scope separation. Treat as lossy on conversion and preserve the scope intent in the conversion notes."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.background
@@ -273,7 +273,7 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Claude の background: true は当該エージェントを常時バックグラウンド実行させるフラグ（並列実行・権限プロンプト auto-deny）。Codex に対応フラグがない。warn:true。"
+    notes: "Claude's background: true flag keeps the agent running in the background at all times (parallel execution with auto-deny for permission prompts). Codex has no equivalent flag. warn:true."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.isolation
@@ -290,7 +290,7 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Claude の isolation: worktree はエージェントを一時的な git worktree で分離実行し、デフォルトブランチから分岐したリポジトリコピーを与える（エージェント終了時に変更なければ自動クリーンアップ）。Codex に git worktree isolation の概念がない。warn:true。"
+    notes: "Claude's isolation: worktree runs the agent in an isolated temporary git worktree, providing a repository copy branched from the default branch (auto-cleaned up if no changes remain when the agent exits). Codex has no concept of git worktree isolation. warn:true."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.color
@@ -307,7 +307,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "UI 装飾フィールド。Codex に受け皿なし。変換時は破棄するのみ。warn:false（機能に影響しない）。"
+    notes: "UI decoration field. No counterpart in Codex. Silently discarded on conversion. warn:false (no functional impact)."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.initialPrompt
@@ -324,7 +324,7 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Claude の initialPrompt は --agent フラグや agent 設定でメインセッションエージェントとして起動した場合のみ有効。コマンド・スキルも処理され、ユーザー提供プロンプトの前に付加されて自動 submit される。Codex には auto-submit 挙動がない。developer_instructions 末尾への付記で「モデルへの初期指示」として近似するが、auto-submit 挙動・コマンド処理は dropped。warn:true。"
+    notes: "Claude's initialPrompt is only effective when the agent is launched as the main-session agent via the --agent flag or agent configuration. Commands and skills are processed, and the prompt is prepended to the user-provided prompt and auto-submitted. Codex has no auto-submit behavior. The approximation is to append it to the end of developer_instructions as an 'initial instruction to the model', but the auto-submit behavior and command processing are dropped. warn:true."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.nickname_candidates
@@ -341,7 +341,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "Codex 固有フィールド。spawn されたエージェントインスタンスの表示ニックネーム候補プール。Claude に受け皿なし。dropped。warn:false（UI 装飾のみ）。"
+    notes: "Codex-only field. A pool of display nickname candidates for spawned agent instances. No counterpart in Claude. Dropped. warn:false (UI decoration only)."
     source: "https://github.com/openai/codex"
 
   - id: subagents.config_file
@@ -358,30 +358,30 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Codex 固有のロールレイヤー機構。[agents.<name>] から別 TOML ファイルへのパス参照で、role 別の config.toml 互換キーをオーバーレイできる。Claude のエージェント設定はファイル単体で完結するためこの間接参照の概念がない。Codex→Claude 変換では config_file を読み込んで内容をインライン展開した上で Claude frontmatter に変換することが必要。warn:true。"
+    notes: "Codex-only role-layer mechanism. A path reference from [agents.<name>] to a separate TOML file that overlays config.toml-compatible keys for a given role. Claude agent configuration is self-contained in a single file and has no concept of this kind of indirection. On Codex→Claude conversion, config_file must be read and its contents inlined before converting to Claude frontmatter. warn:true."
     source: "https://github.com/openai/codex"
 
   - id: subagents.spawn-model
     claude:
-      field: "（description マッチによる自動委譲）"
-      type: "（動作モデル）"
+      field: "(automatic delegation via description match)"
+      type: "(behavioral model)"
       scope: agent
     codex:
-      field: "（spawn_agent ツールの明示呼び出し）"
-      type: "（動作モデル）"
+      field: "(explicit spawn_agent tool call)"
+      type: "(behavioral model)"
       scope: subagent
     direction: claude_to_codex
     loss: dropped
     degrade: null
     transform: null
     warn: true
-    notes: "Claude Code はエージェントの description のセマンティックマッチにより自動委譲するが、Codex は features.multi_agent=true（既定 on）でも spawn_agent ツールの明示呼び出しが必須（'Codex only spawns a new agent when you explicitly ask it to do so.'）。この根本的な動作モデルの差は変換で再現できない。Claude→Codex 変換時は AGENTS.md または developer_instructions に明示的な spawn 指示を追加することを変換レポートに必ず注記すること。"
+    notes: "Claude Code automatically delegates work via semantic matching of the agent's description, whereas Codex requires an explicit call to the spawn_agent tool even when features.multi_agent=true (the default) is set ('Codex only spawns a new agent when you explicitly ask it to do so.'). This fundamental behavioral difference cannot be reproduced by conversion. On Claude→Codex conversion, the conversion report must always note that explicit spawn instructions should be added to AGENTS.md or developer_instructions."
     source: "https://developers.openai.com/codex/subagents"
 
   - id: subagents.plugin-restrictions
     claude:
-      field: "（plugin エージェントにおける hooks/mcpServers/permissionMode の無視）"
-      type: "（制約）"
+      field: "(hooks/mcpServers/permissionMode silently ignored in plugin agents)"
+      type: "(constraint)"
       scope: agent
     codex:
       field: null
@@ -392,7 +392,7 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Claude の plugin エージェント（plugin の agents/ ディレクトリに配置）では hooks・mcpServers・permissionMode の 3 フィールドがセキュリティ制約により無視される。plugin として配布されるエージェントを変換する際はこの制約を変換レポートに明記すること。回避策: エージェントファイルを .claude/agents/ または ~/.claude/agents/ にコピーする。"
+    notes: "For Claude plugin agents (placed in a plugin's agents/ directory), the three fields hooks, mcpServers, and permissionMode are silently ignored due to security constraints. When converting an agent distributed as a plugin, this restriction must be noted in the conversion report. Workaround: copy the agent file to .claude/agents/ or ~/.claude/agents/."
     source: "https://code.claude.com/docs/en/plugins-reference"
 
   - id: subagents.global-max_threads
@@ -409,7 +409,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "Codex グローバル設定。同時に開けるエージェントスレッドの最大数（デフォルト: 6）。Claude に対応するグローバル制限設定なし。"
+    notes: "Codex global setting. Maximum number of simultaneously open agent threads (default: 6). Claude has no equivalent global limit setting."
     source: "https://github.com/openai/codex"
 
   - id: subagents.global-max_depth
@@ -426,7 +426,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "Codex グローバル設定。spawned agent のネスト深度上限（デフォルト: 1。root は深度 0）。Claude に対応設定なし。なお Claude のサブエージェントはそもそも他サブエージェントを spawn できないため（ネスト深度 1 固定）、この制約は概念的には共通している。"
+    notes: "Codex global setting. Maximum nesting depth for spawned agents (default: 1; root is depth 0). Claude has no equivalent setting. Note that Claude subagents cannot themselves spawn other subagents (fixed nesting depth of 1), so this constraint is conceptually shared."
     source: "https://github.com/openai/codex"
 
   - id: subagents.global-job_max_runtime_seconds
@@ -443,14 +443,14 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "Codex グローバル設定。spawn_agents_on_csv バッチ処理のワーカー 1 件あたりのデフォルトタイムアウト（デフォルト: 1800 秒）。Claude に対応設定なし。"
+    notes: "Codex global setting. Default per-worker timeout for spawn_agents_on_csv batch processing (default: 1800 seconds). Claude has no equivalent setting."
     source: "https://github.com/openai/codex"
 
 notes:
-  - "最大の設計差: Claude Code は description のセマンティックマッチで自動委譲するが、Codex は spawn_agent の明示呼び出しが必須。この差は変換で再現できず、変換レポートへの必須注記事項。"
-  - "Claude agents/*.md は frontmatter + Markdown body の形式。Codex standalone TOML は name/description/developer_instructions + ConfigToml 互換キーの TOML 形式。形式変換（format:json_to_toml）が必要。"
-  - "Claude の plugin エージェントは hooks/mcpServers/permissionMode が無視される。この制約は Codex には存在しない（Codex は subagent に hooks/mcp_servers を持てる）。"
-  - "Codex subagent は自動 fork しない（features.multi_agent=true でも spawn_agent 明示が必要）。maxTurns のようなターン制限も直接対応がない（時間ベースの job_max_runtime_seconds のみ）。"
-  - "Codex 系統 A（config.toml の [agents.<name>]）と系統 B（standalone TOML）は内部的に統合されており、standalone TOML は自動的にロールとして認識される。変換では系統 B を生成するのが自然。"
-  - "Codex のモデル指定はフル model ID（GPT 系）のみ有効。Claude のエイリアス（sonnet/opus/haiku）との対応はプロバイダーが異なり lossy。"
-  - "Codex Subagents / Config Reference は 2025-2026 の新機能で仕様が流動的。source URL とともにバージョン依存性を注記すること。"
+  - "The biggest design difference: Claude Code automatically delegates via semantic matching of the description, but Codex requires an explicit spawn_agent call. This difference cannot be reproduced by conversion and is a mandatory item in the conversion report."
+  - "Claude agents/*.md uses a frontmatter + Markdown body format. Codex standalone TOML uses a TOML format of name/description/developer_instructions + ConfigToml-compatible keys. Format conversion (format:json_to_toml) is required."
+  - "Claude plugin agents have hooks/mcpServers/permissionMode silently ignored. This restriction does not exist in Codex (Codex subagents can have hooks/mcp_servers)."
+  - "Codex subagents do not auto-fork (explicit spawn_agent is required even with features.multi_agent=true). Turn-count limits like maxTurns also have no direct counterpart (only the time-based job_max_runtime_seconds)."
+  - "Codex lineage A (config.toml [agents.<name>]) and lineage B (standalone TOML) are unified internally; standalone TOML is automatically recognized as a role. Generating lineage B is the natural output of conversion."
+  - "Codex model specification only accepts full model IDs (GPT-family). Mapping from Claude aliases (sonnet/opus/haiku) is lossy because the model providers differ."
+  - "Codex Subagents / Config Reference is a new feature added in 2025-2026 and the specification is still evolving. Always note version dependencies together with the source URLs."

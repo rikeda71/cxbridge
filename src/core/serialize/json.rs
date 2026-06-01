@@ -3,9 +3,9 @@ use std::path::Path;
 use anyhow::Context;
 use serde_json::Value;
 
-/// JSON ファイルを読み込み、handler の parse() 契約に従う Value を返す。
+/// Reads a JSON file and returns a Value conforming to the handler parse() contract.
 ///
-/// トップレベルオブジェクトを `frontmatter` に格納し、`body` は空文字列とする。
+/// Stores the top-level object in `frontmatter`; `body` is set to an empty string.
 pub fn parse_json_file(path: &Path) -> anyhow::Result<Value> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read JSON file: {}", path.display()))?;
@@ -31,7 +31,7 @@ pub fn parse_json_file(path: &Path) -> anyhow::Result<Value> {
     }))
 }
 
-/// Value を JSON ファイルとして書き出す（整形付き）。
+/// Writes a Value to a JSON file with pretty-printing.
 pub fn emit_json_file(path: &Path, value: &Value) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)

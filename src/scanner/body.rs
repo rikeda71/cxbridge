@@ -22,30 +22,30 @@ pub enum FindingKind {
     InvokeNamespaced,
 }
 
-/// scan_body が本文中の検出事項に対して提案するアクション。
+/// The action that `scan_body` proposes for a finding in the body text.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
-    /// 自動書き換え可能（rewrite_body で置換する）
+    /// Can be rewritten automatically (substituted by `rewrite_body`).
     Rewrite,
-    /// 警告のみ（自動書き換えしない。手動対応を促す）
+    /// Warning only (not auto-rewritten; prompts manual intervention).
     Warn,
-    /// 出力から除去を提案（自動除去はしない）
+    /// Proposed for removal from the output (not auto-removed).
     Drop,
 }
 
-/// 本文中の検出事項1件。
+/// A single finding detected in the body text.
 #[derive(Debug, Clone)]
 pub struct BodyFinding {
     pub kind: FindingKind,
-    /// マッチしたテキスト
+    /// The matched text.
     pub matched: String,
-    /// 行番号（1 始まり）
+    /// Line number (1-based).
     pub line: usize,
-    /// 推奨アクション
+    /// Recommended action.
     pub action: Action,
-    /// action == Rewrite の場合の置換後テキスト
+    /// Replacement text when `action == Rewrite`.
     pub rewrite: Option<String>,
-    /// レポート用の説明メッセージ
+    /// Explanatory message for the report.
     pub note: String,
 }
 

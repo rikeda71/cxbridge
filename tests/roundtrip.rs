@@ -31,7 +31,7 @@ fn empty_plan() -> EmitPlan {
     }
 }
 
-/// SKILL.md を c2x 変換して report が期待通りか検証する。
+/// Convert SKILL.md via c2x and verify the report matches expectations.
 #[test]
 fn test_skill_c2x_basic_roundtrip() {
     let skill_path = "tests/fixtures/claude/skills/deploy/SKILL.md";
@@ -86,7 +86,7 @@ fn test_skill_c2x_basic_roundtrip() {
     );
 }
 
-/// SKILL.md を c2x 変換して dropped 件数が報告される。
+/// Convert SKILL.md via c2x and verify that the dropped count is reported.
 #[test]
 fn test_skill_c2x_check_reports_dropped() {
     let skill_path = "tests/fixtures/claude/skills/deploy/SKILL.md";
@@ -109,7 +109,7 @@ fn test_skill_c2x_check_reports_dropped() {
     );
 }
 
-/// .mcp.json を c2x 変換して基本的な変換が機能するか確認。
+/// Convert .mcp.json via c2x and verify that basic conversion works correctly.
 #[test]
 fn test_mcp_c2x_basic() {
     let mcp_path = "tests/fixtures/claude/.mcp.json";
@@ -133,20 +133,20 @@ fn test_mcp_c2x_basic() {
 
     assert_eq!(ir.children.len(), 4, "Expected 4 MCP server children");
 
-    // filesystem サーバーの timeout 変換確認
+    // Verify timeout conversion for the filesystem server
     let fs_server = ir.children.iter().find(|c| c.source_path == "filesystem");
     assert!(fs_server.is_some(), "Expected 'filesystem' server");
     let fs = fs_server.unwrap();
     let timeout = fs.fields.get("mcp.timeout");
     assert!(timeout.is_some(), "Expected timeout field");
-    // 30000ms → 30.0sec
+    // 30000ms → 30.0 sec
     assert_eq!(
         timeout.unwrap().value.as_f64().unwrap(),
         30.0,
         "Expected timeout converted to 30.0 sec"
     );
 
-    // api-server の Bearer 抽出確認
+    // Verify Bearer token extraction for api-server
     let api_server = ir.children.iter().find(|c| c.source_path == "api-server");
     assert!(api_server.is_some(), "Expected 'api-server'");
     let api = api_server.unwrap();
@@ -159,7 +159,7 @@ fn test_mcp_c2x_basic() {
     );
 }
 
-/// .mcp.json c2x で dropped/lossy フィールドが report に列挙される。
+/// Dropped/lossy fields are enumerated in the report after .mcp.json c2x conversion.
 #[test]
 fn test_mcp_c2x_report_dropped() {
     let mcp_path = "tests/fixtures/claude/.mcp.json";
@@ -176,8 +176,8 @@ fn test_mcp_c2x_report_dropped() {
 
     let report = build_report(&ir, &empty_plan());
 
-    // alwaysLoad は claude 固有で dropped になるはず (unknown field か dropped)
-    // disabled-server の alwaysLoad は unknown フィールドとして Drop 診断が出る
+    // alwaysLoad is Claude-specific and should be dropped (unknown field or dropped)
+    // alwaysLoad on disabled-server produces a Drop diagnostic as an unknown field
     let total_drops = report.dropped.len();
     assert!(
         total_drops >= 1,
@@ -186,7 +186,7 @@ fn test_mcp_c2x_report_dropped() {
     );
 }
 
-/// .mcp.json c2x lower でファイルが生成される。
+/// Files are generated after .mcp.json c2x lower.
 #[test]
 fn test_mcp_c2x_lower_generates_files() {
     let mcp_path = "tests/fixtures/claude/.mcp.json";
@@ -220,7 +220,7 @@ fn test_mcp_c2x_lower_generates_files() {
     );
 }
 
-/// Codex config.toml の x2c 変換テスト。
+/// x2c conversion test for Codex config.toml.
 #[test]
 fn test_mcp_x2c_from_codex_config() {
     let config_path = "tests/fixtures/codex/config.toml";
@@ -246,10 +246,10 @@ fn test_mcp_x2c_from_codex_config() {
         .lift(&parsed, ConvDir::X2c)
         .expect("lift should succeed");
 
-    // filesystem と api-server が変換される (disabled-server は enabled=false)
+    // filesystem and api-server are converted (disabled-server has enabled=false)
     assert!(ir.children.len() >= 2, "Expected at least 2 children");
 
-    // filesystem server: timeout が変換される
+    // filesystem server: timeout is converted
     let fs = ir.children.iter().find(|c| c.source_path == "filesystem");
     assert!(fs.is_some(), "Expected filesystem server");
     let fs = fs.unwrap();
@@ -262,7 +262,7 @@ fn test_mcp_x2c_from_codex_config() {
         );
     }
 
-    // disabled-server は disabled フラグが設定されているか
+    // Check whether disabled-server has its disabled flag set
     let disabled = ir
         .children
         .iter()
@@ -279,7 +279,7 @@ fn test_mcp_x2c_from_codex_config() {
     }
 }
 
-/// x2c で .mcp.json が生成される。
+/// .mcp.json is generated after x2c conversion.
 #[test]
 fn test_mcp_x2c_lower_generates_claude_mcp_json() {
     let config_path = "tests/fixtures/codex/config.toml";
@@ -330,7 +330,7 @@ fn test_mcp_x2c_lower_generates_claude_mcp_json() {
     );
 }
 
-/// ccx check コマンドのシミュレーション: dropped 件数を報告する。
+/// Simulate the ccx check command: report the dropped count.
 #[test]
 fn test_check_skill_reports_dropped_count() {
     let skill_path = "tests/fixtures/claude/skills/deploy/SKILL.md";
@@ -370,14 +370,14 @@ fn test_check_skill_reports_dropped_count() {
         dropped_ids
     );
 
-    // body warnings が存在すること (動的注入や変数参照がある)
+    // body warnings must be present (dynamic injection and variable references exist)
     assert!(
         !report.body_warnings.is_empty(),
         "Expected body warnings from skill body"
     );
 }
 
-/// c2x lower でファイルが生成され、skill.md の内容が正しい。
+/// Files are generated after c2x lower and the SKILL.md content is correct.
 #[test]
 fn test_skill_c2x_lower_generates_skill_md() {
     let skill_path = "tests/fixtures/claude/skills/deploy/SKILL.md";
@@ -412,14 +412,14 @@ fn test_skill_c2x_lower_generates_skill_md() {
         "Expected when_to_use concatenated into description"
     );
 
-    // .rules ファイルが生成されていること (Bash tool degrade)
+    // A .rules file must be generated (Bash tool degrade)
     let rules_file = plan.files.iter().find(|f| f.path.ends_with(".rules"));
     assert!(
         rules_file.is_some(),
         "Expected .rules file for Bash tool degrade"
     );
 
-    // subagent TOML が生成されていること (model/effort degrade)
+    // A subagent TOML must be generated (model/effort degrade)
     let agent_toml = plan
         .files
         .iter()
@@ -431,10 +431,10 @@ fn test_skill_c2x_lower_generates_skill_md() {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// P2: Hooks テスト
+// P2: Hooks tests
 // ────────────────────────────────────────────────────────────────────────────
 
-/// hooks.json c2x: 共通イベントが変換される、Claude 固有イベントが dropped になる。
+/// hooks.json c2x: common events are converted; Claude-only events are dropped.
 #[test]
 fn test_hooks_c2x_basic() {
     let hooks_path = "tests/fixtures/claude/hooks.json";
@@ -497,7 +497,7 @@ fn test_hooks_c2x_basic() {
     );
 }
 
-/// hooks.json c2x lower (user scope): hooks.json が生成され、matcher が正規化されている。
+/// hooks.json c2x lower (user scope): hooks.json is generated and the matcher is normalized.
 #[test]
 fn test_hooks_c2x_lower_user_scope() {
     let hooks_path = "tests/fixtures/claude/hooks.json";
@@ -561,7 +561,7 @@ fn test_hooks_c2x_lower_user_scope() {
     assert!(has_16430, "Expected #16430 warning in diagnostics");
 }
 
-/// hooks.json c2x lower (project scope): .codex/config.toml が生成される。
+/// hooks.json c2x lower (project scope): .codex/config.toml is generated.
 #[test]
 fn test_hooks_c2x_lower_project_scope() {
     let hooks_path = "tests/fixtures/claude/hooks.json";
@@ -607,7 +607,7 @@ fn test_hooks_c2x_lower_project_scope() {
     );
 }
 
-/// hooks matcher の正規化テスト（Edit|Write → ^(Edit|Write)$）。
+/// Hooks matcher normalization test (Edit|Write → ^(Edit|Write)$).
 #[test]
 fn test_hooks_c2x_matcher_alternation_normalized() {
     let hooks_json = serde_json::json!({
@@ -650,10 +650,10 @@ fn test_hooks_c2x_matcher_alternation_normalized() {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// P2: Memory テスト
+// P2: Memory tests
 // ────────────────────────────────────────────────────────────────────────────
 
-/// CLAUDE.md c2x: AGENTS.md が生成される、内容が保持される。
+/// CLAUDE.md c2x: AGENTS.md is generated and its content is preserved.
 #[test]
 fn test_memory_c2x_basic() {
     let memory_path = "tests/fixtures/claude/CLAUDE.md";
@@ -692,7 +692,7 @@ fn test_memory_c2x_basic() {
     );
 }
 
-/// AGENTS.md x2c: CLAUDE.md が生成される。
+/// AGENTS.md x2c: CLAUDE.md is generated.
 #[test]
 fn test_memory_x2c_basic() {
     let memory_path = "tests/fixtures/codex/AGENTS.md";
@@ -729,7 +729,7 @@ fn test_memory_x2c_basic() {
     );
 }
 
-/// insta スナップショットテスト: report の JSON が安定していること。
+/// insta snapshot test: report JSON output must be stable.
 #[test]
 fn test_skill_c2x_report_snapshot() {
     let skill_path = "tests/fixtures/claude/skills/deploy/SKILL.md";
@@ -745,7 +745,7 @@ fn test_skill_c2x_report_snapshot() {
         .expect("lift should succeed");
     let report = build_report(&ir, &empty_plan());
 
-    // 安定した出力のみ snapshot 化する
+    // Only snapshot stable output fields
     let snapshot = serde_json::json!({
         "lossless_count": report.lossless.len(),
         "dropped_count": report.dropped.len(),
@@ -758,10 +758,10 @@ fn test_skill_c2x_report_snapshot() {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// P3: Plugins テスト
+// P3: Plugins tests
 // ────────────────────────────────────────────────────────────────────────────
 
-/// plugin.json c2x: .codex-plugin/plugin.json が生成される。
+/// plugin.json c2x: .codex-plugin/plugin.json is generated.
 #[test]
 fn test_plugin_c2x_generates_codex_manifest() {
     let plugin_path = "tests/fixtures/claude/.claude-plugin/plugin.json";
@@ -831,7 +831,7 @@ fn test_plugin_c2x_generates_codex_manifest() {
     assert_eq!(content["license"].as_str(), Some("MIT"));
 }
 
-/// plugin.json c2x: 再帰変換で skills と .mcp.json が処理される。
+/// plugin.json c2x: skills and .mcp.json are processed via recursive conversion.
 #[test]
 fn test_plugin_c2x_recursion() {
     let plugin_path = "tests/fixtures/claude/.claude-plugin/plugin.json";
@@ -867,7 +867,7 @@ fn test_plugin_c2x_recursion() {
     );
 }
 
-/// plugin.json c2x dropped 分類の検証。
+/// Verify the dropped classification for plugin.json c2x.
 #[test]
 fn test_plugin_c2x_dropped_classification() {
     let plugin_path = "tests/fixtures/claude/.claude-plugin/plugin.json";
@@ -900,7 +900,7 @@ fn test_plugin_c2x_dropped_classification() {
         dropped_ids
     );
 
-    // userConfig warn（未解決変数リスク）が出ること
+    // A userConfig warn must be emitted (unresolved-variable risk)
     let has_user_config_warn = ir.diagnostics.iter().any(|d| {
         d.id.as_deref() == Some("plugins.userConfig") && d.level == ccx::core::ir::DiagLevel::Warn
     });
@@ -910,7 +910,7 @@ fn test_plugin_c2x_dropped_classification() {
     );
 }
 
-/// plugin.json c2x --dual-manifest: 両方の manifest が生成される。
+/// plugin.json c2x --dual-manifest: both manifests are generated.
 #[test]
 fn test_plugin_c2x_dual_manifest() {
     let plugin_path = "tests/fixtures/claude/.claude-plugin/plugin.json";
@@ -959,7 +959,7 @@ fn test_plugin_c2x_dual_manifest() {
     );
 }
 
-/// plugin.json c2x: marketplace.json が変換されて policy が補完される。
+/// plugin.json c2x: marketplace.json is converted and policy defaults are filled in.
 #[test]
 fn test_plugin_c2x_marketplace_policy_defaults() {
     let plugin_path = "tests/fixtures/claude/.claude-plugin/plugin.json";
@@ -1017,10 +1017,10 @@ fn test_plugin_c2x_marketplace_policy_defaults() {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// P4: Subagent テスト
+// P4: Subagent tests
 // ────────────────────────────────────────────────────────────────────────────
 
-/// Claude agents/<n>.md c2x: .codex/agents/<n>.toml が生成される。
+/// Claude agents/<n>.md c2x: .codex/agents/<n>.toml is generated.
 #[test]
 fn test_subagent_c2x_generates_codex_toml() {
     let agent_path = "tests/fixtures/claude/agents/researcher.md";
@@ -1138,7 +1138,7 @@ fn test_subagent_c2x_generates_codex_toml() {
     assert!(content.contains("high"), "effort value should be in TOML");
 }
 
-/// .codex/agents/<n>.toml x2c: .claude/agents/<n>.md が生成される。
+/// .codex/agents/<n>.toml x2c: .claude/agents/<n>.md is generated.
 #[test]
 fn test_subagent_x2c_generates_claude_md() {
     let agent_path = "tests/fixtures/codex/agents/coder.toml";
@@ -1239,7 +1239,7 @@ fn test_subagent_c2x_report_dropped_fields() {
         drop_ids
     );
 
-    // spawn-model の warn が出ていること
+    // A spawn-model warn must be emitted
     let has_spawn_warn = ir
         .diagnostics
         .iter()
@@ -1411,10 +1411,10 @@ fn test_subagent_x2c_skills_lifted_integration() {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// P4: Settings テスト
+// P4: Settings tests
 // ────────────────────────────────────────────────────────────────────────────
 
-/// settings.json c2x: config.toml が生成され、変換サブセットが正しい。
+/// settings.json c2x: config.toml is generated and the converted subset is correct.
 #[test]
 fn test_settings_c2x_generates_config_toml() {
     let settings_path = "tests/fixtures/claude/settings.json";
@@ -1586,7 +1586,7 @@ fn test_settings_c2x_report_enumerates_remainder() {
     );
 }
 
-/// Codex settings.toml x2c: settings.json が生成される。
+/// Codex settings.toml x2c: settings.json is generated.
 #[test]
 fn test_settings_x2c_generates_claude_settings() {
     let settings_path = "tests/fixtures/codex/settings.toml";
@@ -1598,7 +1598,7 @@ fn test_settings_x2c_generates_claude_settings() {
 
     let maps = load_mappings(Path::new(MAPPINGS_DIR));
 
-    // SettingsHandler で直接テスト（detect は config.toml 向けなので直接呼ぶ）
+    // Test SettingsHandler directly (detect targets config.toml, so call it directly)
     use ccx::handlers::settings::SettingsHandler;
     use ccx::handlers::Handler;
 

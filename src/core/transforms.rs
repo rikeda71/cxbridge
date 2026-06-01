@@ -6,8 +6,8 @@ use serde_json::Value;
 
 use crate::core::mappings::MapEntry;
 
-/// pipeline の実行方向（CLI サブコマンドに対応）。
-/// mappings エントリの有効方向を示す MappingDirection とは別型。
+/// Pipeline execution direction (corresponding to the CLI subcommand).
+/// A separate type from MappingDirection, which indicates the effective direction of a mappings entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConvDir {
     /// Claude → Codex
@@ -16,7 +16,7 @@ pub enum ConvDir {
     X2c,
 }
 
-/// モデルのティア（能力レベル）。
+/// Model capability tier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tier {
     High,
@@ -24,8 +24,8 @@ pub enum Tier {
     Low,
 }
 
-/// Claude モデル名 → Tier へのマッピング。
-/// 未知モデル名は None を返し、呼び出し元が warn を出す。
+/// Maps a Claude model name to a Tier.
+/// Returns None for unknown model names; the caller is responsible for emitting a warning.
 pub fn claude_tier(m: &str) -> Option<Tier> {
     if m.contains("opus") {
         Some(Tier::High)
@@ -38,8 +38,8 @@ pub fn claude_tier(m: &str) -> Option<Tier> {
     }
 }
 
-/// Codex モデル名 → Tier へのマッピング。
-/// 判定: -high/-xhigh → High、-mini → Low、その他 → Mid
+/// Maps a Codex model name to a Tier.
+/// Rules: -high/-xhigh → High, -mini → Low, all others → Mid
 pub fn codex_tier(m: &str) -> Option<Tier> {
     if m.ends_with("-high") || m.ends_with("-xhigh") {
         Some(Tier::High)
@@ -64,42 +64,42 @@ const CLAUDE_LATEST: &[(Tier, &str)] = &[
     (Tier::Low, "claude-haiku-4-5"),  // contains("haiku") → Low ✓
 ];
 
-/// Tier → Codex モデル名。CODEX_LATEST から検索する。
+/// Returns the Codex model name for a given Tier, looked up from CODEX_LATEST.
 pub fn tier_to_codex(t: Tier) -> &'static str {
     CODEX_LATEST
         .iter()
         .find(|(tier, _)| *tier == t)
         .map(|(_, name)| *name)
-        .expect("CODEX_LATEST は全 Tier を網羅している必要があります")
+        .expect("CODEX_LATEST must cover all Tier variants")
 }
 
-/// Tier → Claude モデル名。CLAUDE_LATEST から検索する。
+/// Returns the Claude model name for a given Tier, looked up from CLAUDE_LATEST.
 pub fn tier_to_claude(t: Tier) -> &'static str {
     CLAUDE_LATEST
         .iter()
         .find(|(tier, _)| *tier == t)
         .map(|(_, name)| *name)
-        .expect("CLAUDE_LATEST は全 Tier を網羅している必要があります")
+        .expect("CLAUDE_LATEST must cover all Tier variants")
 }
 
-/// transform 関数の型シグネチャ。
+/// Type signature for transform functions.
 pub type TransformFn = fn(&Value, &TransformCtx) -> Value;
 
-/// transform 実行時のコンテキスト情報。
+/// Context information available during transform execution.
 pub struct TransformCtx<'a> {
-    /// pipeline の実行方向
+    /// Pipeline execution direction
     pub direction: ConvDir,
-    /// enum_map 等の引数（TransformSpec.args から詰める）
+    /// Arguments for transforms such as enum_map (populated from TransformSpec.args)
     pub args: Option<HashMap<String, String>>,
-    /// 対応する mappings エントリ
+    /// The corresponding mappings entry
     pub field: &'a MapEntry,
 }
 
-/// transform 指定文字列を分解した結果。
+/// Result of parsing a transform specification string.
 pub struct TransformSpec {
-    /// transform 名（例: "enum_map", "unit:ms_to_sec"）
+    /// Transform name (e.g. "enum_map", "unit:ms_to_sec")
     pub name: String,
-    /// 引数（`enum_map:{max:xhigh}` の `{...}` 部分）
+    /// Arguments from the `{...}` block (e.g. `enum_map:{max:xhigh}`)
     pub args: Option<HashMap<String, String>>,
 }
 
@@ -161,7 +161,7 @@ fn tf_enum_map(v: &Value, ctx: &TransformCtx) -> Value {
     v.clone()
 }
 
-/// 文字列 "true"/"false" は Value::Bool に変換する。それ以外は Value::String のまま。
+/// Converts the strings "true"/"false" to Value::Bool; all other strings remain Value::String.
 fn parse_mapped_value(s: &str) -> Value {
     match s {
         "true" => Value::Bool(true),
@@ -213,11 +213,11 @@ fn tf_list_to_str_space(v: &Value, _ctx: &TransformCtx) -> Value {
 }
 
 fn tf_rename(v: &Value, _ctx: &TransformCtx) -> Value {
-    // rename: 値はそのまま（キー差は lower 側で解決）
+    // rename: value is passed through unchanged (key differences are resolved in the lower step)
     v.clone()
 }
 
-/// Bearer 環境変数抽出の正規表現（静的初期化）。
+/// Compiled regular expression for extracting the Bearer environment variable (statically initialized).
 static RE_BEARER_ENV: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"Bearer \$\{([A-Z_][A-Z0-9_]*)\}"#).unwrap());
 
@@ -252,17 +252,17 @@ fn tf_path_remap(v: &Value, ctx: &TransformCtx) -> Value {
 }
 
 fn tf_format_json_to_toml(v: &Value, _ctx: &TransformCtx) -> Value {
-    // no-op: serializer が処理する
+    // no-op: handled by the serializer
     v.clone()
 }
 
 fn tf_format_toml_to_json(v: &Value, _ctx: &TransformCtx) -> Value {
-    // no-op: serializer が処理する
+    // no-op: handled by the serializer
     v.clone()
 }
 
 fn tf_inline_imports(v: &Value, _ctx: &TransformCtx) -> Value {
-    // no-op: handler の lower が処理する
+    // no-op: handled by the handler's lower step
     v.clone()
 }
 
@@ -286,13 +286,13 @@ static TRANSFORM_REGISTRY: Lazy<HashMap<&'static str, TransformFn>> = Lazy::new(
     m
 });
 
-/// transform 名から TransformFn を引く（静的レジストリ）。
+/// Looks up a TransformFn by name from the static registry.
 pub fn get_transform(name: &str) -> Option<TransformFn> {
     TRANSFORM_REGISTRY.get(name).copied()
 }
 
-/// `"unit:ms_to_sec; enum_map:{max:xhigh,high:high}"` を分解し Vec<TransformSpec> を返す。
-/// `{...}` ブロックは key:value ペアに分解して TransformSpec.args に格納する。
+/// Parses `"unit:ms_to_sec; enum_map:{max:xhigh,high:high}"` into a Vec<TransformSpec>.
+/// `{...}` blocks are split into key:value pairs and stored in TransformSpec.args.
 pub fn parse_transform(spec: &str) -> Vec<TransformSpec> {
     let mut results = Vec::new();
 
@@ -302,9 +302,9 @@ pub fn parse_transform(spec: &str) -> Vec<TransformSpec> {
             continue;
         }
 
-        // `{...}` ブロックを探す
+        // Look for a `{...}` block
         if let Some(brace_start) = part.find('{') {
-            // trailing ':' or whitespace を除いた名前を取得（例: "enum_map:{...}" → "enum_map"）
+            // Extract the name by stripping trailing ':' or whitespace (e.g. "enum_map:{...}" → "enum_map")
             let name = part[..brace_start]
                 .trim()
                 .trim_end_matches(':')
@@ -312,7 +312,7 @@ pub fn parse_transform(spec: &str) -> Vec<TransformSpec> {
                 .to_string();
             let rest = &part[brace_start..];
 
-            // `{key:val,key2:val2}` をパース
+            // Parse `{key:val,key2:val2}`
             let args = if let (Some(start), Some(end)) = (rest.find('{'), rest.rfind('}')) {
                 let inner = &rest[start + 1..end];
                 let mut map = HashMap::new();
@@ -347,9 +347,9 @@ pub fn parse_transform(spec: &str) -> Vec<TransformSpec> {
     results
 }
 
-/// 方向依存の transform 名を x2c 方向用に反転する。
-/// 例: "unit:ms_to_sec" → x2c では "unit:sec_to_ms"
-/// 例: "str_to_list:space" → x2c では "list_to_str:space"（mcp.oauth.scopes 等）
+/// Inverts a direction-dependent transform name for the x2c direction.
+/// Example: "unit:ms_to_sec" → "unit:sec_to_ms" in x2c
+/// Example: "str_to_list:space" → "list_to_str:space" in x2c (e.g. mcp.oauth.scopes)
 fn invert_transform_for_x2c(name: &str) -> &str {
     match name {
         "unit:ms_to_sec" => "unit:sec_to_ms",
@@ -360,13 +360,14 @@ fn invert_transform_for_x2c(name: &str) -> &str {
     }
 }
 
-/// 各 TransformSpec を順に適用する。
-/// enum_map 等の引数は TransformSpec.args を TransformCtx.args に詰めてから TransformFn を呼ぶ。
+/// Applies each TransformSpec in order.
+/// Arguments for transforms such as enum_map are injected into TransformCtx.args from TransformSpec.args
+/// before calling the TransformFn.
 ///
-/// X2c 方向では unit:ms_to_sec / unit:sec_to_ms を自動反転する。
+/// In the X2c direction, unit:ms_to_sec / unit:sec_to_ms are automatically inverted.
 ///
-/// # 返値
-/// `(変換後の Value, 適用した transform 名の一覧)`
+/// # Returns
+/// `(transformed Value, list of applied transform names)`
 pub fn apply_transforms(
     value: &Value,
     spec: Option<&str>,
@@ -385,7 +386,7 @@ pub fn apply_transforms(
     let mut applied = Vec::new();
 
     for ts in &specs {
-        // x2c 方向では方向依存 transform を反転する
+        // In the x2c direction, invert direction-dependent transforms
         let effective_name = if ctx.direction == ConvDir::X2c {
             invert_transform_for_x2c(&ts.name)
         } else {
@@ -393,7 +394,7 @@ pub fn apply_transforms(
         };
 
         if let Some(tf_fn) = get_transform(effective_name) {
-            // TransformSpec.args を TransformCtx.args に注入
+            // Inject TransformSpec.args into TransformCtx.args
             let ctx_with_args = TransformCtx {
                 direction: ctx.direction,
                 args: ts.args.clone(),
@@ -402,7 +403,7 @@ pub fn apply_transforms(
             current = tf_fn(&current, &ctx_with_args);
             applied.push(effective_name.to_string());
         } else if let Some(tf_fn) = get_transform(&ts.name) {
-            // フォールバック: 元の名前で試みる
+            // Fallback: try the original name
             let ctx_with_args = TransformCtx {
                 direction: ctx.direction,
                 args: ts.args.clone(),
@@ -411,7 +412,7 @@ pub fn apply_transforms(
             current = tf_fn(&current, &ctx_with_args);
             applied.push(ts.name.clone());
         }
-        // 未知 transform はスキップ（warn は呼び出し元で出す）
+        // Unknown transforms are skipped (the caller is responsible for emitting a warning)
     }
 
     (current, applied)
@@ -424,8 +425,8 @@ mod tests {
     use std::path::Path;
 
     fn dummy_entry() -> MapEntry {
-        // テスト用の最小 MapEntry（load_mappings でロードしたものを使うのが本来だが、
-        // transform テストでは field の内容はほぼ参照しないのでダミーを使う）
+        // Minimal MapEntry for tests (ideally loaded via load_mappings, but transform tests
+        // rarely inspect the field contents, so a dummy entry is used here)
         let maps = load_mappings(Path::new("mappings"));
         maps["mcp"].entries[0].clone()
     }

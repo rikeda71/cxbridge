@@ -159,7 +159,7 @@ fn detect_config_toml(p: &Path) -> anyhow::Result<Kind> {
 }
 
 fn detect_dir(p: &Path) -> anyhow::Result<Kind> {
-    // 優先順位: Skill > Plugin > Mcp > Hooks > Memory > Subagent > Settings
+    // Priority: Skill > Plugin > Mcp > Hooks > Memory > Subagent > Settings
     let mut found_kinds: Vec<Kind> = Vec::new();
 
     for entry in WalkDir::new(p).follow_links(false) {

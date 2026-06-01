@@ -1,33 +1,33 @@
 use crate::core::ir::{DiagLevel, IRNode, Loss};
 use crate::handlers::EmitPlan;
 
-/// 各診断エントリの共通表現。
+/// Common representation of a diagnostic entry.
 #[derive(Debug, Clone)]
 pub struct DiagEntry {
-    /// mappings の entry id（例: "skill.allowed-tools"）
+    /// Entry id from mappings (e.g. "skill.allowed-tools")
     pub id: Option<String>,
     pub message: String,
 }
 
-/// build_report が返す集計済みレポート。
-/// dropped / degraded は必ず列挙（silent な切り捨て厳禁）。
+/// Aggregated report returned by build_report.
+/// dropped and degraded fields must always be enumerated — silent truncation is forbidden.
 pub struct Report {
-    /// lossless フィールド id の一覧
+    /// List of lossless field ids
     pub lossless: Vec<String>,
-    /// lossy 変換（変換成功だが意味差あり）
+    /// Lossy conversions (successful but with semantic differences)
     pub lossy: Vec<DiagEntry>,
-    /// 変換先なしで切り捨てられたフィールド
+    /// Fields dropped due to having no conversion target
     pub dropped: Vec<DiagEntry>,
-    /// degrade エンジンで別スコープへ降格されたフィールド
+    /// Fields relocated to a different scope by the degrade engine
     pub degraded: Vec<DiagEntry>,
-    /// 本文スキャナが検出した警告
+    /// Warnings detected by the body scanner
     pub body_warnings: Vec<DiagEntry>,
 }
 
-/// IR ノードと EmitPlan から Report を構築する。
+/// Builds a Report from an IR node and an EmitPlan.
 ///
-/// IR の diagnostics と各 IRField を集計する。
-/// dropped / degraded は必ず列挙する（silent な切り捨て厳禁）。
+/// Aggregates the IR diagnostics and each IRField.
+/// dropped and degraded fields must always be enumerated — silent truncation is forbidden.
 pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
     let mut lossless = Vec::new();
     let mut lossy = Vec::new();
@@ -164,12 +164,12 @@ pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
     }
 }
 
-/// Report を標準出力に表示する。
+/// Prints a Report to standard output.
 ///
-/// fmt が Some("json") の場合は機械可読 JSON で出力（CI 用）。
-/// fmt が None の場合はヒューマンリーダブルなテキスト形式で出力。
+/// When fmt is Some("json"), outputs machine-readable JSON (for CI use).
+/// When fmt is None, outputs human-readable text format.
 ///
-/// 表示形式（テキスト）:
+/// Text format:
 /// ```text
 /// ✔ <source> → <output>
 ///   ◎ <lossless fields>                    lossless
@@ -304,7 +304,7 @@ mod tests {
                 degrade: None,
                 warning: None,
                 dropped: Some(DroppedInfo {
-                    reason: "Codex に概念なし".to_string(),
+                    reason: "No Codex equivalent".to_string(),
                 }),
             },
         );

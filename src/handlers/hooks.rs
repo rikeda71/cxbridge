@@ -10,7 +10,7 @@ use crate::core::mappings::DomainMap;
 use crate::core::transforms::ConvDir;
 use crate::handlers::{EmitFile, EmitPlan, Handler, LowerOpts, Scope};
 
-/// 共通 10 イベント（both / lossless）のリスト。
+/// The 10 common events (both / lossless).
 const COMMON_EVENTS: &[&str] = &[
     "SessionStart",
     "UserPromptSubmit",
@@ -24,7 +24,7 @@ const COMMON_EVENTS: &[&str] = &[
     "Stop",
 ];
 
-/// Claude 固有イベント（claude_to_codex / dropped）のリスト。
+/// Claude-specific events (claude_to_codex / dropped).
 const CLAUDE_ONLY_EVENTS: &[&str] = &[
     "Setup",
     "UserPromptExpansion",
@@ -48,10 +48,10 @@ const CLAUDE_ONLY_EVENTS: &[&str] = &[
     "SessionEnd",
 ];
 
-/// c2x で dropped される hook フィールド（args/shell/if/once/asyncRewake）。
+/// Hook fields dropped in c2x (args/shell/if/once/asyncRewake).
 const DROPPED_C2X_HOOK_FIELDS: &[&str] = &["args", "shell", "if", "once", "asyncRewake"];
 
-/// hooks ドメインのハンドラ。
+/// Handler for the hooks domain.
 pub struct HooksHandler {
     pub map: DomainMap,
 }
@@ -63,7 +63,7 @@ impl Handler for HooksHandler {
 
     fn detect(&self, path: &Path) -> bool {
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        // hooks.json (Claude) または hooks セクション含む config.toml (Codex)
+        // hooks.json (Claude) or config.toml containing a hooks section (Codex)
         name == "hooks.json" || name == "settings.json"
     }
 
@@ -92,21 +92,21 @@ impl Handler for HooksHandler {
 }
 
 impl HooksHandler {
-    /// Claude JSON hooks → IR（c2x）
+    /// Lift Claude JSON hooks → IR (c2x).
     fn lift_c2x(&self, parsed: &Value) -> anyhow::Result<IRNode> {
         let source_path = parsed["path"].as_str().unwrap_or("").to_string();
         let mut node = new_node(Kind::Hooks, Tool::Claude, &source_path);
 
-        // parsed は hooks.json の raw JSON または settings.json の "hooks" キー以下
-        // 形式: {"hooks": {"EventName": [{matcher, hooks:[{type,...}]}]}}
-        // あるいは直接 {"EventName": [...]}
+        // `parsed` is the raw JSON of hooks.json, or the "hooks" key of settings.json.
+        // Format: {"hooks": {"EventName": [{matcher, hooks:[{type,...}]}]}}
+        // or directly: {"EventName": [...]}
         let hooks_obj = if let Some(h) = parsed.get("hooks").and_then(|v| v.as_object()) {
             h.clone()
         } else if let Some(fm) = parsed.get("frontmatter").and_then(|v| v.as_object()) {
             if let Some(h) = fm.get("hooks").and_then(|v| v.as_object()) {
                 h.clone()
             } else {
-                // frontmatter 全体を hooks として扱う
+                // Treat the entire frontmatter as hooks
                 fm.clone()
             }
         } else if let Some(obj) = parsed.as_object() {
@@ -116,7 +116,7 @@ impl HooksHandler {
         };
 
         for (event_name, event_entries) in &hooks_obj {
-            // meta フィールド（path 等）はスキップ
+            // Skip meta fields such as "path"
             if event_name == "path" || event_name == "body" || event_name == "frontmatter" {
                 continue;
             }
@@ -201,7 +201,7 @@ impl HooksHandler {
         Ok(node)
     }
 
-    /// Codex TOML hooks → IR（x2c）
+    /// Lift Codex TOML hooks → IR (x2c).
     fn lift_x2c(&self, parsed: &Value) -> anyhow::Result<IRNode> {
         let source_path = parsed["path"].as_str().unwrap_or("").to_string();
         let mut node = new_node(Kind::Hooks, Tool::Codex, &source_path);
@@ -267,7 +267,7 @@ impl HooksHandler {
         Ok(node)
     }
 
-    /// c2x: IR → Codex TOML hooks
+    /// c2x: IR → Codex TOML hooks.
     fn lower_c2x(&self, ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPlan> {
         let mut diagnostics = Vec::new();
         let out_root = opts.out.as_deref().unwrap_or(".");
@@ -322,7 +322,7 @@ impl HooksHandler {
         Ok(EmitPlan { files, diagnostics })
     }
 
-    /// x2c: IR → Claude JSON hooks
+    /// x2c: IR → Claude JSON hooks.
     fn lower_x2c(&self, ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPlan> {
         let diagnostics = Vec::new();
         let out_root = opts.out.as_deref().unwrap_or(".");
@@ -352,8 +352,8 @@ impl HooksHandler {
     }
 }
 
-/// hooks の各エントリを c2x 方向で処理する（matcher 正規化、dropped フィールドの除外）。
-/// 副作用として node.diagnostics に警告を追加する。
+/// Processes each hook entry in the c2x direction (matcher normalization, filtering dropped fields).
+/// Side effect: appends warnings to node.diagnostics.
 ///
 /// Returns `(processed_value, any_survived)` where `any_survived` is `true` if
 /// at least one hook item survived filtering across all matcher groups.
@@ -370,7 +370,7 @@ fn process_hook_entries_c2x(event_name: &str, entries: &Value, node: &mut IRNode
             let obj = entry.as_object()?;
             let mut new_obj = serde_json::Map::new();
 
-            // matcher 正規化
+            // Normalize the matcher
             if let Some(matcher) = obj.get("matcher").and_then(|v| v.as_str()) {
                 let (normalized, kind) = normalize_matcher_c2x(matcher);
                 new_obj.insert("matcher".to_string(), Value::String(normalized.clone()));
@@ -401,7 +401,7 @@ fn process_hook_entries_c2x(event_name: &str, entries: &Value, node: &mut IRNode
                 }
             }
 
-            // hooks 配列
+            // hooks array
             if let Some(hooks_arr) = obj.get("hooks").and_then(|v| v.as_array()) {
                 let processed_hooks: Vec<Value> = hooks_arr
                     .iter()
@@ -420,7 +420,7 @@ fn process_hook_entries_c2x(event_name: &str, entries: &Value, node: &mut IRNode
     (Value::Array(processed), any_survived)
 }
 
-/// hooks の各エントリを x2c 方向で処理する（commandWindows → shell 変換等）。
+/// Processes each hook entry in the x2c direction (commandWindows → shell conversion, etc.).
 fn process_hook_entries_x2c(_event_name: &str, entries: &Value, node: &mut IRNode) -> Value {
     let arr = match entries.as_array() {
         Some(a) => a,
@@ -433,12 +433,12 @@ fn process_hook_entries_x2c(_event_name: &str, entries: &Value, node: &mut IRNod
             let obj = entry.as_object()?;
             let mut new_obj = serde_json::Map::new();
 
-            // matcher: Codex は常に regex なので そのまま転写
+            // matcher: Codex always uses regex, so pass it through as-is
             if let Some(matcher) = obj.get("matcher") {
                 new_obj.insert("matcher".to_string(), matcher.clone());
             }
 
-            // hooks 配列
+            // hooks array
             if let Some(hooks_arr) = obj.get("hooks").and_then(|v| v.as_array()) {
                 let processed_hooks: Vec<Value> = hooks_arr
                     .iter()
@@ -454,9 +454,9 @@ fn process_hook_entries_x2c(_event_name: &str, entries: &Value, node: &mut IRNod
     Value::Array(processed)
 }
 
-/// 単一 hook エントリを c2x 変換する。
-/// dropped フィールド（args/shell/if/once/asyncRewake）を除外し、
-/// args がある場合は command に合成、http/mcp_tool タイプは None（除外）を返す。
+/// Converts a single hook entry in the c2x direction.
+/// Drops the fields args/shell/if/once/asyncRewake; synthesizes args into command
+/// when present; returns None (excluded) for http/mcp_tool types.
 fn process_single_hook_c2x(hook: &Value, event_name: &str, node: &mut IRNode) -> Option<Value> {
     let obj = hook.as_object()?;
     let hook_type = obj
@@ -464,7 +464,7 @@ fn process_single_hook_c2x(hook: &Value, event_name: &str, node: &mut IRNode) ->
         .and_then(|v| v.as_str())
         .unwrap_or("command");
 
-    // http/mcp_tool タイプは dropped
+    // http/mcp_tool types are dropped
     if hook_type == "http" || hook_type == "mcp_tool" {
         node.diagnostics.push(Diagnostic {
             level: DiagLevel::Drop,
@@ -477,7 +477,7 @@ fn process_single_hook_c2x(hook: &Value, event_name: &str, node: &mut IRNode) ->
         return None;
     }
 
-    // Codex は prompt/agent タイプを parse するが実行しないため dropped にする
+    // Codex parses prompt/agent types but does not execute them, so they are dropped
     if hook_type == "prompt" || hook_type == "agent" {
         node.diagnostics.push(Diagnostic {
             level: DiagLevel::Drop,
@@ -492,15 +492,15 @@ fn process_single_hook_c2x(hook: &Value, event_name: &str, node: &mut IRNode) ->
 
     let mut new_obj = serde_json::Map::new();
 
-    // type をそのまま転写
+    // Pass the "type" field through unchanged
     new_obj.insert("type".to_string(), Value::String(hook_type.to_string()));
 
-    // command フィールドの処理（args がある場合は合成）
+    // Process the command field (synthesize args into it when present)
     let command = obj.get("command").and_then(|v| v.as_str());
     let args = obj.get("args").and_then(|v| v.as_array());
 
     if let Some(args_arr) = args {
-        // args は c2x で dropped だが、command に合成する
+        // args is dropped in c2x, but synthesized into command
         let synthesized = synthesize_command(command, args_arr);
         new_obj.insert("command".to_string(), Value::String(synthesized));
         node.diagnostics.push(Diagnostic {
@@ -515,17 +515,17 @@ fn process_single_hook_c2x(hook: &Value, event_name: &str, node: &mut IRNode) ->
         new_obj.insert("command".to_string(), Value::String(cmd.to_string()));
     }
 
-    // timeout, statusMessage, async → lossless
+    // timeout, statusMessage, async → pass through losslessly
     for field_name in &["timeout", "statusMessage", "async"] {
         if let Some(v) = obj.get(*field_name) {
             new_obj.insert(field_name.to_string(), v.clone());
         }
     }
 
-    // dropped フィールドの警告
+    // Warn about dropped fields
     for dropped_field in DROPPED_C2X_HOOK_FIELDS {
         if obj.contains_key(*dropped_field) && *dropped_field != "args" {
-            // args はすでに処理済み
+            // args was already handled above
             node.diagnostics.push(Diagnostic {
                 level: DiagLevel::Drop,
                 id: Some(format!("hooks.command.{}", dropped_field)),
@@ -540,7 +540,7 @@ fn process_single_hook_c2x(hook: &Value, event_name: &str, node: &mut IRNode) ->
     Some(Value::Object(new_obj))
 }
 
-/// 単一 hook エントリを x2c 変換する（commandWindows → Claude shell:powershell warn）。
+/// Converts a single hook entry in the x2c direction (warns about commandWindows → Claude shell:powershell).
 fn process_single_hook_x2c(hook: &Value, node: &mut IRNode) -> Option<Value> {
     let obj = hook.as_object()?;
     let mut new_obj = serde_json::Map::new();
@@ -548,7 +548,7 @@ fn process_single_hook_x2c(hook: &Value, node: &mut IRNode) -> Option<Value> {
     for (k, v) in obj {
         match k.as_str() {
             "commandWindows" | "command_windows" => {
-                // x2c: commandWindows は Claude 側に直接対応なし → warn
+                // x2c: commandWindows has no direct Claude equivalent → warn
                 node.diagnostics.push(Diagnostic {
                     level: DiagLevel::Warn,
                     id: Some("hooks.command.commandWindows".to_string()),
@@ -556,7 +556,7 @@ fn process_single_hook_x2c(hook: &Value, node: &mut IRNode) -> Option<Value> {
                         "commandWindows has no direct Claude equivalent; consider shell:powershell"
                             .to_string(),
                 });
-                // 出力に含めない（lossy）
+                // Excluded from output (lossy)
             }
             _ => {
                 new_obj.insert(k.clone(), v.clone());
@@ -601,7 +601,7 @@ fn normalize_matcher_c2x(matcher: &str) -> (String, MatcherKind) {
     }
 }
 
-/// command + args 配列を shell form に合成する（shlex::quote でエスケープ）。
+/// Synthesizes command + args array into shell form (escaping with shlex::quote).
 fn synthesize_command(command: Option<&str>, args: &[Value]) -> String {
     let mut parts: Vec<String> = Vec::new();
 
@@ -611,7 +611,7 @@ fn synthesize_command(command: Option<&str>, args: &[Value]) -> String {
 
     for arg in args {
         if let Some(s) = arg.as_str() {
-            // shlex::try_quote でシェル特殊文字をエスケープ
+            // Escape shell metacharacters with shlex::try_quote
             let quoted =
                 shlex::try_quote(s).unwrap_or_else(|_| std::borrow::Cow::Owned(format!("'{}'", s)));
             parts.push(quoted.to_string());
@@ -621,11 +621,11 @@ fn synthesize_command(command: Option<&str>, args: &[Value]) -> String {
     parts.join(" ")
 }
 
-/// hooks エントリを Codex TOML の [[hooks.EventName]] 形式に変換する。
+/// Converts hooks entries to Codex TOML [[hooks.EventName]] format.
 fn build_hooks_toml(hooks_entries: &[(String, Value)]) -> anyhow::Result<String> {
     let mut doc = DocumentMut::new();
 
-    // [hooks] テーブルを構築
+    // Build the [hooks] table
     let hooks_item = doc.entry("hooks").or_insert(Item::Table(Table::new()));
     let hooks_tbl = hooks_item
         .as_table_mut()
@@ -681,7 +681,7 @@ fn build_hooks_toml(hooks_entries: &[(String, Value)]) -> anyhow::Result<String>
     Ok(doc.to_string())
 }
 
-/// JSON Value を toml_edit Item に変換する（ベストエフォート）。
+/// Converts a JSON Value to a toml_edit Item (best-effort).
 fn json_value_to_toml_item(v: &Value) -> Option<Item> {
     match v {
         Value::String(s) => Some(toml_edit::value(s.as_str())),
@@ -714,8 +714,8 @@ fn json_value_to_toml_item(v: &Value) -> Option<Item> {
     }
 }
 
-/// Codex config.toml の [hooks] セクションを読み込み、JSON Value として返す。
-/// 形式: {"path": "...", "hooks": {"EventName": [{matcher, hooks:[{type,...}]}]}}
+/// Reads the [hooks] section from Codex config.toml and returns it as a JSON Value.
+/// Format: {"path": "...", "hooks": {"EventName": [{matcher, hooks:[{type,...}]}]}}
 fn parse_codex_hooks_toml(path: &Path) -> anyhow::Result<Value> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| anyhow::anyhow!("Failed to read {}: {}", path.display(), e))?;
@@ -769,7 +769,7 @@ fn parse_codex_hooks_toml(path: &Path) -> anyhow::Result<Value> {
     }))
 }
 
-/// toml_edit Table を serde_json Map に変換するヘルパ。
+/// Converts a toml_edit Table to a serde_json Map.
 fn toml_table_to_json(tbl: &Table) -> serde_json::Map<String, Value> {
     let mut map = serde_json::Map::new();
     for (k, v) in tbl {
@@ -780,7 +780,7 @@ fn toml_table_to_json(tbl: &Table) -> serde_json::Map<String, Value> {
     map
 }
 
-/// toml_edit Item を serde_json Value に変換するヘルパ。
+/// Converts a toml_edit Item to a serde_json Value.
 fn toml_item_to_json(item: &Item) -> Option<Value> {
     match item {
         Item::Value(v) => toml_value_to_json(v),
@@ -799,7 +799,7 @@ fn toml_item_to_json(item: &Item) -> Option<Value> {
     }
 }
 
-/// toml_edit::Value を serde_json::Value に変換するヘルパ。
+/// Converts a toml_edit::Value to a serde_json::Value.
 fn toml_value_to_json(tv: &toml_edit::Value) -> Option<Value> {
     use toml_edit::Value as TV;
     match tv {

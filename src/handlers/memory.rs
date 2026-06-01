@@ -9,14 +9,14 @@ use crate::core::mappings::DomainMap;
 use crate::core::transforms::ConvDir;
 use crate::handlers::{EmitFile, EmitPlan, Handler, LowerOpts};
 
-/// 32 KiB = Codex の project_doc_max_bytes デフォルト上限
+/// 32 KiB = default upper limit for Codex's project_doc_max_bytes
 const CODEX_MAX_BYTES: usize = 32768;
-/// 28 KiB = グローバル指示分のバッファ考慮後の warn 閾値
+/// 28 KiB = warn threshold after reserving buffer for global instructions
 const CODEX_WARN_BYTES: usize = 28672;
-/// @import の最大展開深度（公式 4 ホップ、安全側を採用）
+/// Maximum @import expansion depth (official cap is 4 hops; conservative value adopted)
 const MAX_IMPORT_DEPTH: usize = 4;
 
-/// memory ドメインのハンドラ（CLAUDE.md ⇄ AGENTS.md）。
+/// Handler for the memory domain (CLAUDE.md ⇄ AGENTS.md).
 pub struct MemoryHandler {
     pub map: DomainMap,
 }
@@ -63,7 +63,7 @@ impl Handler for MemoryHandler {
 
         let mut node = new_node(Kind::Memory, source_tool, &source_path);
 
-        // ファイル名フィールドを IR に格納
+        // Store the filename field in the IR
         node.fields.insert(
             "memory.filename".to_string(),
             IRField {
@@ -77,7 +77,7 @@ impl Handler for MemoryHandler {
             },
         );
 
-        // パスフィールド
+        // Path field
         node.fields.insert(
             "memory.project-path".to_string(),
             IRField {
@@ -91,7 +91,7 @@ impl Handler for MemoryHandler {
             },
         );
 
-        // CLAUDE.local.md → dropped
+        // CLAUDE.local.md → dropped (no Codex equivalent)
         if filename == "CLAUDE.local.md" {
             node.fields.insert(
                 "memory.local-file".to_string(),
@@ -119,7 +119,7 @@ impl Handler for MemoryHandler {
             });
         }
 
-        // managed policy（/etc/claude-code/CLAUDE.md 等）→ dropped
+        // Managed policy (e.g. /etc/claude-code/CLAUDE.md) → dropped
         if source_path.contains("/etc/claude-code/")
             || source_path.contains("/Library/Application Support/ClaudeCode/")
         {
@@ -146,7 +146,7 @@ impl Handler for MemoryHandler {
             });
         }
 
-        // c2x: @import 構文の検出（コードフェンス内の @ は除外）
+        // c2x: detect @import syntax (@ inside code fences is excluded)
         if dir == ConvDir::C2x {
             let has_imports = {
                 let mut in_fence = false;
@@ -188,7 +188,7 @@ impl Handler for MemoryHandler {
             }
         }
 
-        // body を IR に格納（lower で参照）
+        // Store body in IR for reference during lower
         node.fields.insert(
             "__body".to_string(),
             IRField {
@@ -214,12 +214,12 @@ impl Handler for MemoryHandler {
 }
 
 impl MemoryHandler {
-    /// c2x: CLAUDE.md → AGENTS.md（@import インライン展開あり）
+    /// c2x: CLAUDE.md → AGENTS.md (with @import inlining).
     fn lower_c2x(&self, ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPlan> {
         let mut diagnostics = Vec::new();
         let out_root = opts.out.as_deref().unwrap_or(".");
 
-        // dropped ファイルは skip
+        // Skip dropped files
         if ir.fields.contains_key("memory.local-file")
             || ir.fields.contains_key("memory.managed-policy")
         {
@@ -238,10 +238,10 @@ impl MemoryHandler {
 
         let source_path = &ir.source_path;
 
-        // @import インライン展開
+        // Inline @import directives
         let expanded_body = inline_imports(&body, source_path, 0, &mut diagnostics);
 
-        // サイズチェック
+        // Size check
         let byte_len = expanded_body.len();
         if byte_len > CODEX_MAX_BYTES {
             diagnostics.push(Diagnostic {
@@ -265,7 +265,7 @@ impl MemoryHandler {
             });
         }
 
-        // 出力パス: CLAUDE.md / .claude/CLAUDE.md → AGENTS.md（同じ場所）
+        // Output path: CLAUDE.md / .claude/CLAUDE.md → AGENTS.md (same location)
         let out_path = compute_output_path(source_path, out_root, ConvDir::C2x);
 
         Ok(EmitPlan {
@@ -277,7 +277,7 @@ impl MemoryHandler {
         })
     }
 
-    /// x2c: AGENTS.md → CLAUDE.md（パス付け替えのみ）
+    /// x2c: AGENTS.md → CLAUDE.md (path remapping only).
     fn lower_x2c(&self, ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPlan> {
         let diagnostics = Vec::new();
         let out_root = opts.out.as_deref().unwrap_or(".");
@@ -302,7 +302,7 @@ impl MemoryHandler {
     }
 }
 
-/// 出力パスを計算する。
+/// Computes the output path.
 /// c2x: CLAUDE.md → AGENTS.md, .claude/CLAUDE.md → AGENTS.md
 /// x2c: AGENTS.md → CLAUDE.md
 fn compute_output_path(source_path: &str, out_root: &str, dir: ConvDir) -> String {
@@ -323,12 +323,12 @@ fn compute_output_path(source_path: &str, out_root: &str, dir: ConvDir) -> Strin
     format!("{}/{}", out_root, out_filename)
 }
 
-/// @import 構文をインライン展開する。
-/// 対応パターン:
-///   @path/to/file          - 相対パス
-///   @/absolute/path        - 絶対パス
-///   @~/relative-to-home    - ホームディレクトリ相対（展開不可の場合 warn）
-///   コードブロック内の @ は除外
+/// Inlines @import directives.
+/// Supported patterns:
+///   @path/to/file          - relative path
+///   @/absolute/path        - absolute path
+///   @~/relative-to-home    - home-relative (emits a warning when unresolvable)
+///   @ inside code blocks is excluded
 fn inline_imports(
     body: &str,
     source_path: &str,
@@ -356,7 +356,7 @@ fn inline_imports(
     let mut in_code_fence = false;
 
     for line in body.lines() {
-        // コードフェンスのトラッキング
+        // Track code fences
         if line.trim_start().starts_with("```") {
             in_code_fence = !in_code_fence;
             result.push_str(line);
@@ -370,13 +370,13 @@ fn inline_imports(
             continue;
         }
 
-        // @import 構文の検出（行頭の @ から始まるもの）
+        // Detect @import syntax (lines starting with @)
         let trimmed = line.trim_start();
         if trimmed.starts_with('@') && !trimmed.starts_with("@@") {
             let import_path = trimmed[1..].trim();
 
             if import_path.starts_with("~/") {
-                // ホームディレクトリ相対（展開不可の場合 warn）
+                // Home-relative path: warn when unresolvable
                 diagnostics.push(Diagnostic {
                     level: DiagLevel::Warn,
                     id: Some("memory.import-syntax".to_string()),
@@ -406,7 +406,7 @@ fn inline_imports(
                             import_path
                         ),
                     });
-                    // 再帰的に展開（深度制限あり）
+                    // Expand recursively (depth-limited)
                     let expanded = inline_imports(
                         &imported_content,
                         resolved.to_str().unwrap_or(""),

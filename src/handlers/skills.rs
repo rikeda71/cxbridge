@@ -16,7 +16,7 @@ use crate::degrade::subagent::{decide_skill_target, degrade_to_subagent, SkillTa
 use crate::handlers::{EmitFile, EmitPlan, Handler, LowerOpts};
 use crate::scanner::body::{rewrite_body, scan_body};
 
-/// skills ドメインのハンドラ。
+/// Handler for the skills domain.
 pub struct SkillsHandler {
     pub map: DomainMap,
 }
@@ -249,7 +249,7 @@ impl Handler for SkillsHandler {
             }
         }
 
-        // 本文スキャン
+        // Body scan
         let body_raw = parsed["body"].as_str().unwrap_or("").to_string();
         let findings = scan_body(&body_raw, dir);
         node.body = Some(BodySegment {
@@ -274,11 +274,11 @@ impl SkillsHandler {
         let mut diagnostics = Vec::new();
         let mut side_artifacts: Vec<SideArtifact> = Vec::new();
 
-        // skill 名を source_path から抽出
+        // Extract skill name from source_path
         let skill_name = extract_skill_name(&ir.source_path);
         let out_root = opts.out.as_deref().unwrap_or(".");
 
-        // frontmatter を構築
+        // Build frontmatter
         let mut fm = serde_json::Map::new();
 
         // name
@@ -286,7 +286,7 @@ impl SkillsHandler {
             fm.insert("name".to_string(), f.value.clone());
         }
 
-        // description: skills.description + skills.when_to_use を連結
+        // description: concatenate skills.description + skills.when_to_use
         let desc = ir
             .fields
             .get("skills.description")
@@ -383,7 +383,7 @@ impl SkillsHandler {
             }
         }
 
-        // 本文
+        // Body
         let body_out = compute_body_out(ir, opts);
 
         // When requested, retain the original Claude-specific frontmatter keys so
@@ -414,10 +414,10 @@ impl SkillsHandler {
             }
         }
 
-        // 出力 SKILL.md
+        // Output SKILL.md
         let skill_md_path = format!("{}/.agents/skills/{}/SKILL.md", out_root, skill_name);
 
-        // frontmatter → YAML 文字列
+        // frontmatter → YAML string
         let fm_yaml = if fm.is_empty() {
             String::new()
         } else {
@@ -476,16 +476,16 @@ impl SkillsHandler {
 
         let mut fm = serde_json::Map::new();
 
-        // Codex フィールド → Claude フィールドへ変換
+        // Convert Codex fields to Claude fields
         for (key, value) in &ir.fields {
-            // key は entry.id。codex フィールド名を探す
+            // key is entry.id; find the Codex field name
             let Some(entry) = self.map.entries.iter().find(|e| e.id == *key) else {
                 continue;
             };
             if !applies_direction(entry, ConvDir::X2c) {
                 continue;
             }
-            // Claudeフィールド名を取得
+            // Retrieve the Claude field name
             let claude_field = entry
                 .claude
                 .as_ref()
@@ -501,7 +501,7 @@ impl SkillsHandler {
             fm.insert(cf.to_string(), value.value.clone());
         }
 
-        // 本文
+        // Body
         let body_out = compute_body_out(ir, opts);
 
         // interface.default_prompt → prepend to body (lossy approximate)
@@ -635,13 +635,13 @@ fn compute_body_out(ir: &IRNode, opts: &LowerOpts) -> String {
     }
 }
 
-/// source_path からスキル名を抽出するヘルパ。
+/// Extracts the skill name from source_path.
 /// .claude/skills/<name>/SKILL.md → <name>
 /// .agents/skills/<name>/SKILL.md → <name>
-/// それ以外 → "unknown"
+/// Anything else → "skill"
 fn extract_skill_name(source_path: &str) -> String {
     let path = Path::new(source_path);
-    // SKILL.md の親ディレクトリ名を返す
+    // Return the name of the parent directory of SKILL.md
     if let Some(parent) = path.parent() {
         if let Some(name) = parent.file_name() {
             let n = name.to_str().unwrap_or("unknown");
@@ -650,7 +650,7 @@ fn extract_skill_name(source_path: &str) -> String {
             }
         }
     }
-    // フォールバック: skill という文字列
+    // Fallback: the string "skill"
     "skill".to_string()
 }
 
@@ -743,7 +743,7 @@ mod tests {
         let parsed = h.parse(&path).unwrap();
         let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
 
-        // user-invocable は dropped
+        // user-invocable must be dropped
         let f = ir.fields.get("skills.user-invocable").unwrap();
         assert_eq!(f.loss, Loss::Dropped);
     }
@@ -769,7 +769,7 @@ mod tests {
         let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
         let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
 
-        // 出力ファイルが生成されているか確認
+        // Verify that the output file was generated
         let has_skill_md = plan.files.iter().any(|f| f.path.ends_with("SKILL.md"));
         assert!(has_skill_md, "Expected SKILL.md in emit plan");
 
@@ -802,7 +802,7 @@ mod tests {
         let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
         let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
 
-        // .rules ファイルが生成されているか確認
+        // Verify that the .rules file was generated
         let has_rules = plan.files.iter().any(|f| f.path.ends_with(".rules"));
         assert!(has_rules, "Expected .rules file for Bash tool degrade");
     }
@@ -834,7 +834,7 @@ mod tests {
             .find(|f| f.path.ends_with("SKILL.md"))
             .unwrap();
 
-        // description に when_to_use が連結されているか確認
+        // Verify that when_to_use was concatenated into description
         assert!(skill_file.content.contains("Analyze code"));
         assert!(skill_file
             .content
@@ -907,7 +907,7 @@ mod tests {
         let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
         let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
 
-        // .codex/agents/<skill>.toml が生成されているか確認
+        // Verify that the .codex/agents/<skill>.toml file was generated
         let has_agent_toml = plan
             .files
             .iter()

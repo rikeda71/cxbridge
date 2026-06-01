@@ -1,6 +1,6 @@
 # ccx — Claude Code ⇄ Codex CLI Config Converter
 
-[日本語](README.ja.md)
+[Japanese](README.ja.md)
 
 **ccx** is a Rust CLI that bidirectionally converts configuration files between
 [Claude Code](https://code.claude.com/docs) (`.claude/`, JSON) and

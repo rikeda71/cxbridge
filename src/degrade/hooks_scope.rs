@@ -43,9 +43,9 @@ pub fn degrade_skill_hooks(
         level: DiagLevel::Warn,
         id: Some("skills.hooks".to_string()),
         message: format!(
-            "skill '{}' の hooks を {} に移送しました。\
-             skill スコープ（skill 実行中のみ）から {} への拡大が発生します。\
-             #16430: plugin 同梱 hooks は Codex が読まないため、--hooks-target で書き出し先を指定してください。",
+            "Hooks from skill '{}' moved to {}. \
+             Scope expands from skill-scoped (fires only while the skill runs) to {}. \
+             #16430: Codex does not load plugin-bundled hooks; use --hooks-target to specify the output location.",
             skill_name, target_desc, target_desc
         ),
     });

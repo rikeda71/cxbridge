@@ -6,24 +6,24 @@ use serde::Deserialize;
 use crate::core::ir::Loss;
 use crate::core::transforms::ConvDir;
 
-/// mappings YAML の1エントリ。
+/// One entry from the mappings YAML.
 #[derive(Debug, Clone, Deserialize)]
 pub struct MapEntry {
     pub id: String,
     pub claude: Option<FieldSpec>,
     pub codex: Option<FieldSpec>,
-    /// mappings YAML 上の有効方向宣言（Both/ClaudeToCodex/CodexToClaude）。
-    /// pipeline 方向（ConvDir）とは別型。
+    /// Effective direction declared in mappings YAML (Both/ClaudeToCodex/CodexToClaude).
+    /// A separate type from the pipeline direction (ConvDir).
     pub direction: MappingDirection,
     pub loss: LossSpec,
     pub degrade: Option<DegradeSpec>,
-    /// transform 指定文字列（例: "unit:ms_to_sec; rename"、セミコロン区切り）
+    /// Transform specification string (e.g. "unit:ms_to_sec; rename", semicolon-separated)
     pub transform: Option<String>,
     pub warn: Option<bool>,
     pub notes: Option<String>,
 }
 
-/// フィールドのスキーマ情報（claude 側 / codex 側それぞれ）。
+/// Schema information for a field (claude side / codex side respectively).
 #[derive(Debug, Clone, Deserialize)]
 pub struct FieldSpec {
     pub field: Option<String>,
@@ -32,8 +32,8 @@ pub struct FieldSpec {
     pub scope: Option<String>,
 }
 
-/// mappings YAML 上のエントリが有効な変換方向。
-/// pipeline 方向（ConvDir）とは別型。
+/// Effective conversion direction for an entry in the mappings YAML.
+/// A separate type from the pipeline direction (ConvDir).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MappingDirection {
@@ -42,7 +42,7 @@ pub enum MappingDirection {
     CodexToClaude,
 }
 
-/// 損失レベルの宣言（mappings YAML 上の値）。
+/// Loss level declaration (value in mappings YAML).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum LossSpec {
@@ -61,17 +61,17 @@ impl From<&LossSpec> for Loss {
     }
 }
 
-/// 降格仕様。
+/// Degrade specification.
 #[derive(Debug, Clone, Deserialize)]
 pub struct DegradeSpec {
-    /// 降格先の種別
+    /// Kind of degrade destination
     pub to: String,
-    /// 降格先ターゲット
+    /// Degrade destination target
     pub target: String,
 }
 
-/// ドメインが扱うファイル形式。`claude` / `codex` はそれぞれ複数形式を取りうる
-/// （例: Codex hooks は TOML または JSON）。スカラー文字列・リストの両方を受け付ける。
+/// File formats handled by a domain. Both `claude` and `codex` may support multiple formats
+/// (e.g. Codex hooks accept either TOML or JSON). Accepts both scalar strings and lists.
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct FormatSpec {
     #[serde(default, deserialize_with = "string_or_seq")]
@@ -80,7 +80,7 @@ pub struct FormatSpec {
     pub codex: Vec<String>,
 }
 
-/// 単一文字列とリストのどちらでも `Vec<String>` として受け付ける。
+/// Accepts either a single string or a list of strings as `Vec<String>`.
 fn string_or_seq<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -116,7 +116,7 @@ where
     deserializer.deserialize_any(StringOrSeq)
 }
 
-/// ドメイン単位のマッピング（例: skills, mcp, hooks）。
+/// Per-domain mapping (e.g. skills, mcp, hooks).
 #[derive(Debug, Clone, Deserialize)]
 pub struct DomainMap {
     pub domain: String,
@@ -125,7 +125,7 @@ pub struct DomainMap {
     pub entries: Vec<MapEntry>,
 }
 
-// 全 8 ファイルをコンパイル時に埋め込む
+// Embed all 8 files at compile time
 const EMBEDDED_MAPPINGS: &[(&str, &str)] = &[
     ("hooks.yaml", include_str!("../../mappings/hooks.yaml")),
     ("mcp.yaml", include_str!("../../mappings/mcp.yaml")),
@@ -146,13 +146,13 @@ const EMBEDDED_MAPPINGS: &[(&str, &str)] = &[
     ),
 ];
 
-/// 全 YAML ファイルを読み込み、domain → DomainMap の HashMap を返す。
+/// Loads all YAML files and returns a HashMap of domain → DomainMap.
 ///
-/// 起動時不変条件を assert する:
-/// - id 一意性
-/// - direction/loss の値域
-/// - degrade⇒loss:lossy
-/// - loss:dropped に transform なし
+/// Asserts startup invariants:
+/// - id uniqueness
+/// - valid values for direction/loss
+/// - degrade implies loss:lossy
+/// - loss:dropped must have no transform
 pub fn load_mappings(_dir: &Path) -> HashMap<String, DomainMap> {
     let mut maps: HashMap<String, DomainMap> = HashMap::new();
     let mut all_ids: HashMap<String, String> = HashMap::new(); // id → filename
@@ -161,7 +161,7 @@ pub fn load_mappings(_dir: &Path) -> HashMap<String, DomainMap> {
         let dm: DomainMap = serde_saphyr::from_str(content)
             .unwrap_or_else(|e| panic!("Failed to parse mappings file {filename}: {e}"));
 
-        // id 一意性の検証
+        // Verify id uniqueness
         for entry in &dm.entries {
             if let Some(prev_file) = all_ids.get(&entry.id) {
                 panic!(
@@ -171,7 +171,7 @@ pub fn load_mappings(_dir: &Path) -> HashMap<String, DomainMap> {
             }
             all_ids.insert(entry.id.clone(), filename.to_string());
 
-            // degrade => loss:lossy の検証
+            // Verify degrade => loss:lossy
             if entry.degrade.is_some() && !matches!(entry.loss, LossSpec::Lossy) {
                 panic!(
                     "Mapping id '{}' has degrade but loss is not 'lossy' (in {})",
@@ -179,7 +179,7 @@ pub fn load_mappings(_dir: &Path) -> HashMap<String, DomainMap> {
                 );
             }
 
-            // loss:dropped に transform がないことの検証
+            // Verify loss:dropped has no transform
             if matches!(entry.loss, LossSpec::Dropped) && entry.transform.is_some() {
                 panic!(
                     "Mapping id '{}' has loss:dropped but also has transform (in {})",
@@ -194,10 +194,10 @@ pub fn load_mappings(_dir: &Path) -> HashMap<String, DomainMap> {
     maps
 }
 
-/// 全角括弧（U+FF08）で始まるフィールド名はプレースホルダであり実際のキーではない。
-/// インデックスからスキップする。
+/// Field names that start with an ASCII "(" or a fullwidth left parenthesis (U+FF08) are
+/// placeholders, not real field keys, and must be skipped when building lookup indexes.
 fn is_pseudo_field(field: &str) -> bool {
-    field.starts_with('\u{FF08}') // '（'
+    field.starts_with('(') || field.starts_with('\u{FF08}')
 }
 
 /// Builds a lookup index from claude field name → MapEntry for the C2x lift direction.
@@ -242,7 +242,7 @@ pub fn index_by_codex_field(dm: &DomainMap) -> HashMap<String, &MapEntry> {
     idx
 }
 
-/// MappingDirection と実行方向 ConvDir を照合し、このエントリを適用すべきか判定する。
+/// Checks whether an entry should be applied for the given pipeline direction.
 pub fn applies_direction(entry: &MapEntry, dir: ConvDir) -> bool {
     matches!(
         (&entry.direction, dir),
@@ -258,7 +258,7 @@ mod tests {
 
     #[test]
     fn test_load_mappings_invariants() {
-        // load_mappings が不変条件を満たすことを検証（失敗したら panic）
+        // Verify that load_mappings satisfies invariants (panics on failure)
         let maps = load_mappings(Path::new("mappings"));
         assert!(!maps.is_empty(), "mappings should not be empty");
     }
@@ -385,7 +385,7 @@ mod tests {
     fn test_format_parsed_as_list() {
         let maps = load_mappings(Path::new("mappings"));
 
-        // すべてのドメインで format が非空のリストとして読める
+        // format must parse as a non-empty list for every domain
         for (domain, dm) in &maps {
             let format = dm
                 .format
@@ -401,7 +401,7 @@ mod tests {
             );
         }
 
-        // Codex hooks は TOML または JSON の複数形式
+        // Codex hooks supports multiple formats: TOML and JSON
         let hooks = &maps["hooks"].format.as_ref().unwrap().codex;
         assert!(hooks.contains(&"toml".to_string()));
         assert!(hooks.contains(&"json".to_string()));

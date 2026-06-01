@@ -1,7 +1,7 @@
 //! Integration test for gap 42/42: @import detection in lift() must not emit
 //! false-positive lossy warnings for @-lines that appear inside code fences.
 //!
-//! Spec/mappings memory.import-syntax notes: "コードブロック内の @ は除外".
+//! Spec/mappings memory.import-syntax notes: "@-lines inside code fences are excluded".
 //! lower() already skips expanding code-fence imports via stateful fence
 //! tracking. lift() must apply the same logic so the conversion report does
 //! not falsely list "memory.import-syntax" as a lossy entry when every @-line

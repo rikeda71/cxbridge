@@ -18,7 +18,7 @@ format:
 
 entries:
 
-  # ── 設定フォーマット ───────────────────────────────────────────────
+  # ── Configuration format ───────────────────────────────────────────────
   - id: hooks.config_format
     claude:
       field: "hooks"
@@ -33,9 +33,9 @@ entries:
     transform: "format:json_to_toml"
     warn: false
     notes: >
-      Claude は JSON ("hooks":{EventName:[{matcher,hooks:[...]}]})、
-      Codex は TOML ([[hooks.EventName]] array-of-tables) または JSON hooks.json。
-      JSON→JSON はそのまま、JSON→TOML は format:json_to_toml で変換。
+      Claude uses JSON ("hooks":{EventName:[{matcher,hooks:[...]}]}),
+      Codex uses TOML ([[hooks.EventName]] array-of-tables) or JSON hooks.json.
+      JSON→JSON passes through as-is; JSON→TOML is converted via format:json_to_toml.
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.features_opt_in
@@ -52,14 +52,14 @@ entries:
     transform: null
     warn: true
     notes: >
-      Claude は常時有効（設定不要）。Codex は hooks デフォルト有効であり、
-      [features] hooks = false を設定した場合にのみ無効化される。
-      省略時は有効。features.codex_hooks は deprecated alias。
-      Claude→Codex 変換時は config.toml への追記は不要（デフォルト有効のため）。
-      明示的に有効化したい場合のみ hooks = true を記述する。
+      Claude is always enabled (no configuration needed). Codex has hooks enabled by
+      default; they are disabled only when [features] hooks = false is set.
+      When omitted, hooks are enabled. features.codex_hooks is a deprecated alias.
+      When converting Claude→Codex, no addition to config.toml is needed (enabled by
+      default). Write hooks = true only when you want to explicitly enable it.
     source: "https://developers.openai.com/codex/config-reference"
 
-  # ── イベント：共通 10 件（both / lossless、形式変換のみ） ─────────
+  # ── Events: 10 common events (both / lossless, format conversion only) ─────────
   - id: hooks.event.SessionStart
     claude:
       field: "hooks.SessionStart"
@@ -73,7 +73,7 @@ entries:
     loss: lossless
     transform: "format:json_to_toml"
     warn: false
-    notes: "共通イベント。形式変換のみ。"
+    notes: "Common event. Format conversion only."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.UserPromptSubmit
@@ -89,7 +89,7 @@ entries:
     loss: lossless
     transform: "format:json_to_toml"
     warn: false
-    notes: "共通イベント。形式変換のみ。"
+    notes: "Common event. Format conversion only."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.PreToolUse
@@ -105,7 +105,7 @@ entries:
     loss: lossless
     transform: "format:json_to_toml"
     warn: false
-    notes: "共通イベント。形式変換のみ。"
+    notes: "Common event. Format conversion only."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.PermissionRequest
@@ -121,7 +121,7 @@ entries:
     loss: lossless
     transform: "format:json_to_toml"
     warn: false
-    notes: "共通イベント。形式変換のみ。"
+    notes: "Common event. Format conversion only."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.PostToolUse
@@ -137,7 +137,7 @@ entries:
     loss: lossless
     transform: "format:json_to_toml"
     warn: false
-    notes: "共通イベント。形式変換のみ。"
+    notes: "Common event. Format conversion only."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.PreCompact
@@ -153,7 +153,7 @@ entries:
     loss: lossless
     transform: "format:json_to_toml"
     warn: false
-    notes: "共通イベント。形式変換のみ。"
+    notes: "Common event. Format conversion only."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.PostCompact
@@ -169,7 +169,7 @@ entries:
     loss: lossless
     transform: "format:json_to_toml"
     warn: false
-    notes: "共通イベント。形式変換のみ。"
+    notes: "Common event. Format conversion only."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.SubagentStart
@@ -185,7 +185,7 @@ entries:
     loss: lossless
     transform: "format:json_to_toml"
     warn: false
-    notes: "共通イベント。形式変換のみ。"
+    notes: "Common event. Format conversion only."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.SubagentStop
@@ -201,7 +201,7 @@ entries:
     loss: lossless
     transform: "format:json_to_toml"
     warn: false
-    notes: "共通イベント。形式変換のみ。"
+    notes: "Common event. Format conversion only."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.Stop
@@ -217,10 +217,10 @@ entries:
     loss: lossless
     transform: "format:json_to_toml"
     warn: false
-    notes: "共通イベント。形式変換のみ。"
+    notes: "Common event. Format conversion only."
     source: "https://code.claude.com/docs/en/hooks"
 
-  # ── イベント：Claude 固有 20 件（claude_to_codex / dropped） ───────
+  # ── Events: 20 Claude-only events (claude_to_codex / dropped) ───────
   - id: hooks.event.Setup
     claude:
       field: "hooks.Setup"
@@ -234,7 +234,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。--init-only / --maintenance 専用。dropped。"
+    notes: "Not supported by Codex. Exclusive to --init-only / --maintenance. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.UserPromptExpansion
@@ -250,7 +250,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。スラッシュコマンド展開フック。dropped。"
+    notes: "Not supported by Codex. Hook for slash command expansion. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.PermissionDenied
@@ -266,7 +266,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。dropped。"
+    notes: "Not supported by Codex. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.PostToolUseFailure
@@ -282,7 +282,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。dropped。"
+    notes: "Not supported by Codex. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.PostToolBatch
@@ -298,7 +298,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。並列ツールバッチ完了後フック。dropped。"
+    notes: "Not supported by Codex. Hook that fires after a parallel tool batch completes. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.Notification
@@ -314,7 +314,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。dropped。"
+    notes: "Not supported by Codex. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.MessageDisplay
@@ -330,7 +330,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。dropped。"
+    notes: "Not supported by Codex. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.TaskCreated
@@ -346,7 +346,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。dropped。"
+    notes: "Not supported by Codex. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.TaskCompleted
@@ -362,7 +362,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。dropped。"
+    notes: "Not supported by Codex. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.StopFailure
@@ -378,7 +378,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。API エラー時のターン終了フック。dropped。"
+    notes: "Not supported by Codex. Hook for turn completion on API error. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.TeammateIdle
@@ -394,7 +394,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。エージェントチーム専用。dropped。"
+    notes: "Not supported by Codex. Exclusive to agent teams. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.InstructionsLoaded
@@ -410,7 +410,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。CLAUDE.md / rules ファイル読み込み時フック。dropped。"
+    notes: "Not supported by Codex. Hook fired when CLAUDE.md / rules files are loaded. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.ConfigChange
@@ -426,7 +426,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。設定ファイル変更検知フック。dropped。"
+    notes: "Not supported by Codex. Hook for detecting configuration file changes. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.CwdChanged
@@ -442,7 +442,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。作業ディレクトリ変更時フック。dropped。"
+    notes: "Not supported by Codex. Hook fired when the working directory changes. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.FileChanged
@@ -458,7 +458,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。ファイル変更監視フック。dropped。"
+    notes: "Not supported by Codex. File change watch hook. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.WorktreeCreate
@@ -474,7 +474,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。Worktree 作成フック。dropped。"
+    notes: "Not supported by Codex. Worktree creation hook. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.WorktreeRemove
@@ -490,7 +490,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。Worktree 削除フック。dropped。"
+    notes: "Not supported by Codex. Worktree removal hook. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.Elicitation
@@ -506,7 +506,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。MCP サーバーによるユーザー入力要求フック。dropped。"
+    notes: "Not supported by Codex. Hook for MCP server user-input requests. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.ElicitationResult
@@ -522,7 +522,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。MCP elicitation 応答後フック。dropped。"
+    notes: "Not supported by Codex. Hook fired after an MCP elicitation response. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.SessionEnd
@@ -538,10 +538,10 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex 未対応。セッション終了フック。dropped。"
+    notes: "Not supported by Codex. Session end hook. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
-  # ── Hook タイプ ─────────────────────────────────────────────────────
+  # ── Hook types ─────────────────────────────────────────────────────────
   - id: hooks.type.command
     claude:
       field: "hooks.*.hooks[].type"
@@ -555,7 +555,7 @@ entries:
     loss: lossless
     transform: "format:json_to_toml"
     warn: false
-    notes: "両者で実行可能な唯一の共通 hook タイプ。"
+    notes: "The only common hook type executable by both sides."
     source: "https://github.com/openai/codex/blob/main/codex-rs/config/src/hook_config.rs"
 
   - id: hooks.type.http
@@ -571,7 +571,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex に HTTP hook タイプなし。dropped。代替は command + curl スクリプト。"
+    notes: "Codex has no HTTP hook type. dropped. Alternative: command + curl script."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.type.mcp_tool
@@ -587,7 +587,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Codex に mcp_tool hook タイプなし。dropped。"
+    notes: "Codex has no mcp_tool hook type. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.type.prompt
@@ -604,9 +604,9 @@ entries:
     transform: null
     warn: true
     notes: >
-      Codex はスキーマ上 parse するが実行エンジンが実装されていない。
-      claude_to_codex 変換後に config に残っても Codex がサイレントに無視する。
-      実質 dropped として警告必須。
+      Codex parses it at the schema level but the execution engine is not implemented.
+      Even if it remains in the config after claude_to_codex conversion, Codex silently
+      ignores it. Treat as effectively dropped and warn.
     source: "https://github.com/openai/codex/blob/main/codex-rs/config/src/hook_config.rs"
 
   - id: hooks.type.agent
@@ -623,12 +623,12 @@ entries:
     transform: null
     warn: true
     notes: >
-      Codex はスキーマ上 parse するが実行エンジンが実装されていない。
-      claude_to_codex 変換後に config に残っても Codex がサイレントに無視する。
-      実質 dropped として警告必須。agent hook は experimental (Claude 側)。
+      Codex parses it at the schema level but the execution engine is not implemented.
+      Even if it remains in the config after claude_to_codex conversion, Codex silently
+      ignores it. Treat as effectively dropped and warn. agent hook is experimental (Claude side).
     source: "https://github.com/openai/codex/blob/main/codex-rs/config/src/hook_config.rs"
 
-  # ── command タイプのフィールド ───────────────────────────────────────
+  # ── command type fields ───────────────────────────────────────────────
   - id: hooks.command.command
     claude:
       field: "hooks.*.hooks[].command"
@@ -642,7 +642,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "コマンド文字列。lossless。"
+    notes: "Command string. lossless."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.command.timeout
@@ -658,7 +658,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "両者とも秒単位。lossless。Claude のデフォルト: command 600秒、UserPromptSubmit 時 30秒。"
+    notes: "Both use seconds. lossless. Claude defaults: 600s for command, 30s for UserPromptSubmit."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.command.statusMessage
@@ -674,7 +674,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "スピナーメッセージ。lossless。"
+    notes: "Spinner message. lossless."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.command.async
@@ -690,7 +690,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "バックグラウンド実行フラグ。lossless。"
+    notes: "Background execution flag. lossless."
     source: "https://github.com/openai/codex/blob/main/codex-rs/config/src/hook_config.rs"
 
   - id: hooks.command.commandWindows
@@ -707,9 +707,9 @@ entries:
     transform: null
     warn: true
     notes: >
-      Codex の Windows 専用コマンド上書きフィールド（TOML alias: command_windows）。
-      Claude には直接対応フィールドがなく、shell: "powershell" を使う別エントリで代替。
-      lossy。
+      Codex-only Windows command override field (TOML alias: command_windows).
+      Claude has no direct counterpart; substitute with a separate entry using shell: "powershell".
+      lossy.
     source: "https://github.com/openai/codex/blob/main/codex-rs/config/src/hook_config.rs"
 
   - id: hooks.command.args
@@ -726,8 +726,8 @@ entries:
     transform: null
     warn: true
     notes: >
-      Claude の exec form 用引数配列。Codex 未対応。
-      dropped（変換時は command + args を shell form に合成する）。
+      Claude's argument array for exec form. Not supported by Codex.
+      dropped (combine command + args into shell form during conversion).
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.command.shell
@@ -743,7 +743,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Claude のシェル指定（bash/powershell）。Codex は OS デフォルトシェルのみ。dropped。"
+    notes: "Claude's shell selector (bash/powershell). Codex uses the OS default shell only. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.command.if
@@ -760,9 +760,9 @@ entries:
     transform: null
     warn: true
     notes: >
-      Claude v2.1.85+ のみ。パーミッションルール構文でツールイベントをフィルタ。
-      Codex 未対応。dropped。変換後は matcher レベルのフィルタのみ残り、
-      本来フィルタすべきケースも hook が起動する可能性あり。
+      Claude v2.1.85+ only. Filters tool events using permission-rule syntax.
+      Not supported by Codex. dropped. After conversion only matcher-level filtering
+      remains, so hooks may fire in cases that should have been filtered out.
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.command.once
@@ -778,7 +778,7 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Claude のスキル/エージェント内でセッション 1 回のみ実行フラグ。Codex 未対応。dropped。"
+    notes: "Claude flag to execute only once per session within a skill/agent. Not supported by Codex. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.command.asyncRewake
@@ -795,8 +795,8 @@ entries:
     transform: null
     warn: true
     notes: >
-      バックグラウンド実行かつ exit 2 で Claude を再起動する特殊フラグ。
-      Codex 未対応。dropped。Codex の async: true は再起動なし。
+      Special flag for background execution that restarts Claude on exit code 2.
+      Not supported by Codex. dropped. Codex's async: true does not restart.
     source: "https://code.claude.com/docs/en/hooks"
 
   # ── Matcher ─────────────────────────────────────────────────────────
@@ -814,8 +814,8 @@ entries:
     transform: null
     warn: false
     notes: >
-      Claude の regex 形式（英数字・_・| 以外を含む場合に regex 評価）は
-      Codex でそのまま使用可。lossless。
+      Claude's regex format (evaluated as regex when it contains characters other than
+      alphanumerics, _, or |) can be used in Codex as-is. lossless.
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.matcher.exact
@@ -832,10 +832,10 @@ entries:
     transform: null
     warn: true
     notes: >
-      Claude の英数字・_・| のみの matcher は exact/list 評価だが、
-      Codex は常に regex として評価する。
-      Claude→Codex: "Bash" → "^Bash$"、"Edit|Write" → "^(Edit|Write)$" に変換が必要。
-      lossy（変換しないと Codex でのマッチが広くなる可能性）。
+      Claude evaluates a matcher containing only alphanumerics, _, or | as exact/list,
+      but Codex always evaluates it as a regex.
+      Claude→Codex: "Bash" → "^Bash$", "Edit|Write" → "^(Edit|Write)$" conversion required.
+      lossy (without conversion, matches in Codex may be broader than intended).
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.matcher.wildcard
@@ -852,11 +852,11 @@ entries:
     transform: null
     warn: true
     notes: >
-      Claude の "*" や "" は全マッチ。Codex では "*" は regex として
-      解釈され期待通りに動かない。Claude→Codex: "*" → "" または省略に変換。lossy。
+      Claude's "*" or "" matches everything. In Codex, "*" is interpreted as a regex
+      and does not behave as expected. Claude→Codex: convert "*" to "" or omit. lossy.
     source: "https://code.claude.com/docs/en/hooks"
 
-  # ── 入力 JSON フィールド ─────────────────────────────────────────────
+  # ── Input JSON fields ─────────────────────────────────────────────────
   - id: hooks.input.session_id
     claude:
       field: "session_id"
@@ -870,7 +870,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "セッション識別子。lossless。"
+    notes: "Session identifier. lossless."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.input.transcript_path
@@ -886,7 +886,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "トランスクリプトパス。Codex は nullable。lossless。"
+    notes: "Transcript path. Codex allows null. lossless."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.input.cwd
@@ -902,7 +902,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "カレントディレクトリ。lossless。"
+    notes: "Current working directory. lossless."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.input.hook_event_name
@@ -918,7 +918,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "イベント名文字列。lossless。"
+    notes: "Event name string. lossless."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.input.permission_mode
@@ -934,7 +934,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "パーミッションモード。lossless。"
+    notes: "Permission mode. lossless."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.input.effort
@@ -950,7 +950,7 @@ entries:
     loss: dropped
     transform: null
     warn: false
-    notes: "Claude のみ。effort レベルオブジェクト。Codex は入力 JSON に含めない。dropped。"
+    notes: "Claude only. Effort level object. Not included in Codex input JSON. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.input.model
@@ -966,7 +966,7 @@ entries:
     loss: dropped
     transform: null
     warn: false
-    notes: "Codex のみ。使用中モデル名。Claude 入力 JSON には含まれない。dropped。"
+    notes: "Codex only. Name of the model in use. Not included in Claude input JSON. dropped."
     source: "https://github.com/openai/codex/blob/main/codex-rs/hooks/src/schema.rs"
 
   - id: hooks.input.turn_id
@@ -982,7 +982,7 @@ entries:
     loss: dropped
     transform: null
     warn: false
-    notes: "Codex 独自拡張。ターンスコープイベントで付与。Claude 入力 JSON には含まれない。dropped。"
+    notes: "Codex-specific extension. Provided for turn-scoped events. Not included in Claude input JSON. dropped."
     source: "https://github.com/openai/codex/blob/main/codex-rs/hooks/src/schema.rs"
 
   - id: hooks.input.tool_name
@@ -998,7 +998,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "ツール名。lossless。"
+    notes: "Tool name. lossless."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.input.tool_input
@@ -1014,7 +1014,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "ツール引数オブジェクト。lossless。"
+    notes: "Tool argument object. lossless."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.input.tool_output
@@ -1031,8 +1031,8 @@ entries:
     transform: "rename"
     warn: true
     notes: >
-      Claude の PostToolUse 入力では tool_output、Codex では tool_response。
-      キー名が異なる（rename）。スクリプト側で参照フィールド名の書き換えが必要。lossy。
+      Claude uses tool_output in PostToolUse input; Codex uses tool_response.
+      The key names differ (rename). Scripts referencing this field need to be updated. lossy.
     source: "https://github.com/openai/codex/blob/main/codex-rs/hooks/src/schema.rs"
 
   - id: hooks.input.tool_use_id
@@ -1048,7 +1048,7 @@ entries:
     loss: dropped
     transform: null
     warn: false
-    notes: "Codex のみ。ツール呼び出し識別子（PreToolUse/PostToolUse）。Claude 入力 JSON にはない。dropped。"
+    notes: "Codex only. Tool call identifier (PreToolUse/PostToolUse). Not present in Claude input JSON. dropped."
     source: "https://github.com/openai/codex/blob/main/codex-rs/hooks/src/schema.rs"
 
   - id: hooks.input.agent_id
@@ -1064,7 +1064,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "サブエージェント ID。lossless。"
+    notes: "Subagent ID. lossless."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.input.agent_type
@@ -1080,7 +1080,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "サブエージェント種別。lossless。"
+    notes: "Subagent type. lossless."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.input.stop_hook_active
@@ -1096,7 +1096,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "Stop/SubagentStop イベントで付与。無限ループ防止フラグ。lossless。"
+    notes: "Provided for Stop/SubagentStop events. Infinite-loop prevention flag. lossless."
     source: "https://github.com/openai/codex/blob/main/codex-rs/hooks/src/schema.rs"
 
   - id: hooks.input.last_assistant_message
@@ -1112,10 +1112,10 @@ entries:
     loss: dropped
     transform: null
     warn: false
-    notes: "Codex のみ。Stop/SubagentStop の入力 JSON に含まれる最後のアシスタントメッセージ。dropped。"
+    notes: "Codex only. Last assistant message included in Stop/SubagentStop input JSON. dropped."
     source: "https://github.com/openai/codex/blob/main/codex-rs/hooks/src/schema.rs"
 
-  # ── 出力 JSON フィールド ─────────────────────────────────────────────
+  # ── Output JSON fields ─────────────────────────────────────────────────
   - id: hooks.output.continue
     claude:
       field: "continue"
@@ -1129,7 +1129,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "false でセッション停止。lossless。"
+    notes: "false stops the session. lossless."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.output.stopReason
@@ -1145,7 +1145,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "continue: false 時のメッセージ。lossless。"
+    notes: "Message when continue: false. lossless."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.output.systemMessage
@@ -1161,7 +1161,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "ユーザーへの警告メッセージ。lossless。"
+    notes: "Warning message to the user. lossless."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.output.suppressOutput
@@ -1177,7 +1177,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "hook stdout を非表示にするか。lossless。"
+    notes: "Whether to hide hook stdout. lossless."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.output.hookSpecificOutput
@@ -1194,8 +1194,9 @@ entries:
     transform: null
     warn: false
     notes: >
-      ネスト構造は両者共通。Codex は加えて flat な decision/reason も受け付ける
-      (後方互換)。ネスト形式のまま変換可。lossless。
+      The nested structure is common to both sides. Codex additionally accepts flat
+      decision/reason fields (for backward compatibility). Can be converted as nested
+      form. lossless.
     source: "https://github.com/openai/codex/blob/main/codex-rs/hooks/src/schema.rs"
 
   - id: hooks.output.permissionDecision
@@ -1212,8 +1213,9 @@ entries:
     transform: null
     warn: true
     notes: >
-      Claude の defer は非インタラクティブ (-p) 専用の値で、Codex には存在しない。
-      Claude→Codex: defer を含む hook は dropped。Codex→Claude は allow/deny/ask のみで lossless。
+      Claude's defer is a value exclusive to non-interactive (-p) mode and does not
+      exist in Codex. Claude→Codex: hooks containing defer are dropped.
+      Codex→Claude: allow/deny/ask only, lossless.
     source: "https://github.com/openai/codex/blob/main/codex-rs/hooks/src/schema.rs"
 
   - id: hooks.output.additionalContext
@@ -1229,7 +1231,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "Claude へ渡す追加コンテキスト。lossless。"
+    notes: "Additional context passed to Claude. lossless."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.output.updatedInput
@@ -1245,7 +1247,7 @@ entries:
     loss: lossless
     transform: null
     warn: false
-    notes: "ツール引数の書き換え（PreToolUse）。lossless。"
+    notes: "Rewrite of tool arguments (PreToolUse). lossless."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.output.terminalSequence
@@ -1261,7 +1263,7 @@ entries:
     loss: dropped
     transform: null
     warn: false
-    notes: "Claude のみ。ターミナルエスケープシーケンス。Codex 未対応。dropped。"
+    notes: "Claude only. Terminal escape sequence. Not supported by Codex. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.output.sessionTitle
@@ -1277,7 +1279,7 @@ entries:
     loss: dropped
     transform: null
     warn: false
-    notes: "Claude SessionStart のみ。Codex 未対応。dropped。"
+    notes: "Claude SessionStart only. Not supported by Codex. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.output.watchPaths
@@ -1293,7 +1295,7 @@ entries:
     loss: dropped
     transform: null
     warn: false
-    notes: "Claude SessionStart のみ。ファイル監視パスリスト。Codex 未対応。dropped。"
+    notes: "Claude SessionStart only. List of file watch paths. Not supported by Codex. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.output.reloadSkills
@@ -1309,7 +1311,7 @@ entries:
     loss: dropped
     transform: null
     warn: false
-    notes: "Claude SessionStart のみ。スキル再スキャン指示。Codex 未対応。dropped。"
+    notes: "Claude SessionStart only. Instruction to re-scan skills. Not supported by Codex. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.output.initialUserMessage
@@ -1325,7 +1327,7 @@ entries:
     loss: dropped
     transform: null
     warn: false
-    notes: "Claude SessionStart の非インタラクティブ時のみ。Codex 未対応。dropped。"
+    notes: "Claude SessionStart in non-interactive mode only. Not supported by Codex. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.output.updatedMCPToolOutput
@@ -1341,10 +1343,10 @@ entries:
     loss: dropped
     transform: null
     warn: false
-    notes: "Codex PostToolUse のみ。MCP ツール出力の書き換え。Claude 未対応。dropped。"
+    notes: "Codex PostToolUse only. Rewrite of MCP tool output. Not supported by Claude. dropped."
     source: "https://github.com/openai/codex/blob/main/codex-rs/hooks/src/schema.rs"
 
-  # ── 環境変数 ─────────────────────────────────────────────────────────
+  # ── Environment variables ─────────────────────────────────────────────────────────
   - id: hooks.env.CLAUDE_PROJECT_DIR
     claude:
       field: "CLAUDE_PROJECT_DIR"
@@ -1359,8 +1361,9 @@ entries:
     transform: null
     warn: true
     notes: >
-      Claude は hook プロセスに環境変数を渡す。Codex は stdin JSON のみ（環境変数非使用）。
-      CLAUDE_PROJECT_DIR 依存スクリプトは Codex では cwd フィールドで代替が必要。dropped。
+      Claude passes environment variables to hook processes. Codex uses stdin JSON only
+      (no environment variables). Scripts that depend on CLAUDE_PROJECT_DIR must use
+      the cwd field as a substitute in Codex. dropped.
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.env.CLAUDE_ENV_FILE
@@ -1377,8 +1380,8 @@ entries:
     transform: null
     warn: true
     notes: >
-      Claude の SessionStart/Setup/CwdChanged/FileChanged で利用可能な環境変数書き込みファイル。
-      Codex 未対応。dropped。
+      Environment variable write file available in Claude's
+      SessionStart/Setup/CwdChanged/FileChanged events. Not supported by Codex. dropped.
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.env.CLAUDE_EFFORT
@@ -1394,44 +1397,48 @@ entries:
     loss: dropped
     transform: null
     warn: false
-    notes: "Claude のみ。effort レベルを環境変数として渡す。Codex 未対応。dropped。"
+    notes: "Claude only. Passes the effort level as an environment variable. Not supported by Codex. dropped."
     source: "https://code.claude.com/docs/en/hooks"
 
 notes:
   - >
-    Codex の features.codex_hooks と features.hooks の関係: features.hooks はデフォルト有効。
-    features.codex_hooks は deprecated alias（PR #18893 で確認）。
-    新規設定では features.hooks を使うこと。無効化する場合は features.hooks = false を記述。
+    Relationship between Codex features.codex_hooks and features.hooks: features.hooks is
+    enabled by default. features.codex_hooks is a deprecated alias (confirmed in PR #18893).
+    Use features.hooks in new configurations. To disable, write features.hooks = false.
   - >
-    Codex の Windows サポート: commandWindows / command_windows フィールドは存在するが、
-    Codex CLI 自体の Windows サポート状況は 2026-05 時点で未確認（公式ドキュメントに
-    明示なし）。
+    Codex Windows support: the commandWindows / command_windows fields exist, but
+    the Windows support status of the Codex CLI itself is unconfirmed as of 2026-05
+    (not explicitly stated in official documentation).
   - >
-    Codex の prompt/agent hook タイプは hook_config.rs のスキーマに含まれるが、
-    実行エンジン（codex-rs/hooks）では command のみが実装されている。
-    変換後にサイレント無視されるため、dropped として扱い警告を出すこと。
+    Codex's prompt/agent hook types are included in the hook_config.rs schema, but
+    only command is implemented in the execution engine (codex-rs/hooks).
+    Because they are silently ignored after conversion, treat them as dropped and emit a warning.
   - >
-    Stop hook の無限ループ防止: 両者とも stop_hook_active フィールドを入力 JSON に含める。
-    Claude はデフォルト 8 回ブロックで上書き（CLAUDE_CODE_STOP_HOOK_BLOCK_CAP で変更可）。
+    Stop hook infinite-loop prevention: both sides include the stop_hook_active field in
+    the input JSON. Claude blocks and overrides by default after 8 times
+    (configurable via CLAUDE_CODE_STOP_HOOK_BLOCK_CAP).
   - >
-    PreToolUse の updatedInput が複数 hook から返された場合の動作:
-    Claude は並列実行の最後に終わったものが優先（非決定的）。Codex の挙動は未確認。
+    Behavior when multiple hooks return updatedInput from PreToolUse:
+    Claude gives priority to the last one to finish in parallel execution (non-deterministic).
+    Codex behavior is unconfirmed.
   - >
-    [重要・落とし穴] Plugin 同梱 hooks がロードされない Codex バグ (Issue #16430, 2026-04 報告, open):
-    Codex の plugin マニフェストパーサーは skills と mcp_servers をパースするが hooks キーをパースしない。
-    hook discovery はユーザー設定フォルダ（~/.codex/hooks.json 等）のみをスキャンし、
-    インストール済み plugin root の hooks.json はスキャンされない。
-    Claude plugin（または Codex plugin）を Codex にインストールしても、その同梱 hooks は
-    現状ロードされない可能性が高い。hooks 定義内容を手動でユーザー設定にコピーする必要がある。
+    [Important / pitfall] Codex bug where plugin-bundled hooks are not loaded
+    (Issue #16430, reported 2026-04, open):
+    Codex's plugin manifest parser parses skills and mcp_servers but does not parse the hooks key.
+    Hook discovery only scans user config folders (~/.codex/hooks.json etc.); hooks.json
+    in an installed plugin root is not scanned.
+    Even after installing a Claude plugin (or Codex plugin) into Codex, its bundled hooks
+    are likely not loaded in the current state. You must manually copy the hooks definitions
+    into the user configuration.
     ref: https://github.com/openai/codex/issues/16430
   - >
-    Codex イベントパリティは進行中 (Issue #21753, umbrella tracker):
-    Codex は Claude の 29+ イベント全対応を目標に開発中。
-    共通 10 イベント（SessionStart/UserPromptSubmit/PreToolUse/PermissionRequest/PostToolUse/
-    SubagentStart/SubagentStop/PreCompact/PostCompact/Stop）の判定は現状維持だが、
-    今後 Codex 側追加により対応状況が変わる可能性がある。
+    Codex event parity is in progress (Issue #21753, umbrella tracker):
+    Codex is being developed to support all 29+ Claude events.
+    The determination of 10 common events (SessionStart/UserPromptSubmit/PreToolUse/
+    PermissionRequest/PostToolUse/SubagentStart/SubagentStop/PreCompact/PostCompact/Stop)
+    is maintained for now, but the coverage may change as Codex adds more events.
     ref: https://github.com/openai/codex/issues/21753
   - >
-    Codex は hook 実行時に CLAUDE_PLUGIN_ROOT と CLAUDE_PLUGIN_DATA を後方互換目的で設定する。
-    それ以外の Claude 環境変数（CLAUDE_PROJECT_DIR, CLAUDE_ENV_FILE, CLAUDE_EFFORT 等）は
-    Codex では設定されない。
+    Codex sets CLAUDE_PLUGIN_ROOT and CLAUDE_PLUGIN_DATA for backward compatibility
+    when executing hooks. All other Claude environment variables (CLAUDE_PROJECT_DIR,
+    CLAUDE_ENV_FILE, CLAUDE_EFFORT, etc.) are not set by Codex.
