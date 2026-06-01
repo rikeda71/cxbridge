@@ -377,6 +377,29 @@ entries:
       The conversion report must state explicitly that plan mode is not available in Codex.
     source: "https://code.claude.com/docs/en/settings"
 
+  - id: settings.permissions.defaultMode.dontAsk
+    claude:
+      field: "permissions.defaultMode"
+      type: "enum(dontAsk)"
+      scope: user
+    codex:
+      field: "approval_policy + sandbox_mode"
+      type: "string"
+      scope: user
+    direction: claude_to_codex
+    loss: lossy
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Claude `defaultMode: "dontAsk"` is the 6th value (added after bypassPermissions).
+      Approximated by combining Codex `approval_policy="never"` + `sandbox_mode="danger-full-access"`.
+      Semantic difference: `dontAsk` suppresses permission prompts but does not fully bypass Claude's
+      internal guardrails in the same way `bypassPermissions` does. The Codex combination grants
+      unrestricted sandbox access, which is a broader relaxation than `dontAsk` intends.
+      Security risk must be stated explicitly in the conversion warning.
+    source: "https://code.claude.com/docs/en/settings"
+
   # ─── Sandbox ─────────────────────────────────────────────
 
   - id: settings.sandbox.filesystem.allowWrite
@@ -480,7 +503,7 @@ entries:
       type: "boolean"
       scope: user
     codex:
-      field: "dangerously_allow_all_unix_sockets"
+      field: "features.network_proxy.dangerously_allow_all_unix_sockets"
       type: "boolean"
       scope: user
     direction: both
@@ -490,6 +513,9 @@ entries:
     warn: true
     notes: |
       Field rename only. Meaning and type are identical (lossless).
+      The Codex field is nested under `features.network_proxy`, not top-level:
+      `features.network_proxy.dangerously_allow_all_unix_sockets` (feature-toggle form).
+      The per-profile equivalent is `permissions.<name>.network.dangerously_allow_all_unix_sockets`.
       This is a dangerous setting as indicated by the `dangerously_` prefix, so a warning is emitted.
     source: "https://developers.openai.com/codex/concepts/sandboxing"
 
@@ -821,7 +847,198 @@ entries:
       Claude-specific skill context budget tuning fields. No Codex counterpart. Dropped.
     source: "https://code.claude.com/docs/en/settings"
 
+  - id: settings.permissions.additionalDirectories
+    claude:
+      field: "permissions.additionalDirectories"
+      type: "string[]"
+      scope: user
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Claude-only field that grants the agent read/write access to additional directories outside the project root.
+      Codex expresses directory permissions in `[permissions.<name>].filesystem`; however, the exact
+      semantics (automatically trusted additional root paths) have no direct counterpart. Dropped.
+    source: "https://code.claude.com/docs/en/settings"
+
+  - id: settings.disableBypassPermissionsMode
+    claude:
+      field: "disableBypassPermissionsMode"
+      type: "boolean"
+      scope: user
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Claude-only safety guard that prevents the `bypassPermissions` mode from being enabled.
+      Codex has no equivalent prohibition mechanism for `approval_policy="never"`. Dropped.
+    source: "https://code.claude.com/docs/en/settings"
+
+  - id: settings.alwaysThinkingEnabled
+    claude:
+      field: "alwaysThinkingEnabled"
+      type: "boolean"
+      scope: user
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Claude-only flag that forces extended thinking to be active for every request.
+      Codex reasoning effort is controlled via `model_reasoning_effort` (a level enum, not a forced-on toggle).
+      Dropped.
+    source: "https://code.claude.com/docs/en/settings"
+
+  - id: settings.apiKeyHelper
+    claude:
+      field: "apiKeyHelper"
+      type: "string"
+      scope: user
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Claude-only field for a shell command that returns the Anthropic API key (used in automated/CI environments).
+      Codex resolves its API key via the `OPENAI_API_KEY` environment variable or `api_key` config field;
+      there is no equivalent helper-command mechanism. Dropped.
+    source: "https://code.claude.com/docs/en/settings"
+
   # ─── Codex-only → Claude dropped/lossy ────────────────────────
+
+  - id: settings.codex.notify
+    claude:
+      field: null
+      type: null
+      scope: null
+    codex:
+      field: "notify"
+      type: "object"
+      scope: user
+    direction: codex_to_claude
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: false
+    notes: |
+      Codex-only desktop/system notification settings. Claude has no equivalent standalone `notify` field.
+      Dropped on conversion.
+    source: "https://developers.openai.com/codex/config-reference"
+
+  - id: settings.codex.file_opener
+    claude:
+      field: null
+      type: null
+      scope: null
+    codex:
+      field: "file_opener"
+      type: "string"
+      scope: user
+    direction: codex_to_claude
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: false
+    notes: |
+      Codex-only field for specifying the external editor/file-opener command (e.g. `"code"`, `"vim"`).
+      Claude Code opens files via its built-in editor and has no equivalent config field. Dropped.
+    source: "https://developers.openai.com/codex/config-reference"
+
+  - id: settings.codex.analytics
+    claude:
+      field: null
+      type: null
+      scope: null
+    codex:
+      field: "analytics.enabled"
+      type: "boolean"
+      scope: user
+    direction: codex_to_claude
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: false
+    notes: |
+      Codex-only analytics opt-in/out toggle (`analytics.enabled`). Claude has no equivalent field. Dropped.
+    source: "https://developers.openai.com/codex/config-reference"
+
+  - id: settings.codex.feedback
+    claude:
+      field: null
+      type: null
+      scope: null
+    codex:
+      field: "feedback.enabled"
+      type: "boolean"
+      scope: user
+    direction: codex_to_claude
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: false
+    notes: |
+      Codex-only in-app feedback widget toggle (`feedback.enabled`). Claude has no equivalent field. Dropped.
+    source: "https://developers.openai.com/codex/config-reference"
+
+  - id: settings.codex.hide_agent_reasoning
+    claude:
+      field: null
+      type: null
+      scope: null
+    codex:
+      field: "hide_agent_reasoning"
+      type: "boolean"
+      scope: user
+    direction: codex_to_claude
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: false
+    notes: |
+      Codex-only flag to suppress display of agent reasoning steps in the TUI.
+      Claude Code has no equivalent visibility toggle for reasoning. Dropped.
+    source: "https://developers.openai.com/codex/config-reference"
+
+  - id: settings.codex.show_raw_agent_reasoning
+    claude:
+      field: null
+      type: null
+      scope: null
+    codex:
+      field: "show_raw_agent_reasoning"
+      type: "boolean"
+      scope: user
+    direction: codex_to_claude
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: false
+    notes: |
+      Codex-only flag to show raw (unformatted) agent reasoning text in the TUI.
+      Claude Code has no equivalent field. Dropped.
+    source: "https://developers.openai.com/codex/config-reference"
 
   - id: settings.codex.profiles
     claude:
