@@ -697,6 +697,167 @@ fn test_plugin_c2x_six_dropped_fields_no_duplicates() {
     );
 }
 
+/// c2x: plugin with commands/foo.md and agents/bar.md must include them in the
+/// EmitPlan remapped under .codex-plugin/commands/ and .codex-plugin/agents/.
+#[test]
+fn test_plugin_c2x_commands_and_agents_remapped() {
+    let plugin_path = "tests/fixtures/claude/.claude-plugin/plugin.json";
+    assert!(
+        Path::new(plugin_path).exists(),
+        "Fixture {} must exist",
+        plugin_path
+    );
+    // The fixture already has commands/foo.md and agents/bar.md
+    assert!(
+        Path::new("tests/fixtures/claude/.claude-plugin/commands/foo.md").exists(),
+        "commands/foo.md fixture must exist"
+    );
+    assert!(
+        Path::new("tests/fixtures/claude/.claude-plugin/agents/bar.md").exists(),
+        "agents/bar.md fixture must exist"
+    );
+
+    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let kind = detect(plugin_path).expect("detect should succeed");
+    let handler = pick_handler(&kind, &maps);
+    let parsed = handler
+        .parse(Path::new(plugin_path))
+        .expect("parse should succeed");
+    let ir = handler
+        .lift(&parsed, ConvDir::C2x)
+        .expect("lift should succeed");
+
+    let out_dir = tempfile::TempDir::new().unwrap();
+    let opts = default_lower_opts(out_dir.path().to_str().unwrap());
+    let plan = handler
+        .lower(&ir, ConvDir::C2x, &opts)
+        .expect("lower should succeed");
+
+    // commands/foo.md must be remapped to .codex-plugin/commands/foo.md
+    let commands_file = plan
+        .files
+        .iter()
+        .find(|f| f.path.contains(".codex-plugin/commands/foo.md"));
+    assert!(
+        commands_file.is_some(),
+        "Expected .codex-plugin/commands/foo.md in c2x EmitPlan; files: {:?}",
+        plan.files.iter().map(|f| &f.path).collect::<Vec<_>>()
+    );
+    // Content must be unchanged
+    assert!(
+        commands_file.unwrap().content.contains("foo"),
+        "commands/foo.md content should be preserved"
+    );
+
+    // agents/bar.md must be remapped to .codex-plugin/agents/bar.md
+    let agents_file = plan
+        .files
+        .iter()
+        .find(|f| f.path.contains(".codex-plugin/agents/bar.md"));
+    assert!(
+        agents_file.is_some(),
+        "Expected .codex-plugin/agents/bar.md in c2x EmitPlan; files: {:?}",
+        plan.files.iter().map(|f| &f.path).collect::<Vec<_>>()
+    );
+    // Content must be unchanged
+    assert!(
+        agents_file.unwrap().content.contains("bar"),
+        "agents/bar.md content should be preserved"
+    );
+
+    // An Info diagnostic for commands and a Warn for agents must be emitted
+    let has_commands_info = ir
+        .diagnostics
+        .iter()
+        .any(|d| d.id.as_deref() == Some("plugins.commands") && d.level == DiagLevel::Info);
+    assert!(
+        has_commands_info,
+        "Expected Info diagnostic with id plugins.commands"
+    );
+
+    let has_agents_warn = ir
+        .diagnostics
+        .iter()
+        .any(|d| d.id.as_deref() == Some("plugins.agents") && d.level == DiagLevel::Warn);
+    assert!(
+        has_agents_warn,
+        "Expected Warn diagnostic with id plugins.agents"
+    );
+}
+
+/// x2c: plugin with commands/foo.md and agents/bar.md (on the Codex side) must
+/// include them in the EmitPlan remapped under .claude-plugin/commands/ and
+/// .claude-plugin/agents/.
+#[test]
+fn test_plugin_x2c_commands_and_agents_remapped() {
+    // Create a temp Codex plugin fixture that has commands/ and agents/.
+    let dir = tempfile::TempDir::new().unwrap();
+    let plugin_dir = dir.path().join(".codex-plugin");
+    std::fs::create_dir_all(&plugin_dir).unwrap();
+
+    std::fs::write(
+        plugin_dir.join("plugin.json"),
+        r#"{"name": "x2c-plugin", "version": "1.0.0", "description": "Test"}"#,
+    )
+    .unwrap();
+
+    let commands_dir = plugin_dir.join("commands");
+    std::fs::create_dir_all(&commands_dir).unwrap();
+    std::fs::write(
+        commands_dir.join("foo.md"),
+        "# foo\nA codex plugin command.\n",
+    )
+    .unwrap();
+
+    let agents_dir = plugin_dir.join("agents");
+    std::fs::create_dir_all(&agents_dir).unwrap();
+    std::fs::write(
+        agents_dir.join("bar.md"),
+        "---\nname: bar\ndescription: A codex plugin agent\n---\nYou are bar.\n",
+    )
+    .unwrap();
+
+    let plugin_json_path = plugin_dir.join("plugin.json");
+
+    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let kind = detect(plugin_json_path.to_str().unwrap()).expect("detect should succeed");
+    let handler = pick_handler(&kind, &maps);
+    let parsed = handler
+        .parse(&plugin_json_path)
+        .expect("parse should succeed");
+    let ir = handler
+        .lift(&parsed, ConvDir::X2c)
+        .expect("lift should succeed");
+
+    let out_dir = tempfile::TempDir::new().unwrap();
+    let opts = default_lower_opts(out_dir.path().to_str().unwrap());
+    let plan = handler
+        .lower(&ir, ConvDir::X2c, &opts)
+        .expect("lower should succeed");
+
+    // commands/foo.md must be remapped to .claude-plugin/commands/foo.md
+    let commands_file = plan
+        .files
+        .iter()
+        .find(|f| f.path.contains(".claude-plugin/commands/foo.md"));
+    assert!(
+        commands_file.is_some(),
+        "Expected .claude-plugin/commands/foo.md in x2c EmitPlan; files: {:?}",
+        plan.files.iter().map(|f| &f.path).collect::<Vec<_>>()
+    );
+
+    // agents/bar.md must be remapped to .claude-plugin/agents/bar.md
+    let agents_file = plan
+        .files
+        .iter()
+        .find(|f| f.path.contains(".claude-plugin/agents/bar.md"));
+    assert!(
+        agents_file.is_some(),
+        "Expected .claude-plugin/agents/bar.md in x2c EmitPlan; files: {:?}",
+        plan.files.iter().map(|f| &f.path).collect::<Vec<_>>()
+    );
+}
+
 /// Dropped fields that do NOT have a secondary warn diagnostic (lspServers,
 /// outputStyles, channels, settings, dependencies) must not appear in
 /// report.lossy at all.

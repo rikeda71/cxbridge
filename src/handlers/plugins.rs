@@ -10,6 +10,13 @@ use crate::core::mappings::{applies_direction, DomainMap};
 use crate::core::transforms::{apply_transforms, ConvDir, TransformCtx};
 use crate::handlers::{EmitFile, EmitPlan, Handler, LowerOpts};
 
+/// A path-remapped file discovered under `commands/` or `agents/` at a plugin root.
+struct PluginDirFile {
+    /// Relative path within the plugin dir (e.g. `"commands/foo.md"`).
+    rel_path: String,
+    content: String,
+}
+
 /// Handler for the plugins domain.
 /// In addition to lifting/lowering plugin.json, it recursively converts
 /// the nested skills/hooks/.mcp.json by delegating to the respective handlers
@@ -69,6 +76,10 @@ impl Handler for PluginsHandler {
 
         // Process marketplace.json if present in the same directory
         self.lift_marketplace(&plugin_root, dir, &mut node);
+
+        // Collect commands/ and agents/ directories (lossless path-remap / lossy path-remap)
+        self.lift_child_commands(&plugin_root, &mut node);
+        self.lift_child_agents(&plugin_root, &mut node);
 
         Ok(node)
     }
@@ -554,6 +565,62 @@ impl PluginsHandler {
         }
     }
 
+    /// Discovers `commands/` at the plugin root and stores the files as side artifacts.
+    /// Both Claude and Codex use an identically named directory — conversion is a
+    /// lossless path-remap.
+    fn lift_child_commands(&self, plugin_root: &str, node: &mut IRNode) {
+        let commands_path_str = format!("{}/commands", plugin_root);
+        let commands_path = Path::new(&commands_path_str);
+        if !commands_path.exists() {
+            return;
+        }
+
+        for file in collect_md_files(commands_path) {
+            node.diagnostics.push(Diagnostic {
+                level: DiagLevel::Info,
+                id: Some("plugins.commands".to_string()),
+                message: format!(
+                    "commands/{}: path-remapped losslessly to output commands/",
+                    file.rel_path.trim_start_matches("commands/")
+                ),
+            });
+            node.side_artifacts.push(SideArtifact {
+                // path stores the relative path within the plugin dir (e.g. "commands/foo.md")
+                path: file.rel_path,
+                content: file.content,
+                note: "commands".to_string(),
+            });
+        }
+    }
+
+    /// Discovers `agents/` at the plugin root and stores the files as side artifacts.
+    /// Both Claude and Codex auto-discover agent `.md` files here — conversion is a
+    /// lossy path-remap (per-file frontmatter may need subagent-rule conversion).
+    fn lift_child_agents(&self, plugin_root: &str, node: &mut IRNode) {
+        let agents_path_str = format!("{}/agents", plugin_root);
+        let agents_path = Path::new(&agents_path_str);
+        if !agents_path.exists() {
+            return;
+        }
+
+        for file in collect_md_files(agents_path) {
+            node.diagnostics.push(Diagnostic {
+                level: DiagLevel::Warn,
+                id: Some("plugins.agents".to_string()),
+                message: format!(
+                    "agents/{}: path-remapped to output agents/ (lossy — per-agent frontmatter may need subagent-rule conversion)",
+                    file.rel_path.trim_start_matches("agents/")
+                ),
+            });
+            node.side_artifacts.push(SideArtifact {
+                // path stores the relative path within the plugin dir (e.g. "agents/bar.md")
+                path: file.rel_path,
+                content: file.content,
+                note: "agents".to_string(),
+            });
+        }
+    }
+
     /// c2x: Claude plugin → Codex plugin conversion
     fn lower_c2x(&self, ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPlan> {
         let mut files = Vec::new();
@@ -658,6 +725,16 @@ impl PluginsHandler {
             }
         }
 
+        // Emit commands/ and agents/ files (path-remap to output plugin root)
+        for artifact in &ir.side_artifacts {
+            if artifact.note == "commands" || artifact.note == "agents" {
+                files.push(EmitFile {
+                    path: format!("{}/.codex-plugin/{}", out_root, artifact.path),
+                    content: artifact.content.clone(),
+                });
+            }
+        }
+
         Ok(EmitPlan { files, diagnostics })
     }
 
@@ -749,6 +826,16 @@ impl PluginsHandler {
                 files.push(EmitFile {
                     path: format!("{}/.claude-plugin/marketplace.json", out_root),
                     content: transformed,
+                });
+            }
+        }
+
+        // Emit commands/ and agents/ files (path-remap to output plugin root)
+        for artifact in &ir.side_artifacts {
+            if artifact.note == "commands" || artifact.note == "agents" {
+                files.push(EmitFile {
+                    path: format!("{}/.claude-plugin/{}", out_root, artifact.path),
+                    content: artifact.content.clone(),
                 });
             }
         }
@@ -1061,6 +1148,41 @@ fn normalize_marketplace_source_c2x(
                 }
             }
             _ => {}
+        }
+    }
+}
+
+/// Walks `dir` recursively and returns all `.md` files as `PluginDirFile` entries.
+/// `rel_path` is relative to the *parent* of `dir` (i.e. the plugin root), so a file
+/// at `plugin_root/commands/foo.md` produces `rel_path = "commands/foo.md"`.
+fn collect_md_files(dir: &Path) -> Vec<PluginDirFile> {
+    let dir_name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let mut results = Vec::new();
+    collect_md_files_recursive(dir, dir_name, &mut results);
+    results
+}
+
+fn collect_md_files_recursive(dir: &Path, prefix: &str, out: &mut Vec<PluginDirFile>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_string(),
+            None => continue,
+        };
+        let rel = format!("{}/{}", prefix, name);
+        if path.is_dir() {
+            collect_md_files_recursive(&path, &rel, out);
+        } else if name.ends_with(".md") {
+            if let Ok(content) = std::fs::read_to_string(&path) {
+                out.push(PluginDirFile {
+                    rel_path: rel,
+                    content,
+                });
+            }
+            // unreadable files are skipped silently
         }
     }
 }
