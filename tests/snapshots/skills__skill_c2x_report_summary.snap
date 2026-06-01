@@ -1,6 +1,6 @@
 ---
-source: tests/roundtrip.rs
-assertion_line: 393
+source: tests/skills.rs
+assertion_line: 251
 expression: snapshot
 ---
 {

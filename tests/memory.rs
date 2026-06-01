@@ -1,19 +1,13 @@
-//! Integration test for gap 42/42: @import detection in lift() must not emit
-//! false-positive lossy warnings for @-lines that appear inside code fences.
-//!
-//! Spec/mappings memory.import-syntax notes: "@-lines inside code fences are excluded".
-//! lower() already skips expanding code-fence imports via stateful fence
-//! tracking. lift() must apply the same logic so the conversion report does
-//! not falsely list "memory.import-syntax" as a lossy entry when every @-line
-//! is inside a code block.
+mod common;
+use common::*;
 
 use std::path::Path;
 
-use ccx::core::{mappings::load_mappings, report::build_report, transforms::ConvDir};
+use ccx::core::{
+    detect::detect, mappings::load_mappings, report::build_report, transforms::ConvDir,
+};
 use ccx::handlers::memory::MemoryHandler;
-use ccx::handlers::{Handler, LowerOpts, Scope, SkillTargetMode};
-
-const MAPPINGS_DIR: &str = "mappings";
+use ccx::handlers::{pick_handler, Handler};
 
 fn make_handler() -> MemoryHandler {
     let maps = load_mappings(Path::new(MAPPINGS_DIR));
@@ -22,18 +16,80 @@ fn make_handler() -> MemoryHandler {
     }
 }
 
-fn default_opts(out_dir: &str) -> LowerOpts {
-    LowerOpts {
-        out: Some(out_dir.to_string()),
-        only: vec![],
-        scope: Scope::Project,
-        dual_manifest: false,
-        hooks_target: Scope::User,
-        skill_target: SkillTargetMode::Skill,
-        interactive: false,
-        rewrite_body: false,
-        keep_claude_frontmatter: false,
-    }
+/// CLAUDE.md c2x: AGENTS.md is generated and its content is preserved.
+#[test]
+fn test_memory_c2x_basic() {
+    let memory_path = "tests/fixtures/claude/CLAUDE.md";
+    assert!(
+        Path::new(memory_path).exists(),
+        "Fixture {} must exist",
+        memory_path
+    );
+
+    let out_dir = tempfile::TempDir::new().unwrap();
+    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let kind = detect(memory_path).expect("detect should succeed");
+    assert_eq!(kind, ccx::core::ir::Kind::Memory);
+
+    let handler = pick_handler(&kind, &maps);
+    let parsed = handler
+        .parse(Path::new(memory_path))
+        .expect("parse should succeed");
+    let ir = handler
+        .lift(&parsed, ConvDir::C2x)
+        .expect("lift should succeed");
+
+    assert_eq!(ir.kind, ccx::core::ir::Kind::Memory);
+
+    let opts = default_lower_opts_subagent(out_dir.path().to_str().unwrap());
+    let plan = handler
+        .lower(&ir, ConvDir::C2x, &opts)
+        .expect("lower should succeed");
+
+    let agents_md = plan.files.iter().find(|f| f.path.ends_with("AGENTS.md"));
+    assert!(agents_md.is_some(), "Expected AGENTS.md in output");
+    let content = &agents_md.unwrap().content;
+    assert!(
+        content.contains("Project Instructions"),
+        "Expected content preserved in AGENTS.md"
+    );
+}
+
+/// AGENTS.md x2c: CLAUDE.md is generated.
+#[test]
+fn test_memory_x2c_basic() {
+    let memory_path = "tests/fixtures/codex/AGENTS.md";
+    assert!(
+        Path::new(memory_path).exists(),
+        "Fixture {} must exist",
+        memory_path
+    );
+
+    let out_dir = tempfile::TempDir::new().unwrap();
+    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let kind = detect(memory_path).expect("detect should succeed");
+    assert_eq!(kind, ccx::core::ir::Kind::Memory);
+
+    let handler = pick_handler(&kind, &maps);
+    let parsed = handler
+        .parse(Path::new(memory_path))
+        .expect("parse should succeed");
+    let ir = handler
+        .lift(&parsed, ConvDir::X2c)
+        .expect("lift should succeed");
+
+    let opts = default_lower_opts_subagent(out_dir.path().to_str().unwrap());
+    let plan = handler
+        .lower(&ir, ConvDir::X2c, &opts)
+        .expect("lower should succeed");
+
+    let claude_md = plan.files.iter().find(|f| f.path.ends_with("CLAUDE.md"));
+    assert!(claude_md.is_some(), "Expected CLAUDE.md in output");
+    let content = &claude_md.unwrap().content;
+    assert!(
+        content.contains("Agent Instructions"),
+        "Expected content preserved in CLAUDE.md"
+    );
 }
 
 /// lift() must not add "memory.import-syntax" to the IR when every @-line is
@@ -63,7 +119,7 @@ fn test_lift_no_false_positive_lossy_for_code_block_import() {
 
     // The report must therefore have zero lossy entries.
     let out_dir = tempfile::TempDir::new().unwrap();
-    let opts = default_opts(out_dir.path().to_str().unwrap());
+    let opts = default_lower_opts_skill(out_dir.path().to_str().unwrap());
     let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
     let report = build_report(&ir, &plan);
 
