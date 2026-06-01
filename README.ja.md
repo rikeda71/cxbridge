@@ -6,7 +6,7 @@
 [OpenAI Codex CLI](https://developers.openai.com/codex)（`.codex/`、TOML）の設定ファイルを
 双方向変換する Rust 製 CLI です。
 Skills / Plugins / Hooks / MCP サーバー / メモリファイル / Subagents / Settings を対象とします。
-変換ルールは `mappings/*.yaml`（300 エントリ）に宣言済みで、CLI はそれを解釈するエンジンです。
+変換ルールは `mappings/*.yaml`（301 エントリ）に宣言済みで、CLI はそれを解釈するエンジンです。
 
 ```
 Claude Code  .claude/ (JSON)  ⇄  Codex CLI  .codex/ (TOML)
@@ -112,6 +112,6 @@ Summary: 2 lossless, 3 lossy (2 degraded), 2 dropped, 1 body-warning
 
 - **[docs/spec.md](docs/spec.md)** — 設計・実装仕様の全文（IR モデル、transform レジストリ、
   ドメインハンドラ仕様、降格エンジン、CLI フラグ、終了コード、テスト戦略など）
-- **[mappings/](mappings/)** — 変換テーブルの正本データ（300 エントリ、`skills.yaml` /
+- **[mappings/](mappings/)** — 変換テーブルの正本データ（301 エントリ、`skills.yaml` /
   `hooks.yaml` / `mcp.yaml` / `plugins.yaml` / `memory.yaml` / `subagents.yaml` /
   `settings-config.yaml`）、スキーマ定義は [mappings/SCHEMA.md](mappings/SCHEMA.md)

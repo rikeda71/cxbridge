@@ -8,7 +8,7 @@ Conversion rules live in `mappings/*.yaml`; the CLI is an engine that interprets
 
 ```
 src/        Rust implementation
-mappings/   Conversion table YAML (300 entries) — canonical data
+mappings/   Conversion table YAML (301 entries) — canonical data
 docs/       Design & specification documents
 tests/      Integration tests and fixtures
 ```
@@ -19,7 +19,7 @@ tests/      Integration tests and fixtures
   the CLI design, IR model, transform registry, domain handler contracts, degrade engine,
   CLI flags, exit codes, and implementation phases. Supersedes any older per-file docs.
 - **Conversion table:** [`mappings/*.yaml`](mappings/) + [`mappings/SCHEMA.md`](mappings/SCHEMA.md) —
-  canonical field-level mapping data (300 entries). When code and spec diverge, follow `docs/spec.md`.
+  canonical field-level mapping data (301 entries). When code and spec diverge, follow `docs/spec.md`.
 
 ## Dev Commands
 

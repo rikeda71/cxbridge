@@ -42,7 +42,7 @@
 
 **ccx** is a Rust CLI that bidirectionally converts configuration files between Claude Code (`.claude/`, JSON) and OpenAI Codex CLI (`.codex/`, TOML). It covers Skills, Plugins, Hooks, MCP servers, Memory files, Subagents, and Settings.
 
-Conversion rules are declared in `mappings/*.yaml` (300 entries). The CLI is an engine that interprets those declarations. New field support requires only YAML edits, not code changes (mappings-driven design).
+Conversion rules are declared in `mappings/*.yaml` (301 entries). The CLI is an engine that interprets those declarations. New field support requires only YAML edits, not code changes (mappings-driven design).
 
 Every conversion produces a **conversion report** that enumerates what was lossless, lossy, degraded, dropped, and any body-scan warnings. Silent data loss is prohibited.
 
@@ -157,7 +157,7 @@ Key design principles:
 ```
 ccx/
 ├── Cargo.toml
-├── mappings/           # ← YAML truth tables (300 entries)
+├── mappings/           # ← YAML truth tables (301 entries)
 │   ├── SCHEMA.md
 │   └── *.yaml
 ├── src/
@@ -957,12 +957,12 @@ All writes to `config.toml` use `toml_edit::DocumentMut`. No string-patching (se
 
 ## 16. Feature & Loss Matrix Summary
 
-Total entries across all `mappings/*.yaml`: **300**
+Total entries across all `mappings/*.yaml`: **301**
 
 | Loss level | Count | % |
 |---|---|---|
 | lossless | 70 | 23% |
-| lossy | 89 | 30% |
+| lossy | 90 | 30% |
 | dropped | 141 | 47% |
 
 **Directional asymmetry:**
@@ -973,7 +973,7 @@ Total entries across all `mappings/*.yaml`: **300**
 
 | Domain | Entries | Lossless | Lossy | Dropped | Notes |
 |---|---|---|---|---|---|
-| Skills | 22 | 5 | 12 | 5 | Core — degrade engine + body scanner |
+| Skills | 23 | 5 | 13 | 5 | Core — degrade engine + body scanner |
 | Hooks | 83 | 34 | 6 | 43 | Core — JSON↔TOML structural conversion |
 | MCP | 32 | 10 | 4 | 18 | Lightweight mechanical transforms |
 | Plugins | 48 | 12 | 16 | 20 | Integration point; recursive |
@@ -1016,7 +1016,7 @@ The CLI mirrors this philosophy: unknown fields produce drop diagnostics but pro
 | Issue | Description | CLI Behavior |
 |---|---|---|
 | **#16430** | Plugin-bundled `hooks.json` not loaded — **effectively fixed in source** (PR #22552, merged 2026-05-21): `append_plugin_hook_sources()` now auto-detects `hooks/hooks.json`; `PluginHooks` feature flag removed. Issue still open in tracker but code is shipped. | Emit informational note (not hard warn); `--hooks-target` is optional, not a required workaround |
-| **#14161** | `[[skills.config]]` per-skill override: `enabled` and `path` fields inside `SkillConfig` are silently ignored at runtime (bug open since 2026-03). Other fields in the override struct are also unverified. | Emit warning when skill config override is generated; note the specific broken fields (`enabled`, `path`) in the diagnostic |
+| **#14161** | `[[skills.config]]` per-skill override: `enabled` and `path` fields inside `SkillConfig` were silently ignored at runtime — **fixed 2026-03 (PR #14806)**. Per-skill config overrides are now stable. | No longer needs a degradation warning for this bug specifically; existing diagnostics for scope expansion remain |
 | **#21753** | Hook event parity tracker (still open) — `SubagentStart`/`SubagentStop` are listed as "Missing" in the tracker matrix, but **both ARE implemented** in the current Codex source (`HookEventName` enum). Source is authoritative; tracker is stale for these two events. Other Claude-only events remain unimplemented. | Treat `SubagentStart`/`SubagentStop` as common events (both/lossless). Mark remaining 20 Claude-only events as `⏳ awaiting-codex`; drop + warn. |
 | **#5019** | Dynamic injection `` !`cmd` `` — "not planned" | Body scanner detects + warns; no auto-removal (too destructive); user must manually handle |
 
@@ -1038,7 +1038,7 @@ Claude uses description semantic matching for automatic subagent dispatch. Codex
 
 ## 18. Testing Strategy
 
-1. **Mappings invariant tests** (at startup + CI): assert globally unique `id`, valid `direction`/`loss` values, `degrade` implies `loss:lossy`, `loss:dropped` has no `transform`, `source` field present. 300 entries; 0 issues confirmed.
+1. **Mappings invariant tests** (at startup + CI): assert globally unique `id`, valid `direction`/`loss` values, `degrade` implies `loss:lossy`, `loss:dropped` has no `transform`, `source` field present. 301 entries; 0 issues confirmed.
 
 2. **Unit tests:**
    - Each transform function (`unit:ms_to_sec`, `polarity:invert`, `enum_map`, `index_shift`, etc.)

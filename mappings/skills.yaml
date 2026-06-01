@@ -60,7 +60,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "Required field on both sides and serves as the auto-invocation trigger. Semantically a full match. Claude maximum length is ≤1024 characters."
+    notes: "Required field on both sides and serves as the auto-invocation trigger. Semantically a full match. The combined length of description + when_to_use is capped at 1,536 characters (skill-listing truncation in Claude)."
     source: "https://code.claude.com/docs/en/skills"
 
   - id: skills.when_to_use
@@ -130,7 +130,7 @@ entries:
       target: ".codex/rules/<skill>.rules (execpolicy allow) / mcp_servers.<id>.enabled_tools"
     transform: null
     warn: true
-    notes: "Per-tool pre-approval control at skill scope does not exist in Codex (SkillConfig has only three fields: enabled/name/path, with additionalProperties:false confirmed). Writing allowed-tools in the SKILL.md frontmatter is silently ignored by the runtime skill loader with fail-open behavior (no error). Degradation fallback: for Bash command tools, generate prefix_rule(decision=\"allow\") into .codex/rules/<skill>.rules (project, trust_level=\"trusted\" required) or ~/.codex/rules/default.rules (user). For MCP tools, write to mcp_servers.<id>.enabled_tools. Pre-approval of built-in tools (AskUserQuestion etc.) has no alternative → dropped. All cases expand skill scope to session/project scope, so a warning is mandatory. There is also a known bug in [[skills.config]] overrides (openai/codex#14161, open as of 2026-03)."
+    notes: "Per-tool pre-approval control at skill scope does not exist in Codex (SkillConfig has only three fields: enabled/name/path, with additionalProperties:false confirmed). Writing allowed-tools in the SKILL.md frontmatter is silently ignored by the runtime skill loader with fail-open behavior (no error). Degradation fallback: for Bash command tools, generate prefix_rule(decision=\"allow\") into .codex/rules/<skill>.rules (project, trust_level=\"trusted\" required) or ~/.codex/rules/default.rules (user). For MCP tools, write to mcp_servers.<id>.enabled_tools. Pre-approval of built-in tools (AskUserQuestion etc.) has no alternative → dropped. All cases expand skill scope to session/project scope, so a warning is mandatory. There is also a known bug in [[skills.config]] overrides (openai/codex#14161, fixed 2026-03 (PR #14806))."
     source: "https://github.com/openai/codex"
 
   - id: skills.disallowed-tools
@@ -178,7 +178,7 @@ entries:
       scope: skill
     codex:
       field: "model_reasoning_effort"
-      type: "enum(low|medium|high|xhigh)"
+      type: "enum(minimal|low|medium|high|xhigh)"
       scope: subagent
     direction: claude_to_codex
     loss: lossy
@@ -208,6 +208,25 @@ entries:
     warn: true
     notes: "Automatic forking does not exist in Codex (\"Codex only spawns a new agent when you explicitly ask it to do so.\"). Approximate by generating a standalone agent TOML and having the model explicitly call the spawn_agent tool. features.multi_agent=true is required; default max_depth is 1. The agent field degrades to the same target. Note the behavioral change from automatic fork to explicit spawn in the warning report."
     source: "https://developers.openai.com/codex/config-reference"
+
+  - id: skills.agent
+    claude:
+      field: "agent"
+      type: "string"
+      scope: skill
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: lossy
+    degrade:
+      to: subagent
+      target: ".codex/agents/<skill>.toml"
+    transform: null
+    warn: true
+    notes: "Claude's `agent` field selects which subagent type to use when `context: fork` is set. Codex has no skill-level subagent-type selection (spawn_agent is always explicit), so this degrades into the subagent TOML at `.codex/agents/<skill>.toml`. The exact agent type is not preserved."
+    source: "https://code.claude.com/docs/en/skills"
 
   - id: skills.hooks
     claude:
@@ -259,7 +278,7 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "There is no argument mechanism in Skills (this field only exists in the deprecated Custom Prompts). Dropped for skill-to-skill conversions. The $name substitution in the body is also not expanded on the Codex side."
+    notes: "Fully supported SKILL.md frontmatter field in Claude (hint shown during autocomplete to indicate expected arguments). Codex Skills have no argument-hint mechanism. Dropped for skill-to-skill conversions."
     source: "https://code.claude.com/docs/en/skills"
 
   - id: skills.arguments
@@ -276,7 +295,7 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Codex Skills have no argument mechanism. Custom Prompts (deprecated) support $1-$9/$ARGUMENTS, but migration to Skills is recommended and they are transitional. Dropped in skill→skill conversion. $name references in the body will also remain unresolved on the Codex side, so detect and warn at conversion time."
+    notes: "Fully supported SKILL.md frontmatter field in Claude (named positional arguments for $name substitution; space-separated string or YAML list). Codex Skills have no argument mechanism. Dropped in skill→skill conversion. $name references in the body will also remain unresolved on the Codex side, so detect and warn at conversion time."
     source: "https://code.claude.com/docs/en/skills"
 
   - id: skills.shell
@@ -395,12 +414,12 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Claude-specific !`cmd` dynamic injection and variables such as ${CLAUDE_SESSION_ID} have no confirmed equivalent mechanism on the Codex side. If left after conversion as literal strings, they risk silent misbehavior. Include in the report: detect via body scanner, warn, and flag for manual review."
+    notes: "Claude-specific !`cmd` dynamic injection and body variables ${CLAUDE_SESSION_ID}, ${CLAUDE_SKILL_DIR}, ${CLAUDE_EFFORT} have no Codex equivalent. If left after conversion as literal strings, they risk silent misbehavior. Include in the report: detect via body scanner, warn, and flag for manual review."
     source: "https://code.claude.com/docs/en/skills"
 
 notes:
   - "The SKILL.md filename and structure are shared between both sides. The fundamental challenge in conversion is the asymmetry of frontmatter fields (Claude 16 fields vs. Codex 2 fields)."
   - "Codex→Claude conversion is nearly lossless. Claude→Codex conversion has 14/16 fields requiring attention; notably allowed-tools / model / effort / context:fork / paths / user-invocable cannot be converted equivalently."
   - "When performing \"degradation\" (moving to session/subagent scope) to preserve functionality at the cost of losing skill scope in Claude→Codex conversion, always explicitly list which fields were degraded to which scope in the loss report."
-  - "There is a known bug (openai/codex#14161, open as of 2026-03) where [[skills.config]] overrides on the Codex side do not take effect in either direction, making per-skill control unstable at the implementation level."
+  - "There was a known bug (openai/codex#14161) where [[skills.config]] overrides on the Codex side did not take effect; this was fixed 2026-03 (PR #14806). Per-skill control via [[skills.config]] is now stable."
   - "Codex Skills / Plugins / Hooks are new features added in 2025-2026 with a fluid specification. Re-verify against the source URL for each version at implementation time."
