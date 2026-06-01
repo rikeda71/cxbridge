@@ -218,7 +218,7 @@ entries:
     degrade: null
     transform: "rename; format:json_to_toml"
     warn: true
-    notes: "rename: mcpServers ↔ mcp_servers. Format conversion: JSON (Claude) ↔ TOML (Codex). Claude's mcpServers supports two forms: inline definition (connects on agent start and disconnects on end) and named reference (shares the parent session's connection). The named-reference form is difficult to express in standalone TOML (lossy). Note in the conversion output that mcpServers is ignored for Claude plugin agents."
+    notes: "rename: mcpServers ↔ mcp_servers. Format conversion: JSON (Claude) ↔ TOML (Codex). Claude's mcpServers supports two forms: inline definition (connects on agent start and disconnects on end) and named reference (shares the parent session's connection). The named-reference form is difficult to express in standalone TOML (lossy). Note in the conversion output that mcpServers is ignored for Claude plugin agents. As of Claude Code v2.1.153, session-level MCP restrictions (--strict-mcp-config, --bare, managed allowedMcpServers/deniedMcpServers) now also apply to inline subagent mcpServers; conversion output should note this when the source config uses session-level MCP restrictions."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.hooks
@@ -342,7 +342,7 @@ entries:
     transform: null
     warn: false
     notes: "Codex-only field. A pool of display nickname candidates for spawned agent instances. No counterpart in Claude. Dropped. warn:false (UI decoration only)."
-    source: "https://github.com/openai/codex"
+    source: "https://developers.openai.com/codex/config-reference"
 
   - id: subagents.config_file
     claude:
@@ -359,7 +359,7 @@ entries:
     transform: null
     warn: true
     notes: "Codex-only role-layer mechanism. A path reference from [agents.<name>] to a separate TOML file that overlays config.toml-compatible keys for a given role. Claude agent configuration is self-contained in a single file and has no concept of this kind of indirection. On Codex→Claude conversion, config_file must be read and its contents inlined before converting to Claude frontmatter. warn:true."
-    source: "https://github.com/openai/codex"
+    source: "https://developers.openai.com/codex/config-reference"
 
   - id: subagents.spawn-model
     claude:
@@ -375,8 +375,8 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Claude Code automatically delegates work via semantic matching of the agent's description, whereas Codex requires an explicit call to the spawn_agent tool even when features.multi_agent=true (the default) is set ('Codex only spawns a new agent when you explicitly ask it to do so.'). This fundamental behavioral difference cannot be reproduced by conversion. On Claude→Codex conversion, the conversion report must always note that explicit spawn instructions should be added to AGENTS.md or developer_instructions."
-    source: "https://developers.openai.com/codex/subagents"
+    notes: "Claude Code automatically delegates work via semantic matching of the agent's description, whereas Codex requires an explicit call to the spawn_agent tool even when features.multi_agent=true (the default) is set ('Codex only spawns a new agent when you explicitly ask it to do so.'). This fundamental behavioral difference cannot be reproduced by conversion. On Claude→Codex conversion, the conversion report must always note that explicit spawn instructions should be added to AGENTS.md or developer_instructions. features.multi_agent (stable, on by default) enables the spawn_agent tool and four additional tools with no Claude equivalent: send_input, resume_agent, wait_agent, and close_agent."
+    source: "https://developers.openai.com/codex/config-reference"
 
   - id: subagents.plugin-restrictions
     claude:
@@ -409,8 +409,8 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "Codex global setting. Maximum number of simultaneously open agent threads (default: 6). Claude has no equivalent global limit setting."
-    source: "https://github.com/openai/codex"
+    notes: "Codex global setting. Maximum number of simultaneously open agent threads (default: 6). Claude has no equivalent global limit setting. When features.multi_agent_v2 is active, agents.max_threads is rejected by Codex; use features.multi_agent_v2.max_concurrent_threads_per_session instead (default 4, introduced in PR #19792)."
+    source: "https://developers.openai.com/codex/config-reference"
 
   - id: subagents.global-max_depth
     claude:
@@ -427,7 +427,7 @@ entries:
     transform: null
     warn: false
     notes: "Codex global setting. Maximum nesting depth for spawned agents (default: 1; root is depth 0). Claude has no equivalent setting. Note that Claude subagents cannot themselves spawn other subagents (fixed nesting depth of 1), so this constraint is conceptually shared."
-    source: "https://github.com/openai/codex"
+    source: "https://developers.openai.com/codex/config-reference"
 
   - id: subagents.global-job_max_runtime_seconds
     claude:
@@ -444,7 +444,7 @@ entries:
     transform: null
     warn: false
     notes: "Codex global setting. Default per-worker timeout for spawn_agents_on_csv batch processing (default: 1800 seconds). Claude has no equivalent setting."
-    source: "https://github.com/openai/codex"
+    source: "https://developers.openai.com/codex/config-reference"
 
 notes:
   - "The biggest design difference: Claude Code automatically delegates via semantic matching of the description, but Codex requires an explicit spawn_agent call. This difference cannot be reproduced by conversion and is a mandatory item in the conversion report."
