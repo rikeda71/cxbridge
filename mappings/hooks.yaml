@@ -185,7 +185,11 @@ entries:
     loss: lossless
     transform: "format:json_to_toml"
     warn: false
-    notes: "Common event. Format conversion only."
+    notes: >
+      Common event. Format conversion only.
+      Note: issue #21753 tracker lists this event as "Missing" in Codex, but SubagentStart
+      IS present in the Codex HookEventName enum in the current source. The source is the
+      authoritative truth; treat as common/lossless.
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.SubagentStop
@@ -201,7 +205,11 @@ entries:
     loss: lossless
     transform: "format:json_to_toml"
     warn: false
-    notes: "Common event. Format conversion only."
+    notes: >
+      Common event. Format conversion only.
+      Note: issue #21753 tracker lists this event as "Missing" in Codex, but SubagentStop
+      IS present in the Codex HookEventName enum in the current source. The source is the
+      authoritative truth; treat as common/lossless.
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.Stop
@@ -1422,23 +1430,30 @@ notes:
     Claude gives priority to the last one to finish in parallel execution (non-deterministic).
     Codex behavior is unconfirmed.
   - >
-    [Important / pitfall] Codex bug where plugin-bundled hooks are not loaded
-    (Issue #16430, reported 2026-04, open):
-    Codex's plugin manifest parser parses skills and mcp_servers but does not parse the hooks key.
-    Hook discovery only scans user config folders (~/.codex/hooks.json etc.); hooks.json
-    in an installed plugin root is not scanned.
-    Even after installing a Claude plugin (or Codex plugin) into Codex, its bundled hooks
-    are likely not loaded in the current state. You must manually copy the hooks definitions
-    into the user configuration.
-    ref: https://github.com/openai/codex/issues/16430
+    [Plugin-bundled hooks — Issue #16430, effectively fixed in source]:
+    The original #16430 bug (plugin manifest parser not loading the hooks key) was fixed in
+    openai/codex PR #22552 (merged 2026-05-21): hook discovery now calls
+    append_plugin_hook_sources() in discovery.rs and auto-detects hooks/hooks.json inside each
+    installed plugin root. The PluginHooks feature flag was removed. Issue #16430 is technically
+    still listed as open in the tracker, but the code change is shipped.
+    Plugin-bundled hooks ARE now discovered and loaded by Codex, subject to the hook trust prompt.
+    The --hooks-target=user|project flag therefore no longer has to be used merely to make plugin
+    hooks work; it is still available as an optional write-destination preference.
+    ref: https://github.com/openai/codex/issues/16430 (see also PR #22552)
   - >
-    Codex event parity is in progress (Issue #21753, umbrella tracker):
-    Codex is being developed to support all 29+ Claude events.
+    Codex event parity (Issue #21753, umbrella tracker, still open):
+    The tracker lists SubagentStart and SubagentStop as "Missing", but both events ARE
+    implemented in the current Codex source (HookEventName enum in codex-rs/hooks/src/engine/).
+    The issue matrix reflects the state at the time the tracker was filed and has not been
+    updated to match the source. Treat the source as the authoritative truth: SubagentStart
+    and SubagentStop are treated as common events (both/lossless) in this mapping.
     The determination of 10 common events (SessionStart/UserPromptSubmit/PreToolUse/
     PermissionRequest/PostToolUse/SubagentStart/SubagentStop/PreCompact/PostCompact/Stop)
-    is maintained for now, but the coverage may change as Codex adds more events.
+    is maintained; coverage may increase as Codex adds more events.
     ref: https://github.com/openai/codex/issues/21753
   - >
-    Codex sets CLAUDE_PLUGIN_ROOT and CLAUDE_PLUGIN_DATA for backward compatibility
-    when executing hooks. All other Claude environment variables (CLAUDE_PROJECT_DIR,
-    CLAUDE_ENV_FILE, CLAUDE_EFFORT, etc.) are not set by Codex.
+    Plugin-hook environment variables: when executing a hook that originates from a plugin,
+    Codex sets PLUGIN_ROOT and PLUGIN_DATA (canonical names) as well as
+    CLAUDE_PLUGIN_ROOT and CLAUDE_PLUGIN_DATA (compatibility aliases for scripts written
+    against the Claude plugin environment). All other Claude environment variables
+    (CLAUDE_PROJECT_DIR, CLAUDE_ENV_FILE, CLAUDE_EFFORT, etc.) are not set by Codex.
