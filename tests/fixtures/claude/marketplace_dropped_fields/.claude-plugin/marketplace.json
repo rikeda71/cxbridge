@@ -1,0 +1,16 @@
+{
+  "owner": {
+    "name": "ACME Corp",
+    "email": "plugins@acme.example.com",
+    "url": "https://acme.example.com"
+  },
+  "allowCrossMarketplaceDependenciesOn": ["trusted-marketplace"],
+  "forceRemoveDeletedPlugins": true,
+  "plugins": [
+    {
+      "name": "test-plugin",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}

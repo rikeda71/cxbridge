@@ -1,0 +1,5 @@
+{
+  "permissions": {
+    "deny": ["WebFetch(domain:bad.com)", "WebFetch(domain:evil.net)"]
+  }
+}

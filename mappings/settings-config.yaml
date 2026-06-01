@@ -18,7 +18,7 @@ format:
   codex: [toml]
 entries:
 
-  # ─── モデル・動作 ────────────────────────────────────────────────
+  # ─── Model / Behavior ────────────────────────────────────────────────
 
   - id: settings.model
     claude:
@@ -35,9 +35,9 @@ entries:
     transform: null
     warn: true
     notes: |
-      モデル ID 書式が完全に別体系（`claude-opus-4-6` ⇔ `gpt-5.x`）。
-      機械的な文字列変換は不可。変換 CLI は別途モデルマッピングテーブルを保持し、
-      未知 ID の場合は変換を保留してレポートに明記すること。
+      Model ID formats are entirely different systems (`claude-opus-4-6` ⇔ `gpt-5.x`).
+      Mechanical string conversion is not possible. The conversion CLI must maintain a separate
+      model mapping table, and if the ID is unknown, conversion should be deferred and noted in the report.
     source: "https://code.claude.com/docs/en/settings"
 
   - id: settings.effortLevel
@@ -55,9 +55,9 @@ entries:
     transform: "enum_map:{max:xhigh}"
     warn: true
     notes: |
-      Claude の `max` は Codex に存在しないため `xhigh` に丸める（claude_to_codex）。
-      Codex の `minimal` は Claude に対応値がないため dropped（codex_to_claude）。
-      低 effort 側（low/medium/high）は 1:1 対応。
+      Claude's `max` does not exist in Codex, so it is rounded to `xhigh` (claude_to_codex).
+      Codex's `minimal` has no corresponding value in Claude, so it is dropped (codex_to_claude).
+      Lower effort levels (low/medium/high) map 1:1.
     source: "https://developers.openai.com/codex/config-reference"
 
   - id: settings.language
@@ -75,9 +75,9 @@ entries:
     transform: null
     warn: true
     notes: |
-      Codex に独立した `language` フィールドなし。
-      `developer_instructions` に自然言語で言語指定を追記することで近似
-      （例: 「常に日本語で回答してください」）。意味は保たれるが独立フィールドとしての情報は失われる。
+      Codex has no standalone `language` field.
+      Approximated by appending a language instruction to `developer_instructions` in natural language
+      (e.g., "Always respond in Japanese."). The intent is preserved but the information is lost as a dedicated field.
     source: "https://code.claude.com/docs/en/settings"
 
   - id: settings.defaultShell
@@ -95,10 +95,10 @@ entries:
     transform: null
     warn: true
     notes: |
-      意味が異なる。Claude `defaultShell` はシェル選択そのもの。
-      Codex `experimental_use_profile` はプロセス起動時にシェルプロファイルを使用するか否か。
-      `defaultShell: "bash"` → `experimental_use_profile=false` は既定値なのでほぼ変換不要。
-      `defaultShell: "powershell"` は Windows 限定で Codex に明確な対応なし（lossy）。
+      The semantics differ. Claude's `defaultShell` selects the shell itself.
+      Codex's `experimental_use_profile` controls whether the shell profile is sourced at process startup.
+      `defaultShell: "bash"` → `experimental_use_profile=false` is the default, so almost no conversion is needed.
+      `defaultShell: "powershell"` is Windows-only and has no clear Codex counterpart (lossy).
     source: "https://developers.openai.com/codex/config-reference"
 
   - id: settings.outputStyle
@@ -116,11 +116,11 @@ entries:
     transform: null
     warn: false
     notes: |
-      Codex に独立した outputStyle フィールドなし。
-      `developer_instructions` への追記で近似可能。
+      Codex has no standalone outputStyle field.
+      Can be approximated by appending to `developer_instructions`.
     source: "https://code.claude.com/docs/en/settings"
 
-  # ─── 権限: Bash コマンド ─────────────────────────────────────────
+  # ─── Permissions: Bash Commands ─────────────────────────────────────────
 
   - id: settings.permissions.allow.bash
     claude:
@@ -139,11 +139,11 @@ entries:
     transform: null
     warn: true
     notes: |
-      Claude の `permissions.allow: ["Bash(npm run *)"]` パターンを
-      Codex の `.rules` ファイルの `prefix_rule(pattern=[...], decision="allow")` に変換。
-      元の skill スコープが project/session スコープに拡大するため必ず warn を出す。
-      `features.hooks=true` および project の trust が必要。
-      組み込みツールの事前承認（AskUserQuestion 等）は代替なし → dropped。
+      Converts Claude's `permissions.allow: ["Bash(npm run *)"]` pattern to
+      Codex's `.rules` file `prefix_rule(pattern=[...], decision="allow")`.
+      The original skill scope expands to project/session scope, so a warning must always be emitted.
+      `features.hooks=true` and project trust are also required.
+      Pre-approval of built-in tools (AskUserQuestion, etc.) has no alternative → dropped.
     source: "https://developers.openai.com/codex/permissions"
 
   - id: settings.permissions.deny.bash
@@ -163,10 +163,10 @@ entries:
     transform: null
     warn: true
     notes: |
-      Claude の `permissions.deny: ["Bash(rm -rf *)"]` を
-      Codex `.rules` の `prefix_rule decision="forbidden"` に変換。
-      組み込みツール（AskUserQuestion 等）の禁止は代替なし → dropped。
-      スコープが拡大するため warn 必須。
+      Converts Claude's `permissions.deny: ["Bash(rm -rf *)"]` to
+      Codex `.rules` `prefix_rule decision="forbidden"`.
+      Denial of built-in tools (AskUserQuestion, etc.) has no alternative → dropped.
+      Scope expands, so a warning is mandatory.
     source: "https://developers.openai.com/codex/permissions"
 
   - id: settings.permissions.ask.bash
@@ -186,13 +186,13 @@ entries:
     transform: null
     warn: true
     notes: |
-      Claude の `permissions.ask: ["Bash(git push *)"]` を
-      Codex `.rules` の `prefix_rule decision="prompt"` に変換。
-      `approval_policy.granular.rules=true` も必要。
-      粒度が異なるため lossy。スコープ拡大のため warn 必須。
+      Converts Claude's `permissions.ask: ["Bash(git push *)"]` to
+      Codex `.rules` `prefix_rule decision="prompt"`.
+      `approval_policy.granular.rules=true` is also required.
+      Lossy due to differing granularity. Warning mandatory because scope expands.
     source: "https://developers.openai.com/codex/permissions"
 
-  # ─── 権限: ファイルシステム ──────────────────────────────────────
+  # ─── Permissions: Filesystem ──────────────────────────────────────
 
   - id: settings.permissions.allow.read
     claude:
@@ -210,9 +210,9 @@ entries:
     warn: true
     notes: |
       Claude `permissions.allow: ["Read(~/docs)"]` → Codex `[permissions.X].filesystem."~/docs"="read"`.
-      ツール軸（Read）→ リソース軸（filesystem path）への変換。
-      Claude での Read/Write/Edit のツール境界が Codex では区別されない点が lossy。
-      パスの正規化（`~/` の展開等）が必要。
+      Converts from a tool axis (Read) to a resource axis (filesystem path).
+      The tool boundary between Read/Write/Edit in Claude is not distinguished in Codex, which is lossy.
+      Path normalization (e.g., expanding `~/`) is required.
     source: "https://developers.openai.com/codex/permissions"
 
   - id: settings.permissions.deny.read
@@ -231,7 +231,7 @@ entries:
     warn: true
     notes: |
       Claude `permissions.deny: ["Read(~/.env)"]` → Codex `[permissions.X].filesystem."~/.env"="deny"`.
-      Read と Write 両方の deny が Codex では 1 つの `deny` エントリになるため lossy。
+      Both Read and Write denials collapse into a single `deny` entry in Codex, making this lossy.
     source: "https://developers.openai.com/codex/permissions"
 
   - id: settings.permissions.allow.write
@@ -250,10 +250,10 @@ entries:
     warn: true
     notes: |
       Claude `permissions.allow: ["Write(/tmp/build)"]` → Codex `[permissions.X].filesystem."/tmp/build"="write"`.
-      Read/Write/Edit ツールの区別が失われる（Codex は write = read + write + delete）。
+      The distinction between Read/Write/Edit tools is lost (Codex write = read + write + delete).
     source: "https://developers.openai.com/codex/permissions"
 
-  # ─── 権限: ネットワーク ─────────────────────────────────────────
+  # ─── Permissions: Network ─────────────────────────────────────────
 
   - id: settings.permissions.allow.webfetch
     claude:
@@ -272,9 +272,9 @@ entries:
     notes: |
       Claude `permissions.allow: ["WebFetch(domain:api.example.com)"]` →
       Codex `[permissions.X].network.domains."api.example.com"="allow"`.
-      文字列配列 → ドメインキーの TOML table へ変換。
-      Claude のワイルドカード記法（`*.example.com`）と Codex の記法（`*.example.com`/`**.example.com`）を確認すること。
-      `network.enabled=true` も必要。
+      Converts a string array to a TOML table keyed by domain.
+      Verify the wildcard notation: Claude uses (`*.example.com`) vs Codex (`*.example.com`/`**.example.com`).
+      `network.enabled=true` is also required.
     source: "https://developers.openai.com/codex/permissions"
 
   - id: settings.permissions.deny.webfetch
@@ -294,10 +294,10 @@ entries:
     notes: |
       Claude `permissions.deny: ["WebFetch(domain:bad.com)"]` →
       Codex `[permissions.X].network.domains."bad.com"="deny"`.
-      デフォルトで Codex はローカルアドレス等をブロックするため、明示的 deny は追加的保護になる。
+      By default Codex blocks local addresses and similar, so explicit denials act as additional protection.
     source: "https://developers.openai.com/codex/permissions"
 
-  # ─── 権限: defaultMode ──────────────────────────────────────────
+  # ─── Permissions: defaultMode ──────────────────────────────────────────
 
   - id: settings.permissions.defaultMode.bypassPermissions
     claude:
@@ -315,8 +315,8 @@ entries:
     warn: true
     notes: |
       Claude `defaultMode: "bypassPermissions"` →
-      Codex `approval_policy="never"` + `sandbox_mode="danger-full-access"` の組み合わせで近似。
-      完全等価ではなく 2 フィールドの組み合わせ。セキュリティリスクを warn に明記すること。
+      Approximated by combining Codex `approval_policy="never"` + `sandbox_mode="danger-full-access"`.
+      Not fully equivalent; requires combining two fields. Security risk must be stated explicitly in the warning.
     source: "https://developers.openai.com/codex/agent-approvals-security"
 
   - id: settings.permissions.defaultMode.acceptEdits
@@ -334,9 +334,9 @@ entries:
     transform: null
     warn: true
     notes: |
-      Claude `defaultMode: "acceptEdits"` → Codex `approval_policy="untrusted"` で近似。
-      意味に差異あり（Claude は edit 系ツールを自動承認、Codex は読み取り操作を自動承認して
-      状態変更操作に承認要求）。
+      Claude `defaultMode: "acceptEdits"` → approximated by Codex `approval_policy="untrusted"`.
+      Semantic difference: Claude auto-approves edit-class tools; Codex auto-approves read operations
+      while requiring approval for state-changing operations.
     source: "https://developers.openai.com/codex/agent-approvals-security"
 
   - id: settings.permissions.defaultMode.auto
@@ -354,8 +354,8 @@ entries:
     transform: null
     warn: false
     notes: |
-      Claude `defaultMode: "auto"` → Codex `approval_policy="on-request"`（Codex 既定値）で近似。
-      どちらも「境界越えで確認」という基本動作は近似している。
+      Claude `defaultMode: "auto"` → approximated by Codex `approval_policy="on-request"` (Codex default).
+      Both share the same basic behavior of "prompt on boundary crossing".
     source: "https://developers.openai.com/codex/agent-approvals-security"
 
   - id: settings.permissions.defaultMode.plan
@@ -373,11 +373,11 @@ entries:
     transform: null
     warn: true
     notes: |
-      Codex に plan モード相当なし。dropped。
-      変換レポートに「Codex では plan モードが利用できない」と明記すること。
+      Codex has no equivalent to plan mode. Dropped.
+      The conversion report must state explicitly that plan mode is not available in Codex.
     source: "https://code.claude.com/docs/en/settings"
 
-  # ─── サンドボックス ─────────────────────────────────────────────
+  # ─── Sandbox ─────────────────────────────────────────────
 
   - id: settings.sandbox.filesystem.allowWrite
     claude:
@@ -394,9 +394,9 @@ entries:
     transform: "format:json_to_toml"
     warn: true
     notes: |
-      Claude 文字列配列 → Codex TOML table（パスをキー、`"write"` を値）へ変換。
-      新方式（`default_permissions` + `[permissions.*]`）か旧方式（`sandbox_workspace_write.writable_roots`）
-      かを変換先で統一すること。両方を同時に使うと Codex がどちらか一方のみ適用する。
+      Converts Claude string array → Codex TOML table (paths as keys, `"write"` as values).
+      The conversion target should consistently use either the new style (`default_permissions` + `[permissions.*]`)
+      or the old style (`sandbox_workspace_write.writable_roots`). Using both simultaneously causes Codex to apply only one.
     source: "https://developers.openai.com/codex/permissions"
 
   - id: settings.sandbox.filesystem.denyWrite
@@ -414,8 +414,8 @@ entries:
     transform: "format:json_to_toml"
     warn: false
     notes: |
-      Claude 配列 → Codex `[permissions.X].filesystem` table のキー/値に変換。
-      読み込みと書き込みの deny を統合したエントリになるため lossy（Claude は write のみ deny も可）。
+      Converts Claude array → key/value pairs in the Codex `[permissions.X].filesystem` table.
+      Lossy because read and write denials are merged into a single entry (Claude can deny write-only).
     source: "https://developers.openai.com/codex/permissions"
 
   - id: settings.sandbox.filesystem.allowRead
@@ -433,7 +433,7 @@ entries:
     transform: "format:json_to_toml"
     warn: false
     notes: |
-      Claude 配列 → Codex `[permissions.X].filesystem` table に変換。
+      Converts Claude array → Codex `[permissions.X].filesystem` table.
     source: "https://developers.openai.com/codex/permissions"
 
   - id: settings.sandbox.filesystem.denyRead
@@ -451,7 +451,7 @@ entries:
     transform: "format:json_to_toml"
     warn: false
     notes: |
-      読み込みと書き込みの deny が統合されるため lossy（Claude では denyRead のみ指定可）。
+      Lossy because read and write denials are merged (Claude allows specifying denyRead independently).
     source: "https://developers.openai.com/codex/permissions"
 
   - id: settings.sandbox.network.allowedDomains
@@ -469,9 +469,9 @@ entries:
     transform: "format:json_to_toml"
     warn: true
     notes: |
-      Claude 文字列配列（`["api.example.com", "*.cdn.net"]`）→
-      Codex TOML table（`"api.example.com"="allow"`, `"*.cdn.net"="allow"`）へ変換（`str_to_list` 逆）。
-      ワイルドカード記法（`*` vs `**` の意味差）に注意。`network.enabled=true` も必要。
+      Converts Claude string array (`["api.example.com", "*.cdn.net"]`) →
+      Codex TOML table (`"api.example.com"="allow"`, `"*.cdn.net"="allow"`) (inverse of `str_to_list`).
+      Pay attention to wildcard semantics (`*` vs `**`). `network.enabled=true` is also required.
     source: "https://developers.openai.com/codex/permissions"
 
   - id: settings.sandbox.network.allowAllUnixSockets
@@ -489,8 +489,8 @@ entries:
     transform: "rename"
     warn: true
     notes: |
-      フィールド名の rename のみ。意味・型は完全一致（lossless）。
-      `dangerously_` プレフィックスが示すように危険な設定のため warn を出す。
+      Field rename only. Meaning and type are identical (lossless).
+      This is a dangerous setting as indicated by the `dangerously_` prefix, so a warning is emitted.
     source: "https://developers.openai.com/codex/concepts/sandboxing"
 
   - id: settings.sandbox.network.allowMachLookup
@@ -508,11 +508,11 @@ entries:
     transform: null
     warn: true
     notes: |
-      macOS 固有の Mach lookup 許可リスト。Codex に対応フィールドなし。
-      dropped として変換レポートに明記すること。
+      macOS-specific Mach lookup allowlist. Codex has no corresponding field.
+      Must be noted as dropped in the conversion report.
     source: "https://code.claude.com/docs/en/settings"
 
-  # ─── 環境変数 ──────────────────────────────────────────────────
+  # ─── Environment Variables ──────────────────────────────────────────────────
 
   - id: settings.env
     claude:
@@ -529,19 +529,19 @@ entries:
     transform: "format:json_to_toml"
     warn: true
     notes: |
-      Claude の `env` はセッション全体（Claude プロセス自身も含む）への注入。
-      Codex の `shell_environment_policy.set` はサブプロセス（Bash 等）への注入のみ。
-      `ANTHROPIC_API_KEY` 等 Claude 自身が参照する変数は Codex 側では shell_environment_policy では効かない。
-      スコープ差を変換レポートに明記すること。
-      また Codex の `inherit`（`all`/`core`/`none`）・`exclude`・`include_only` は Claude に対応なし。
+      Claude's `env` injects into the entire session (including the Claude process itself).
+      Codex's `shell_environment_policy.set` injects into subprocesses (Bash, etc.) only.
+      Variables referenced by Claude itself (e.g., `ANTHROPIC_API_KEY`) are not affected by
+      `shell_environment_policy` on the Codex side. The scope difference must be stated in the conversion report.
+      Additionally, Codex's `inherit` (`all`/`core`/`none`), `exclude`, and `include_only` have no Claude counterpart.
     source: "https://developers.openai.com/codex/config-advanced"
 
-  # ─── Hooks・MCP（別ドキュメント参照） ──────────────────────────
+  # ─── Hooks / MCP (see separate documents) ──────────────────────────
 
-  # hooks と mcpServers は本 yaml のエントリ対象外。
-  # 詳細は mappings/hooks.yaml / mappings/mcp.yaml を参照。
+  # hooks and mcpServers are not covered by this yaml's entries.
+  # See mappings/hooks.yaml / mappings/mcp.yaml for details.
 
-  # ─── メモリ・セッション管理 ────────────────────────────────────
+  # ─── Memory / Session Management ────────────────────────────────────
 
   - id: settings.autoMemoryEnabled
     claude:
@@ -558,9 +558,9 @@ entries:
     transform: null
     warn: true
     notes: |
-      Claude の 1 フィールド → Codex の 2 フィールド（use_memories + generate_memories）。
-      両方 true で Claude の `autoMemoryEnabled: true` に相当。
-      `features.memories=true` も別途必要。
+      Claude's single field maps to two Codex fields (use_memories + generate_memories).
+      Both set to true is equivalent to Claude's `autoMemoryEnabled: true`.
+      `features.memories=true` is also required separately.
     source: "https://developers.openai.com/codex/config-reference"
 
   - id: settings.cleanupPeriodDays
@@ -578,13 +578,13 @@ entries:
     transform: null
     warn: true
     notes: |
-      Claude はセッション保持日数（最小 1）。
-      Codex の `memories.max_rollout_age_days` はメモリ生成対象スレッドの最大経過日数（0-90）で意味が近い。
-      ただし `history.max_bytes`（バイト上限）は全く意味が異なる。
-      変換先は `memories.max_rollout_age_days` を使い、値の範囲（0-90）に clamp すること。
+      Claude represents the number of days to retain sessions (minimum 1).
+      Codex's `memories.max_rollout_age_days` is the maximum age in days of threads eligible for memory generation (0-90), which is close in meaning.
+      However, `history.max_bytes` (a byte limit) has an entirely different meaning.
+      The conversion target should use `memories.max_rollout_age_days` and clamp the value to the range 0-90.
     source: "https://developers.openai.com/codex/config-reference"
 
-  # ─── Git・帰属 ──────────────────────────────────────────────────
+  # ─── Git / Attribution ──────────────────────────────────────────────────
 
   - id: settings.attribution.commit
     claude:
@@ -601,9 +601,9 @@ entries:
     transform: "rename"
     warn: false
     notes: |
-      `rename` のみ。意味は近いが書式差異に注意。
-      Claude は co-authored-by 文字列全体を自由記述、Codex は `Name <email>` 形式推奨。
-      フォーマット差がある場合は lossy として扱う。
+      Rename only. Meaning is close, but note format differences.
+      Claude accepts a free-form co-authored-by string; Codex recommends `Name <email>` format.
+      Treat as lossy when the formats differ.
     source: "https://developers.openai.com/codex/config-reference"
 
   - id: settings.includeCoAuthoredBy
@@ -621,12 +621,12 @@ entries:
     transform: null
     warn: false
     notes: |
-      deprecated フィールド。
-      `includeCoAuthoredBy: false` → `commit_attribution=""` で無効化を近似。
-      `includeCoAuthoredBy: true` → Codex 側はデフォルト値を維持（`"Codex <noreply@openai.com>"`）。
+      Deprecated field.
+      `includeCoAuthoredBy: false` → approximated by `commit_attribution=""` to disable attribution.
+      `includeCoAuthoredBy: true` → the Codex side retains its default value (`"Codex <noreply@openai.com>"`).
     source: "https://code.claude.com/docs/en/settings"
 
-  # ─── UI・エディタ ─────────────────────────────────────────────
+  # ─── UI / Editor ─────────────────────────────────────────────
 
   - id: settings.editorMode
     claude:
@@ -643,8 +643,8 @@ entries:
     transform: "enum_map:{vim:true,normal:false}"
     warn: false
     notes: |
-      Claude `editorMode: "vim"` ⇔ Codex `tui.vim_mode_default=true`。
-      lossless な rename + enum→boolean 変換。
+      Claude `editorMode: "vim"` ⇔ Codex `tui.vim_mode_default=true`.
+      Lossless rename + enum→boolean conversion.
     source: "https://developers.openai.com/codex/config-reference"
 
   - id: settings.statusLine
@@ -662,12 +662,12 @@ entries:
     transform: null
     warn: true
     notes: |
-      Codex に Claude の statusLine 等価物なし。
-      `tui.status_line`（配列）は Codex 固有の footer 表示設定で意味が異なる。
-      dropped として変換レポートに明記すること。
+      Codex has no equivalent to Claude's statusLine.
+      `tui.status_line` (an array) is a Codex-specific footer display setting with different semantics.
+      Must be noted as dropped in the conversion report.
     source: "https://code.claude.com/docs/en/settings"
 
-  # ─── skills・plugins ──────────────────────────────────────────
+  # ─── Skills / Plugins ──────────────────────────────────────────
 
   - id: settings.skillOverrides
     claude:
@@ -684,10 +684,10 @@ entries:
     transform: null
     warn: true
     notes: |
-      Claude は `on`/`off`/`name-only`/`user-invocable-only` の 4 値で細粒度制御。
-      Codex は `enabled: true/false` の 2 値のみ（`SkillConfig` は additionalProperties:false）。
-      `name-only`/`user-invocable-only` は Codex で表現不可 → lossy。
-      変換レポートに細粒度制御が失われた旨を明記すること。
+      Claude provides fine-grained control with four values: `on`/`off`/`name-only`/`user-invocable-only`.
+      Codex supports only two values: `enabled: true/false` (`SkillConfig` has additionalProperties:false).
+      `name-only`/`user-invocable-only` cannot be expressed in Codex → lossy.
+      The conversion report must state that fine-grained control was lost.
     source: "https://code.claude.com/docs/en/settings"
 
   - id: settings.enabledPlugins
@@ -705,12 +705,12 @@ entries:
     transform: null
     warn: true
     notes: |
-      プラグイン体系が異なる（Claude plugins ⇔ Codex plugins）。
-      名前空間・設定構造ともに異なるため機械的変換は困難。
-      近似対応のみ可能。同一プラグインが両方に存在する場合のみ変換を試みること。
+      Plugin systems are different (Claude plugins ⇔ Codex plugins).
+      Both the namespace and configuration structure differ, making mechanical conversion difficult.
+      Only approximate mapping is possible. Attempt conversion only when the same plugin exists on both sides.
     source: "https://code.claude.com/docs/en/settings"
 
-  # ─── Claude 固有 → Codex dropped ──────────────────────────────
+  # ─── Claude-only → Codex dropped ──────────────────────────────
 
   - id: settings.viewMode
     claude:
@@ -727,7 +727,7 @@ entries:
     transform: null
     warn: true
     notes: |
-      Codex に対応する表示モード区分なし。dropped。
+      Codex has no corresponding display mode classification. Dropped.
     source: "https://code.claude.com/docs/en/settings"
 
   - id: settings.worktree
@@ -745,7 +745,7 @@ entries:
     transform: null
     warn: true
     notes: |
-      Codex に git worktree 管理機能なし。`worktree.*` 全体を dropped として変換レポートに明記。
+      Codex has no git worktree management feature. Note all of `worktree.*` as dropped in the conversion report.
     source: "https://code.claude.com/docs/en/settings"
 
   - id: settings.autoUpdatesChannel
@@ -763,8 +763,8 @@ entries:
     transform: null
     warn: false
     notes: |
-      Codex に等価の update チャンネル設定なし（`check_for_update_on_startup` は ON/OFF のみ）。
-      dropped。
+      Codex has no equivalent update channel setting (`check_for_update_on_startup` is ON/OFF only).
+      Dropped.
     source: "https://code.claude.com/docs/en/settings"
 
   - id: settings.spinnerTips
@@ -782,7 +782,7 @@ entries:
     transform: null
     warn: false
     notes: |
-      Claude UI 固有の spinner 関連設定。Codex に対応なし。dropped。
+      Claude UI-specific spinner settings. No Codex counterpart. Dropped.
     source: "https://code.claude.com/docs/en/settings"
 
   - id: settings.voice
@@ -800,7 +800,7 @@ entries:
     transform: null
     warn: false
     notes: |
-      Claude の音声ディクテーション機能。Codex に対応なし。dropped。
+      Claude's voice dictation feature. No Codex counterpart. Dropped.
     source: "https://code.claude.com/docs/en/settings"
 
   - id: settings.maxSkillDescriptionChars
@@ -818,10 +818,10 @@ entries:
     transform: null
     warn: false
     notes: |
-      Claude 固有の skill コンテキスト予算調整フィールド。Codex に対応なし。dropped。
+      Claude-specific skill context budget tuning fields. No Codex counterpart. Dropped.
     source: "https://code.claude.com/docs/en/settings"
 
-  # ─── Codex 固有 → Claude dropped/lossy ────────────────────────
+  # ─── Codex-only → Claude dropped/lossy ────────────────────────
 
   - id: settings.codex.profiles
     claude:
@@ -838,10 +838,9 @@ entries:
     transform: null
     warn: true
     notes: |
-      Codex の名前付き設定プロファイル（`~/.codex/<name>.config.toml`）。
-      Claude にプロファイル概念なし。dropped。
-      変換時は複数プロファイルのうち 1 つを選択して変換するか、複数の settings.json として出力するかを
-      ユーザーに確認すること。
+      Codex named configuration profiles (`~/.codex/<name>.config.toml`).
+      Claude has no concept of profiles. Dropped.
+      At conversion time, ask the user whether to select one profile to convert, or to output multiple settings.json files.
     source: "https://developers.openai.com/codex/config-advanced"
 
   - id: settings.codex.permissions_inheritance
@@ -859,8 +858,8 @@ entries:
     transform: null
     warn: true
     notes: |
-      Codex の権限プロファイル継承（`extends`）。Claude に権限プロファイル継承概念なし。
-      変換時は継承チェーンを展開してフラットな allow/deny リストに変換を試みること。
+      Codex permission profile inheritance (`extends`). Claude has no concept of permission profile inheritance.
+      At conversion time, attempt to expand the inheritance chain into a flat allow/deny list.
     source: "https://developers.openai.com/codex/permissions"
 
   - id: settings.codex.granular_approval
@@ -878,9 +877,9 @@ entries:
     transform: null
     warn: true
     notes: |
-      Codex の granular 承認ポリシー（skill_approval/mcp_elicitations/sandbox_approval 等）。
-      Claude に個別承認カテゴリ分離なし。dropped。
-      変換時は最も近い `defaultMode` 値に近似することを検討すること。
+      Codex granular approval policy (skill_approval/mcp_elicitations/sandbox_approval, etc.).
+      Claude has no separation of individual approval categories. Dropped.
+      At conversion time, consider approximating with the closest `defaultMode` value.
     source: "https://developers.openai.com/codex/agent-approvals-security"
 
   - id: settings.codex.agents_config
@@ -898,7 +897,7 @@ entries:
     transform: null
     warn: false
     notes: |
-      Codex のエージェント並列度・深度設定。Claude に直接対応なし。dropped。
+      Codex agent parallelism and depth settings. No direct Claude counterpart. Dropped.
     source: "https://developers.openai.com/codex/config-reference"
 
   - id: settings.codex.otel
@@ -914,13 +913,13 @@ entries:
     loss: lossy
     degrade:
       to: session
-      target: "claude settings.json の env（OTEL_* 環境変数）"
+      target: "Claude settings.json env (OTEL_* environment variables)"
     transform: null
     warn: true
     notes: |
-      Claude は独立した otel セクションを持たない。
-      `env.OTEL_EXPORTER_OTLP_ENDPOINT` 等の環境変数経由で近似可能（lossy）。
-      `otel.log_user_prompt` 等の Codex 固有フラグは代替なし。
+      Claude has no standalone otel section.
+      Can be approximated via environment variables such as `env.OTEL_EXPORTER_OTLP_ENDPOINT` (lossy).
+      Codex-specific flags like `otel.log_user_prompt` have no alternative.
     source: "https://developers.openai.com/codex/config-advanced"
 
   - id: settings.codex.tui_keymap
@@ -938,7 +937,7 @@ entries:
     transform: null
     warn: false
     notes: |
-      Codex のプログラマブルキーバインド設定。Claude に programmatic keymap 設定なし。dropped。
+      Codex programmable keybinding configuration. Claude has no programmatic keymap settings. Dropped.
     source: "https://developers.openai.com/codex/config-reference"
 
   - id: settings.codex.model_verbosity
@@ -956,7 +955,7 @@ entries:
     transform: null
     warn: false
     notes: |
-      GPT-5 応答冗長性・推論サマリー詳細設定。Claude に対応フィールドなし。dropped。
+      GPT-5 response verbosity and reasoning summary detail settings. Claude has no corresponding fields. Dropped.
     source: "https://developers.openai.com/codex/config-reference"
 
   - id: settings.codex.web_search
@@ -974,8 +973,8 @@ entries:
     transform: null
     warn: false
     notes: |
-      Codex の web search 専用フラグ。Claude は WebFetch tool で代替するが独立したモード切替フィールドなし。
-      dropped。
+      Codex-specific web search flag. Claude can use the WebFetch tool as an alternative, but has no standalone mode-switching field.
+      Dropped.
     source: "https://developers.openai.com/codex/config-reference"
 
   - id: settings.codex.project_doc_max_bytes
@@ -993,7 +992,7 @@ entries:
     transform: null
     warn: false
     notes: |
-      AGENTS.md 等の最大読み込みバイト数制限。Claude に対応なし。dropped。
+      Maximum byte limit for reading AGENTS.md and similar files. Claude has no counterpart. Dropped.
     source: "https://developers.openai.com/codex/config-advanced"
 
   - id: settings.codex.developer_instructions
@@ -1009,30 +1008,30 @@ entries:
     loss: lossy
     degrade:
       to: project
-      target: "CLAUDE.md（プロジェクト）または ~/.claude/CLAUDE.md（ユーザー）"
+      target: "CLAUDE.md (project) or ~/.claude/CLAUDE.md (user)"
     transform: null
     warn: false
     notes: |
-      Codex `developer_instructions` はセッションに注入する追加指示。
-      Claude は CLAUDE.md（ユーザー/プロジェクト）で同機能を提供。
-      テキスト内容を CLAUDE.md に追記することで近似（lossy: スコープが project に固定）。
+      Codex `developer_instructions` is additional instruction injected into the session.
+      Claude provides equivalent functionality via CLAUDE.md (user/project).
+      Approximated by appending the text content to CLAUDE.md (lossy: scope is fixed to project).
     source: "https://developers.openai.com/codex/config-reference"
 
 notes:
   - |
-    settings.json ⇄ config.toml の完全自動変換は非現実的。
-    CLI ツールが現実的に扱える対象は model・effortLevel・env・sandbox 基本項目・editorMode・attribution に絞るべき。
-    変換レポートには dropped/lossy 全エントリを必ず列挙すること。
+    Full automatic conversion between settings.json and config.toml is not realistic.
+    The CLI tool should realistically target only model, effortLevel, env, basic sandbox fields, editorMode, and attribution.
+    The conversion report must enumerate all dropped/lossy entries without exception.
   - |
-    権限モデルが根本的に異なる（ツール軸 vs リソース軸）。
-    Claude `permissions.allow/deny/ask` の各エントリは Codex で 1:1 対応せず、
-    filesystem・network.domains・.rules（execpolicy）の 3 つに分散変換が必要。
+    The permission models are fundamentally different (tool axis vs resource axis).
+    Each entry in Claude's `permissions.allow/deny/ask` does not map 1:1 in Codex;
+    it must be split into three destinations: filesystem, network.domains, and .rules (execpolicy).
   - |
-    hooks と mcpServers は本 yaml のエントリ対象外。
-    mappings/hooks.yaml（hooks）および mappings/mcp.yaml（MCP）を参照。
+    hooks and mcpServers are not covered by this yaml's entries.
+    See mappings/hooks.yaml (hooks) and mappings/mcp.yaml (MCP).
   - |
-    Codex の `sandbox_mode`/`sandbox_workspace_write`（旧方式）と
-    `default_permissions`/`[permissions.*]`（新方式）は排他。新規変換では新方式を推奨。
+    Codex's `sandbox_mode`/`sandbox_workspace_write` (old style) and
+    `default_permissions`/`[permissions.*]` (new style) are mutually exclusive. Use the new style for new conversions.
   - |
-    Codex settings のうち流動的な仕様（2025-2026 の新機能: features.memories, features.hooks,
-    features.multi_agent, approval_policy.granular 等）は実装時に source URL のバージョンを再検証すること。
+    Fluid Codex settings specifications (2025-2026 new features: features.memories, features.hooks,
+    features.multi_agent, approval_policy.granular, etc.) must have their source URL versions re-verified at implementation time.

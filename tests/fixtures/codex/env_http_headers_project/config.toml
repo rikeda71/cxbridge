@@ -1,0 +1,6 @@
+[mcp_servers.auth-server]
+url = "https://api.example.com/mcp"
+
+[mcp_servers.auth-server.env_http_headers]
+Authorization = "MY_AUTH_TOKEN"
+X-Custom = "MY_API_KEY"

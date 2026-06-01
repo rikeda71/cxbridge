@@ -9,6 +9,13 @@ url = "https://api.example.com/mcp"
 bearer_token_env_var = "API_TOKEN"
 http_headers = {X-Custom = "value"}
 
+[mcp_servers.oauth-server]
+url = "https://oauth.example.com/mcp"
+
+[mcp_servers.oauth-server.oauth]
+client_id = "my-client-id"
+scopes = ["read", "write", "admin"]
+
 [mcp_servers.disabled-server]
 command = "node"
 args = ["server.js"]

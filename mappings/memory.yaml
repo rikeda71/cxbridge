@@ -1,5 +1,5 @@
 domain: memory
-title: "メモリ/指示ファイル (CLAUDE.md ⇄ AGENTS.md)"
+title: "Memory / Instruction Files (CLAUDE.md ⇄ AGENTS.md)"
 doc: ../docs/spec.md
 files:
   claude:
@@ -21,11 +21,11 @@ format:
 entries:
   - id: memory.filename
     claude:
-      field: "CLAUDE.md（ファイル名）"
+      field: "CLAUDE.md (filename)"
       type: "filename"
       scope: project
     codex:
-      field: "AGENTS.md（ファイル名）"
+      field: "AGENTS.md (filename)"
       type: "filename"
       scope: project
     direction: both
@@ -33,16 +33,16 @@ entries:
     degrade: null
     transform: "rename"
     warn: false
-    notes: "ファイル名のリネームのみ。内容はそのまま転記。AGENTS.md は Linux Foundation 系オープン標準（Agentic AI Foundation）で 18+ ツール対応。Claude→AGENTS 変換はポータビリティ獲得として機能する。"
+    notes: "File rename only. Content is copied as-is. AGENTS.md is an open standard from the Linux Foundation ecosystem (Agentic AI Foundation) with support for 18+ tools. Converting CLAUDE.md to AGENTS.md effectively improves portability."
     source: "https://agents.md/"
 
   - id: memory.project-path
     claude:
-      field: "./CLAUDE.md または ./.claude/CLAUDE.md"
+      field: "./CLAUDE.md or ./.claude/CLAUDE.md"
       type: "path"
       scope: project
     codex:
-      field: "./AGENTS.md（git root〜CWD 各階層）"
+      field: "./AGENTS.md (each directory level from git root to CWD)"
       type: "path"
       scope: project
     direction: both
@@ -50,7 +50,7 @@ entries:
     degrade: null
     transform: "path:remap"
     warn: false
-    notes: "./CLAUDE.md → ./AGENTS.md、./.claude/CLAUDE.md → ./AGENTS.md のパス付け替え。Codex は各ディレクトリで AGENTS.override.md → AGENTS.md の順に探索し最初の空でないファイルを採用する。"
+    notes: "Path remapping: ./CLAUDE.md → ./AGENTS.md, ./.claude/CLAUDE.md → ./AGENTS.md. Codex searches each directory for AGENTS.override.md then AGENTS.md and adopts the first non-empty file found."
     source: "https://code.claude.com/docs/en/memory"
 
   - id: memory.user-path
@@ -59,7 +59,7 @@ entries:
       type: "path"
       scope: user
     codex:
-      field: "~/.codex/AGENTS.md（$CODEX_HOME/AGENTS.md）"
+      field: "~/.codex/AGENTS.md ($CODEX_HOME/AGENTS.md)"
       type: "path"
       scope: global
     direction: both
@@ -67,12 +67,12 @@ entries:
     degrade: null
     transform: "path:remap"
     warn: false
-    notes: "ユーザーグローバル指示ファイル。~/.claude/CLAUDE.md ⇄ ~/.codex/AGENTS.md（CODEX_HOME 環境変数でカスタマイズ可）。Codex はこのレベルでも AGENTS.override.md を優先する。"
+    notes: "User-global instruction file. ~/.claude/CLAUDE.md ⇄ ~/.codex/AGENTS.md (path can be customized via the CODEX_HOME environment variable). At this level Codex also gives priority to AGENTS.override.md."
     source: "https://code.claude.com/docs/en/memory"
 
   - id: memory.import-syntax
     claude:
-      field: "@path/to/file（本文内インポート構文）"
+      field: "@path/to/file (inline import syntax in file body)"
       type: "syntax"
       scope: project
     codex:
@@ -84,7 +84,7 @@ entries:
     degrade: null
     transform: "inline_imports"
     warn: true
-    notes: "Codex に @import 等価機構なし。変換時はインポート参照をインライン展開して1ファイルに統合する（inline_imports）。展開ルール: 相対パス・絶対パス・@~/（ホームディレクトリ相対）に対応、コードブロック内の @ は除外、最大深度 4 ホップ（コミュニティ報告では 5 ホップのケースあり、バージョン依存の可能性）。展開後に 32 KiB 超過リスクがあるため必ずサイズチェックして warn を出すこと。"
+    notes: "Codex has no equivalent of @import. During conversion, inline-expand import references into a single file (inline_imports). Expansion rules: supports relative paths, absolute paths, and @~/ (home-directory-relative); @ inside code blocks is excluded; maximum depth is 4 hops (community reports show cases of 5 hops, which may be version-dependent). Always perform a size check after expansion and emit a warning if the 32 KiB limit is at risk."
     source: "https://code.claude.com/docs/en/memory"
 
   - id: memory.local-file
@@ -101,12 +101,12 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Codex に非コミット個人ファイルの概念なし（AGENTS.override.md はリポジトリ内配置前提）。変換時は dropped とし conversion report に記録。内容を ~/.codex/AGENTS.md（グローバル）に移動するか破棄するかをユーザーに選択させること。"
+    notes: "Codex has no concept of an uncommitted personal file (AGENTS.override.md is assumed to be committed to the repository). Mark as dropped during conversion and record in the conversion report. Ask the user whether to move the content to ~/.codex/AGENTS.md (global) or discard it."
     source: "https://code.claude.com/docs/en/memory"
 
   - id: memory.managed-policy
     claude:
-      field: "/etc/claude-code/CLAUDE.md（managed policy）"
+      field: "/etc/claude-code/CLAUDE.md (managed policy)"
       type: "path"
       scope: managed
     codex:
@@ -118,7 +118,7 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "組織強制 CLAUDE.md（macOS: /Library/Application Support/ClaudeCode/CLAUDE.md、Linux: /etc/claude-code/CLAUDE.md、Windows: C:\\Program Files\\ClaudeCode\\CLAUDE.md）の Codex 等価物なし。dropped + warn。Codex での組織展開は ~/.codex/AGENTS.md の MDM/Ansible 配布を別途検討する必要がある。"
+    notes: "Organization-enforced CLAUDE.md (macOS: /Library/Application Support/ClaudeCode/CLAUDE.md, Linux: /etc/claude-code/CLAUDE.md, Windows: C:\\Program Files\\ClaudeCode\\CLAUDE.md) has no Codex equivalent. dropped + warn. For organization-wide Codex deployment, distributing ~/.codex/AGENTS.md via MDM/Ansible should be considered separately."
     source: "https://code.claude.com/docs/en/memory"
 
   - id: memory.override-file
@@ -127,7 +127,7 @@ entries:
       type: null
       scope: null
     codex:
-      field: "AGENTS.override.md（同階層の AGENTS.md を置換）"
+      field: "AGENTS.override.md (replaces AGENTS.md in the same directory)"
       type: "path"
       scope: project
     direction: codex_to_claude
@@ -135,12 +135,12 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "AGENTS.override.md は同一ディレクトリの AGENTS.md を完全に差し替えるメカニズム。Claude に同等概念なし。Codex→Claude 変換時は override の内容を CLAUDE.md として書き込み、元の AGENTS.md との差分管理が必要である旨を警告すること。"
+    notes: "AGENTS.override.md completely replaces AGENTS.md in the same directory. Claude has no equivalent concept. During Codex→Claude conversion, write the override content as CLAUDE.md and warn the user that diff management with the original AGENTS.md will be needed."
     source: "https://github.com/openai/codex/blob/main/codex-rs/core/src/agents_md.rs"
 
   - id: memory.subdirectory-load
     claude:
-      field: "サブディレクトリ内 CLAUDE.md（CWD より深い階層を on-demand ロード）"
+      field: "CLAUDE.md in subdirectory (on-demand load for directories deeper than CWD)"
       type: "behavior"
       scope: project
     codex:
@@ -152,12 +152,12 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Claude は CWD より深いサブディレクトリの CLAUDE.md をそのディレクトリ内ファイル読み取り時に on-demand でロードする。Codex は git root→CWD の範囲のみ走査し CWD より深い階層は一切走査しない。モノレポで各サブパッケージに CLAUDE.md を配置している場合は lossy となる。変換時は CWD より深い CLAUDE.md を検出して警告すること。"
+    notes: "Claude on-demand loads CLAUDE.md files in subdirectories deeper than CWD when files in those directories are read. Codex scans only from git root to CWD and never traverses deeper than CWD. In monorepos with a CLAUDE.md in each subpackage this results in lossy conversion. During conversion, detect CLAUDE.md files deeper than CWD and emit a warning."
     source: "https://github.com/openai/codex/blob/main/codex-rs/core/src/agents_md.rs"
 
   - id: memory.rules-paths-frontmatter
     claude:
-      field: "paths（.claude/rules/*.md の YAML frontmatter）"
+      field: "paths (.claude/rules/*.md YAML frontmatter)"
       type: "yaml-frontmatter"
       scope: project
     codex:
@@ -169,12 +169,12 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Claude の .claude/rules/*.md に paths: frontmatter を付与すると指定 glob にマッチするファイル読み取り時のみ当該ルールがロードされる（パス条件付きロード）。Codex に等価機構なし。dropped + warn。変換時はルールファイルを AGENTS.md にインライン展開するか、glob でディレクトリごとの AGENTS.md に分割するかを選択させること。"
+    notes: "Adding a `paths:` frontmatter to .claude/rules/*.md causes that rule to be loaded only when a file matching the specified glob is read (path-conditional loading). Codex has no equivalent mechanism. dropped + warn. During conversion, let the user choose between inlining the rule files into AGENTS.md or splitting them into per-directory AGENTS.md files based on the glob."
     source: "https://code.claude.com/docs/en/memory"
 
   - id: memory.html-comments
     claude:
-      field: "<!-- --> HTML コメント（コンテキスト注入前に除去）"
+      field: "<!-- --> HTML comments (stripped before context injection)"
       type: "syntax"
       scope: project
     codex:
@@ -186,12 +186,12 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "Claude Code はコンテキスト注入前に HTML ブロックコメント <!-- ... --> を除去する（コードブロック内は保持）。Codex 側での HTML コメント処理は公式に未定義。コメントがそのままモデルに渡る可能性あり。変換レポートに動作差異として記載すること。"
+    notes: "Claude Code strips HTML block comments <!-- ... --> before context injection (content inside code blocks is preserved). HTML comment handling on the Codex side is officially undefined. Comments may be passed directly to the model. Document this behavioral difference in the conversion report."
     source: "https://code.claude.com/docs/en/memory"
 
   - id: memory.claudeMdExcludes
     claude:
-      field: "claudeMdExcludes（settings.json）"
+      field: "claudeMdExcludes (settings.json)"
       type: "string[]"
       scope: project
     codex:
@@ -203,7 +203,7 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "特定の CLAUDE.md をグロブパターンで除外する設定。Codex に特定ファイルを除外する機構なし。dropped + warn。Managed policy ファイルは claudeMdExcludes でも除外不可（Claude 側の制約）。"
+    notes: "Setting for excluding specific CLAUDE.md files by glob pattern. Codex has no mechanism to exclude specific files. dropped + warn. Managed policy files cannot be excluded by claudeMdExcludes either (a Claude-side restriction)."
     source: "https://code.claude.com/docs/en/memory"
 
   - id: memory.project-doc-max-bytes
@@ -212,7 +212,7 @@ entries:
       type: null
       scope: null
     codex:
-      field: "project_doc_max_bytes（config.toml）"
+      field: "project_doc_max_bytes (config.toml)"
       type: "usize"
       scope: global
     direction: codex_to_claude
@@ -220,7 +220,7 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Codex のプロジェクト指示ファイル合計上限（デフォルト 32768 バイト = 32 KiB）。Claude 側に上限なし。CLAUDE.md→AGENTS.md 変換後（特に @import 展開後）に合計が 32 KiB を超えるリスクがある。変換ツールは展開後サイズをチェックし、28 KiB 超過（グローバル指示分のバッファ考慮）で warn を出すこと。超過分は Codex 側で静かに切り捨てられる。"
+    notes: "Codex's total size limit for project instruction files (default 32768 bytes = 32 KiB). Claude has no such limit. After converting CLAUDE.md to AGENTS.md (especially after @import expansion), the total may exceed 32 KiB. The conversion tool must check the post-expansion size and emit a warning if it exceeds 28 KiB (to account for a buffer for global instructions). Content beyond the limit is silently truncated by Codex."
     source: "https://github.com/openai/codex/blob/main/codex-rs/config/src/config_toml.rs"
 
   - id: memory.fallback-filenames
@@ -229,7 +229,7 @@ entries:
       type: null
       scope: null
     codex:
-      field: "project_doc_fallback_filenames（config.toml）"
+      field: "project_doc_fallback_filenames (config.toml)"
       type: "string[]"
       scope: global
     direction: codex_to_claude
@@ -237,7 +237,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "AGENTS.md が見つからない場合に試みる代替ファイル名リスト（例: TEAM_GUIDE.md）。Claude に代替ファイル名の概念なし。dropped。変換時は fallback ファイル群を CLAUDE.md に統合するか無視するかを選択させること。"
+    notes: "A list of alternative filenames to try when AGENTS.md is not found (e.g. TEAM_GUIDE.md). Claude has no concept of alternative filenames. dropped. During conversion, let the user choose whether to merge the fallback files into CLAUDE.md or ignore them."
     source: "https://github.com/openai/codex/blob/main/codex-rs/config/src/config_toml.rs"
 
   - id: memory.child-agents-md-feature
@@ -246,7 +246,7 @@ entries:
       type: null
       scope: null
     codex:
-      field: "features.child_agents_md（config.toml の [features]）"
+      field: "features.child_agents_md (config.toml [features])"
       type: "boolean"
       scope: global
     direction: codex_to_claude
@@ -254,16 +254,16 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "有効時に AGENTS.md スコープ・優先順位に関する追加ガイダンスをユーザー指示メッセージに付加するフィーチャーフラグ。Claude に等価フィーチャーフラグなし。dropped。"
+    notes: "Feature flag that, when enabled, appends additional guidance about AGENTS.md scope and priority to the user instruction message. Claude has no equivalent feature flag. dropped."
     source: "https://github.com/openai/codex/blob/main/docs/agents_md.md"
 
   - id: memory.merge-order
     claude:
-      field: "root→CWD 連結・後勝ち（全件ロード）"
+      field: "root→CWD concatenation, last-wins (all files loaded)"
       type: "behavior"
       scope: project
     codex:
-      field: "root→CWD 連結・後勝ち（project_doc_max_bytes 上限あり）"
+      field: "root→CWD concatenation, last-wins (subject to project_doc_max_bytes limit)"
       type: "behavior"
       scope: project
     direction: both
@@ -271,12 +271,12 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "両者ともルートから CWD へ向けて走査し連結・後勝ち（CWD 側の指示が優先）という設計は同一。差分は Codex の 32 KiB 上限（超過分は切り捨て lossy）と、Codex が各ディレクトリで最大 1 ファイルしか採用しない点（AGENTS.override.md が存在する場合 AGENTS.md を無視）。"
+    notes: "Both sides share the same design of scanning from root toward CWD and concatenating with last-wins semantics (CWD-side instructions take priority). The differences are: Codex's 32 KiB limit (excess is silently truncated, lossy) and that Codex adopts at most one file per directory (AGENTS.override.md takes precedence over AGENTS.md when both are present)."
     source: "https://github.com/openai/codex/blob/main/codex-rs/core/src/agents_md.rs"
 
   - id: memory.auto-memory
     claude:
-      field: "~/.claude/projects/<project>/memory/MEMORY.md（Auto memory）"
+      field: "~/.claude/projects/<project>/memory/MEMORY.md (Auto memory)"
       type: "path"
       scope: user
     codex:
@@ -288,12 +288,12 @@ entries:
     degrade: null
     transform: null
     warn: true
-    notes: "Claude の Auto memory（Claude が自律的に書き込む ~/.claude/projects/.../memory/MEMORY.md）は Codex に対応物なし。dropped。CLAUDE.md に Auto memory を参照する記述が含まれる場合は変換後に残ってしまうため検出して警告すること。/memory コマンド・autoMemoryEnabled 設定も同様に Codex 非対応。"
+    notes: "Claude's Auto memory (the ~/.claude/projects/.../memory/MEMORY.md file that Claude writes autonomously) has no Codex equivalent. dropped. If CLAUDE.md contains references to Auto memory, those references will survive conversion, so detect them and emit a warning. The /memory command and the autoMemoryEnabled setting are likewise unsupported by Codex."
     source: "https://code.claude.com/docs/en/memory"
 
 notes:
-  - "ファイル名リネーム（CLAUDE.md ⇄ AGENTS.md）と内容はほぼ lossless。主要な落とし穴は Claude 固有機能（@import・CLAUDE.local.md・managed policy・paths frontmatter）の消失と、Codex の 32 KiB 上限による展開後サイズ超過。"
-  - "@import のインライン展開（inline_imports）は claude_to_codex 変換の必須ステップ。展開後サイズが 28 KiB を超えた場合は warn を出し、project_doc_max_bytes の増加を検討するよう案内すること。"
-  - "AGENTS.md はオープン標準（Agentic AI Foundation / Linux Foundation）で 18+ ツール対応。CLAUDE.md → AGENTS.md 変換後は Claude 固有構文（!`cmd` 動的注入・/memory 等のコマンド参照）が他エージェントで誤動作する可能性があるため変換時にスキャン・警告すること。"
-  - "@import の最大深度は公式ドキュメントでは 4 ホップ。コミュニティ報告では 5 ホップのケースあり（バージョン依存の可能性）。変換ツールは 4 ホップを安全側として採用し、深度超過を検出して警告すること。"
-  - "Codex 側仕様（project_doc_max_bytes・features.child_agents_md 等）は 2025-2026 年追加の新機能で流動的。source URL とともにバージョンごとに再検証すること。"
+  - "The file rename (CLAUDE.md ⇄ AGENTS.md) and content transfer are nearly lossless. The main pitfalls are the loss of Claude-specific features (@import, CLAUDE.local.md, managed policy, paths frontmatter) and post-expansion size exceeding Codex's 32 KiB limit."
+  - "@import inline expansion (inline_imports) is a mandatory step in claude_to_codex conversion. If the post-expansion size exceeds 28 KiB, emit a warning and advise the user to consider increasing project_doc_max_bytes."
+  - "AGENTS.md is an open standard (Agentic AI Foundation / Linux Foundation) with support for 18+ tools. After converting CLAUDE.md → AGENTS.md, Claude-specific syntax (dynamic injection via !`cmd`, references to /memory and similar commands) may malfunction in other agents; scan and warn during conversion."
+  - "The maximum @import depth is 4 hops per the official documentation. Community reports show cases of 5 hops (possibly version-dependent). The conversion tool should adopt 4 hops as the safe limit and detect and warn about depth overflows."
+  - "Codex-side specifications (project_doc_max_bytes, features.child_agents_md, etc.) are new features added in 2025-2026 and are still evolving. Re-verify with the source URL for each version."

@@ -3,39 +3,39 @@ paths:
   - "mappings/**"
 ---
 
-# mappings 編集ルール
+# Mappings Editing Rules
 
-`mappings/*.yaml` は Claude Code ⇄ Codex CLI 変換の**正本データ**。以下を厳守すること。
+`mappings/*.yaml` is the **authoritative data** for Claude Code ⇄ Codex CLI conversions. The following rules must be strictly observed.
 
-## スキーマ準拠（`mappings/SCHEMA.md` を参照）
+## Schema compliance (see `mappings/SCHEMA.md`)
 
-- `id` は全ファイルを通じて一意にする
-- `direction` は `both` / `claude_to_codex` / `codex_to_claude` のいずれか
-- `loss` は `lossless` / `lossy` / `dropped` のいずれか
-- `degrade` を付けるなら `loss: lossy` であること
-- `loss: dropped` のエントリに `transform` を付けない
+- `id` must be unique across all files
+- `direction` must be one of `both` / `claude_to_codex` / `codex_to_claude`
+- `loss` must be one of `lossless` / `lossy` / `dropped`
+- If `degrade` is set, `loss: lossy` is required
+- Do not add `transform` to entries with `loss: dropped`
 
-## 編集後の検証
+## Validation after editing
 
-編集後は必ず `scripts/validate-mappings.py` を実行して不変条件を確認する。
-Claude Code の PostToolUse hook が自動実行するが、手動でも確認できる:
+Always run `scripts/validate-mappings.py` after editing to verify invariants.
+The Claude Code PostToolUse hook runs it automatically, but you can also run it manually:
 
-```
+```bash
 uv run scripts/validate-mappings.py
 ```
 
-## 意味・根拠の保全
+## Preserving semantics and rationale
 
-- 各エントリの `notes` に根拠 source URL を残す（`source:` フィールドまたは `notes` 内）
-- `docs/` の記述と矛盾する変更はしない。矛盾が生じる場合は `docs/spec.md` と該当 `mappings/*.yaml` を**両方**更新して整合を保つ
-- 既存エントリの意味を黙って変えない。不明な場合は `docs/` および `notes` を確認する
+- Leave a source URL in `notes` for each entry (via the `source:` field or within `notes`)
+- Do not make changes that contradict `docs/`. If a contradiction arises, update **both** `docs/spec.md` and the relevant `mappings/*.yaml` to keep them in sync.
+- Do not silently change the meaning of existing entries. When in doubt, consult `docs/` and `notes`.
 
-## mappings 不変条件テスト（`docs/spec.md §18 Testing Strategy`）
+## Mappings invariant tests (`docs/spec.md §18 Testing Strategy`)
 
-実装側（`src/**`, `tests/**`）でテストすること:
+Implement the following tests on the implementation side (`src/**`, `tests/**`):
 
-- `id` が全ファイルを通じて一意であること
-- `direction` は `both` / `claude_to_codex` / `codex_to_claude` のみ
-- `loss` は `lossless` / `lossy` / `dropped` のみ
-- `degrade` を持つエントリは `loss: lossy` であること
-- `loss: dropped` のエントリに `transform` が付いていないこと
+- `id` is unique across all files
+- `direction` only takes values `both` / `claude_to_codex` / `codex_to_claude`
+- `loss` only takes values `lossless` / `lossy` / `dropped`
+- Entries with `degrade` must have `loss: lossy`
+- Entries with `loss: dropped` must not have `transform`

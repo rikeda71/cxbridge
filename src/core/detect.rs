@@ -1,28 +1,12 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use walkdir::WalkDir;
 
 use crate::core::ir::Kind;
 
-/// ファイル / ディレクトリのパスから Kind を判定する。
+/// Returns the single `Kind` for a path (file) or the dominant `Kind` for a directory.
 ///
-/// ファイル指定の場合: パスのファイル名パターンと先頭バイトで即時判定。
-/// - SKILL.md（**/skills/*/SKILL.md）      → Kind::Skill
-/// - .mcp.json                            → Kind::Mcp
-/// - plugin.json（.claude-plugin/ 配下等）→ Kind::Plugin
-/// - CLAUDE.md / AGENTS.md               → Kind::Memory
-/// - config.toml                         → 内容パースでテーブル判定（後述）
-///
-/// ディレクトリ指定の場合: walkdir で再帰発見。
-///
-/// config.toml の種別判定（toml_edit でパース）:
-/// - [mcp_servers] テーブルあり → Kind::Mcp
-/// - [hooks] テーブルあり       → Kind::Hooks
-/// - 両方あり                   → Kind::Plugin
-///
-/// x2c 追加ルール:
-/// - .agents/skills/<n>/agents/openai.yaml → Kind::Skill
-/// - .codex/agents/<n>.toml               → Kind::Subagent
+/// For per-file multi-kind directory walks, use [`detect_files`] instead.
 pub fn detect(path: &str) -> anyhow::Result<Kind> {
     let p = Path::new(path);
 
@@ -33,6 +17,65 @@ pub fn detect(path: &str) -> anyhow::Result<Kind> {
     } else {
         anyhow::bail!("Path does not exist or is not a file/directory: {}", path)
     }
+}
+
+/// Returns every `(Kind, PathBuf)` pair reachable from `path`.
+///
+/// For a file input, returns a single-element vec containing `(kind, file_path)`.
+/// For a directory input, walks recursively and returns one entry per recognizable
+/// file (all kinds, not only the dominant one). Each `PathBuf` always points to an
+/// individual file, never to the directory itself.
+pub fn detect_files(path: &str) -> anyhow::Result<Vec<(Kind, PathBuf)>> {
+    let p = Path::new(path);
+
+    if p.is_file() {
+        let kind = detect_file(p)?;
+        return Ok(vec![(kind, p.to_path_buf())]);
+    }
+
+    if p.is_dir() {
+        return detect_dir_files(p);
+    }
+
+    anyhow::bail!("Path does not exist or is not a file/directory: {}", path)
+}
+
+/// Walks `p` recursively and returns one `(Kind, PathBuf)` pair per recognizable file.
+///
+/// Each `PathBuf` always points to an individual file, never to the directory itself.
+/// Returns an error if no recognizable files are found.
+pub(crate) fn detect_dir_files(p: &Path) -> anyhow::Result<Vec<(Kind, PathBuf)>> {
+    let mut results: Vec<(Kind, PathBuf)> = Vec::new();
+
+    for entry in WalkDir::new(p).follow_links(false) {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        // Only files whose kind is determined by parsing (settings.json,
+        // config.toml) can produce a meaningful error. Other unrecognized
+        // files are silently skipped.
+        let file_name = entry.file_name().to_str().unwrap_or("");
+        let is_parsed_config = matches!(file_name, "settings.json" | "config.toml");
+        match detect_file(entry.path()) {
+            Ok(kind) => results.push((kind, entry.path().to_path_buf())),
+            Err(e) if is_parsed_config => {
+                eprintln!("warning: skipping {}: {}", entry.path().display(), e);
+            }
+            Err(_) => {}
+        }
+    }
+
+    if results.is_empty() {
+        anyhow::bail!(
+            "No recognizable config files found in directory: {}",
+            p.display()
+        );
+    }
+    Ok(results)
 }
 
 fn detect_file(p: &Path) -> anyhow::Result<Kind> {
@@ -125,7 +168,7 @@ fn detect_config_toml(p: &Path) -> anyhow::Result<Kind> {
 }
 
 fn detect_dir(p: &Path) -> anyhow::Result<Kind> {
-    // 優先順位: Skill > Plugin > Mcp > Hooks > Memory > Subagent > Settings
+    // Priority: Skill > Plugin > Mcp > Hooks > Memory > Subagent > Settings
     let mut found_kinds: Vec<Kind> = Vec::new();
 
     for entry in WalkDir::new(p).follow_links(false) {
@@ -314,5 +357,24 @@ mod tests {
     fn test_detect_nonexistent() {
         let result = detect("/nonexistent/path/that/does/not/exist");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_detect_dir_files_with_skill() {
+        let dir = tmp();
+        let skill_dir = dir.path().join(".claude").join("skills").join("deploy");
+        fs::create_dir_all(&skill_dir).unwrap();
+        let skill_path = skill_dir.join("SKILL.md");
+        fs::write(&skill_path, "---\nname: deploy\n---\nbody").unwrap();
+
+        let pairs = detect_dir_files(dir.path()).unwrap();
+
+        let (found_kind, found_path) = pairs
+            .iter()
+            .find(|(k, _)| *k == Kind::Skill)
+            .expect("expected Kind::Skill in result");
+
+        assert_eq!(*found_path, skill_path);
+        assert_eq!(*found_kind, Kind::Skill);
     }
 }

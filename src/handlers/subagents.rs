@@ -7,14 +7,14 @@ use crate::core::ir::{
     new_node, DegradeInfo, DiagLevel, Diagnostic, DroppedInfo, IRField, IRNode, Kind, Loss, Tool,
 };
 use crate::core::mappings::{
-    applies_direction, index_by_claude_field, index_by_codex_field, DomainMap, LossSpec,
+    applies_direction, index_by_claude_field, index_by_codex_field, DomainMap,
 };
 use crate::core::transforms::{
     apply_transforms, claude_tier, tier_to_codex, ConvDir, TransformCtx,
 };
 use crate::handlers::{EmitFile, EmitPlan, Handler, LowerOpts};
 
-/// subagents ドメインのハンドラ。
+/// Handler for the subagents domain.
 pub struct SubagentHandler {
     pub map: DomainMap,
 }
@@ -54,7 +54,7 @@ impl Handler for SubagentHandler {
         let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         let path_str = path.to_str().unwrap_or("");
 
-        if file_name.ends_with(".toml") && !file_name.ends_with("config.toml") {
+        if file_name.ends_with(".toml") && file_name != "config.toml" {
             // x2c: Codex TOML agent file
             parse_codex_agent_toml(path)
         } else if file_name.ends_with(".md")
@@ -117,11 +117,7 @@ impl Handler for SubagentHandler {
             };
             let (v, applied) = apply_transforms(value, entry.transform.as_deref(), &ctx);
 
-            let loss = match entry.loss {
-                LossSpec::Lossless => Loss::Lossless,
-                LossSpec::Lossy => Loss::Lossy,
-                LossSpec::Dropped => Loss::Dropped,
-            };
+            let loss = Loss::from(&entry.loss);
 
             let degrade_info = entry.degrade.as_ref().map(|d| DegradeInfo {
                 to: d.to.clone(),
@@ -149,8 +145,6 @@ impl Handler for SubagentHandler {
                 None
             };
 
-            let is_dropped = matches!(loss, Loss::Dropped);
-
             node.fields.insert(
                 entry.id.clone(),
                 IRField {
@@ -163,24 +157,6 @@ impl Handler for SubagentHandler {
                     dropped: dropped_info,
                 },
             );
-
-            if entry.warn == Some(true) {
-                if let Some(msg) = &warning {
-                    node.diagnostics.push(Diagnostic {
-                        level: DiagLevel::Warn,
-                        id: Some(entry.id.clone()),
-                        message: msg.clone(),
-                    });
-                }
-            }
-
-            if is_dropped {
-                node.diagnostics.push(Diagnostic {
-                    level: DiagLevel::Drop,
-                    id: Some(entry.id.clone()),
-                    message: format!("{} dropped", entry.id),
-                });
-            }
         }
 
         // body: for c2x, the Markdown body is the system prompt content
@@ -190,15 +166,18 @@ impl Handler for SubagentHandler {
             findings: vec![],
         });
 
-        // Note about auto-delegation vs spawn_agent difference
-        node.diagnostics.push(Diagnostic {
-            level: DiagLevel::Warn,
-            id: Some("subagents.spawn-model".to_string()),
-            message: "Claude auto-delegates via description match. \
-                      Codex requires explicit spawn_agent call (multi_agent=true). \
-                      Add spawn instructions to developer_instructions."
-                .to_string(),
-        });
+        // Only relevant when converting Claude → Codex: Claude auto-delegates via
+        // description match, but Codex requires explicit spawn_agent calls.
+        if matches!(dir, ConvDir::C2x) {
+            node.diagnostics.push(Diagnostic {
+                level: DiagLevel::Warn,
+                id: Some("subagents.spawn-model".to_string()),
+                message: "Claude auto-delegates via description match. \
+                          Codex requires explicit spawn_agent call (multi_agent=true). \
+                          Add spawn instructions to developer_instructions."
+                    .to_string(),
+            });
+        }
 
         Ok(node)
     }
@@ -215,7 +194,7 @@ impl SubagentHandler {
     /// c2x: .claude/agents/<n>.md → .codex/agents/<n>.toml
     fn lower_c2x(&self, ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPlan> {
         let mut files = Vec::new();
-        let mut diagnostics = ir.diagnostics.clone();
+        let mut diagnostics = Vec::new();
 
         let out_root = opts.out.as_deref().unwrap_or(".");
         let agent_name = extract_agent_name_from_path(&ir.source_path);
@@ -304,7 +283,7 @@ impl SubagentHandler {
 
         // tools → sandbox_mode (approximate; lossy)
         if let Some(f) = ir.fields.get("subagents.tools") {
-            let tools = json_to_string_list(&f.value);
+            let tools = crate::handlers::json_to_string_list(&f.value);
             let sandbox_mode = approximate_sandbox_mode(&tools);
             if let Some(mode) = sandbox_mode {
                 toml_lines.push(format!(r#"sandbox_mode = "{}""#, mode));
@@ -320,15 +299,29 @@ impl SubagentHandler {
         }
 
         // permissionMode → sandbox_mode (enum_map applied in lift → value already mapped)
-        // Only emit if tools wasn't already set (avoid duplication)
+        // Only values that survive the enum_map to a valid Codex sandbox_mode are emitted.
+        // acceptEdits/auto/dontAsk have no Codex equivalent and must be dropped.
+        const VALID_SANDBOX_MODES: &[&str] =
+            &["read-only", "workspace-write", "danger-full-access"];
         if !ir.fields.contains_key("subagents.tools") {
             if let Some(f) = ir.fields.get("subagents.permissionMode") {
                 if let Some(mode_str) = f.value.as_str() {
                     if !mode_str.is_empty() {
-                        toml_lines.push(format!(
-                            r#"sandbox_mode = "{}""#,
-                            escape_toml_string(mode_str)
-                        ));
+                        if VALID_SANDBOX_MODES.contains(&mode_str) {
+                            toml_lines.push(format!(
+                                r#"sandbox_mode = "{}""#,
+                                escape_toml_string(mode_str)
+                            ));
+                        } else {
+                            diagnostics.push(Diagnostic {
+                                level: DiagLevel::Drop,
+                                id: Some("subagents.permissionMode".to_string()),
+                                message: format!(
+                                    "permissionMode=\"{}\" has no Codex sandbox_mode equivalent and was dropped",
+                                    mode_str
+                                ),
+                            });
+                        }
                     }
                 }
             }
@@ -336,7 +329,7 @@ impl SubagentHandler {
 
         // skills → skills.config (lossy)
         if let Some(f) = ir.fields.get("subagents.skills") {
-            let skills = json_to_string_list(&f.value);
+            let skills = crate::handlers::json_to_string_list(&f.value);
             if !skills.is_empty() {
                 // Codex skills.config is an array of objects with {enabled, path}
                 // We approximate by just writing enabled=true entries
@@ -383,21 +376,24 @@ impl SubagentHandler {
 
         let toml_content = toml_lines.join("\n") + "\n";
         let agent_toml_path = format!("{}/.codex/agents/{}.toml", out_root, agent_name);
+        // Relative path used in config_file pointer (spec §10.2).
+        let agent_toml_rel = format!(".codex/agents/{}.toml", agent_name);
 
         files.push(EmitFile {
             path: agent_toml_path,
             content: toml_content,
         });
 
-        // Note about spawn_agent requirement
-        diagnostics.push(Diagnostic {
-            level: DiagLevel::Warn,
-            id: Some("subagents.spawn-model".to_string()),
-            message: format!(
-                "Subagent '{}' requires explicit spawn_agent call in Codex (auto-delegation not available). \
-                 Add spawn instructions to AGENTS.md or calling agent's developer_instructions.",
-                agent_name
-            ),
+        // config.toml patch: [agents.<name>] config_file pointer + [features] multi_agent=true.
+        // write_plan performs a non-destructive toml_edit merge so existing keys are preserved.
+        let config_toml_path = format!("{}/config.toml", out_root);
+        let config_toml_content = format!(
+            "[agents.{}]\nconfig_file = \"{}\"\n\n[features]\nmulti_agent = true\n",
+            agent_name, agent_toml_rel
+        );
+        files.push(EmitFile {
+            path: config_toml_path,
+            content: config_toml_content,
         });
 
         Ok(EmitPlan { files, diagnostics })
@@ -406,7 +402,7 @@ impl SubagentHandler {
     /// x2c: .codex/agents/<n>.toml → .claude/agents/<n>.md
     fn lower_x2c(&self, ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPlan> {
         let mut files = Vec::new();
-        let mut diagnostics = ir.diagnostics.clone();
+        let mut diagnostics = Vec::new();
 
         let out_root = opts.out.as_deref().unwrap_or(".");
         let agent_name = extract_agent_name_from_path(&ir.source_path);
@@ -456,6 +452,29 @@ impl SubagentHandler {
                 if !s.is_empty() {
                     fm.insert("effort".to_string(), Value::String(s.to_string()));
                 }
+            }
+        }
+
+        // skills (subagents.skills): Codex skills.config → Claude skills list
+        if let Some(f) = ir.fields.get("subagents.skills") {
+            let skills: Vec<Value> = if let Value::Array(arr) = &f.value {
+                arr.iter()
+                    .filter_map(|item| {
+                        item.get("path")
+                            .and_then(|p| p.as_str())
+                            .map(|s| Value::String(s.to_string()))
+                    })
+                    .collect()
+            } else {
+                vec![]
+            };
+            if !skills.is_empty() {
+                fm.insert("skills".to_string(), Value::Array(skills));
+                diagnostics.push(Diagnostic {
+                    level: DiagLevel::Warn,
+                    id: Some("subagents.skills".to_string()),
+                    message: "Codex skills.config lifted to Claude skills list (lossy: content injection semantics differ)".to_string(),
+                });
             }
         }
 
@@ -511,7 +530,7 @@ fn parse_codex_agent_toml(path: &Path) -> anyhow::Result<Value> {
     let abs_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
 
     // Convert toml::Value to serde_json::Value for the frontmatter
-    let json_val = toml_value_to_json(&toml_val)?;
+    let json_val = crate::core::serialize::toml_to_json(&toml_val)?;
 
     // The TOML agent file has a flat structure; all top-level keys go into "frontmatter"
     // and developer_instructions becomes the "body"
@@ -522,6 +541,12 @@ fn parse_codex_agent_toml(path: &Path) -> anyhow::Result<Value> {
         for (k, v) in map {
             if k == "developer_instructions" {
                 body = v.as_str().unwrap_or("").to_string();
+            } else if let Value::Object(nested) = v {
+                // Flatten one level of nested tables using dot notation so that
+                // codex.field paths like "skills.config" resolve correctly.
+                for (sk, sv) in nested {
+                    frontmatter.insert(format!("{}.{}", k, sk), sv.clone());
+                }
             } else {
                 frontmatter.insert(k.clone(), v.clone());
             }
@@ -533,30 +558,6 @@ fn parse_codex_agent_toml(path: &Path) -> anyhow::Result<Value> {
         "body": body,
         "path": abs_path.to_str().unwrap_or("")
     }))
-}
-
-/// Convert toml::Value to serde_json::Value.
-fn toml_value_to_json(v: &toml::Value) -> anyhow::Result<Value> {
-    match v {
-        toml::Value::String(s) => Ok(Value::String(s.clone())),
-        toml::Value::Integer(i) => Ok(Value::Number(serde_json::Number::from(*i))),
-        toml::Value::Float(f) => Ok(Value::Number(
-            serde_json::Number::from_f64(*f).unwrap_or(serde_json::Number::from(0)),
-        )),
-        toml::Value::Boolean(b) => Ok(Value::Bool(*b)),
-        toml::Value::Array(arr) => {
-            let items: anyhow::Result<Vec<Value>> = arr.iter().map(toml_value_to_json).collect();
-            Ok(Value::Array(items?))
-        }
-        toml::Value::Table(tbl) => {
-            let mut map = serde_json::Map::new();
-            for (k, val) in tbl {
-                map.insert(k.clone(), toml_value_to_json(val)?);
-            }
-            Ok(Value::Object(map))
-        }
-        toml::Value::Datetime(dt) => Ok(Value::String(dt.to_string())),
-    }
 }
 
 /// Extract agent name from path.
@@ -627,18 +628,6 @@ fn approximate_sandbox_mode(tools: &[String]) -> Option<&'static str> {
     }
 }
 
-/// Convert a JSON Value to a list of strings.
-fn json_to_string_list(v: &Value) -> Vec<String> {
-    match v {
-        Value::String(s) => vec![s.clone()],
-        Value::Array(arr) => arr
-            .iter()
-            .filter_map(|x| x.as_str().map(|s| s.to_string()))
-            .collect(),
-        _ => vec![],
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -656,12 +645,14 @@ mod tests {
     fn default_opts(out_dir: &str) -> LowerOpts {
         LowerOpts {
             out: Some(out_dir.to_string()),
+            only: vec![],
             scope: crate::handlers::Scope::Project,
             dual_manifest: false,
             hooks_target: crate::handlers::Scope::User,
             skill_target: crate::handlers::SkillTargetMode::Skill,
             interactive: false,
             rewrite_body: false,
+            keep_claude_frontmatter: false,
         }
     }
 
@@ -864,6 +855,68 @@ You are a coding assistant.
     }
 
     #[test]
+    fn test_subagent_c2x_emits_config_toml_agents_and_features() {
+        let dir = TempDir::new().unwrap();
+        let agents_dir = dir.path().join(".claude").join("agents");
+        fs::create_dir_all(&agents_dir).unwrap();
+
+        let agent_path = agents_dir.join("researcher.md");
+        fs::write(
+            &agent_path,
+            "---\nname: researcher\ndescription: Research tasks\nmodel: claude-opus-4-8\neffort: max\n---\nBody.\n",
+        )
+        .unwrap();
+
+        let out_dir = TempDir::new().unwrap();
+        let h = make_handler();
+        let parsed = h.parse(&agent_path).unwrap();
+        let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
+
+        let opts = default_opts(out_dir.path().to_str().unwrap());
+        let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
+
+        // agent TOML must be present
+        let agent_toml = plan
+            .files
+            .iter()
+            .find(|f| f.path.ends_with("researcher.toml"));
+        assert!(
+            agent_toml.is_some(),
+            "Expected researcher.toml, got: {:?}",
+            plan.files.iter().map(|f| &f.path).collect::<Vec<_>>()
+        );
+
+        // config.toml must be present with [agents.researcher] and multi_agent
+        let config_toml = plan.files.iter().find(|f| f.path.ends_with("config.toml"));
+        assert!(
+            config_toml.is_some(),
+            "Expected config.toml, got: {:?}",
+            plan.files.iter().map(|f| &f.path).collect::<Vec<_>>()
+        );
+        let content = &config_toml.unwrap().content;
+        assert!(
+            content.contains("[agents.researcher]"),
+            "Expected [agents.researcher] in config.toml, got:\n{}",
+            content
+        );
+        assert!(
+            content.contains("config_file"),
+            "Expected config_file in config.toml, got:\n{}",
+            content
+        );
+        assert!(
+            content.contains("multi_agent"),
+            "Expected multi_agent in config.toml, got:\n{}",
+            content
+        );
+        assert!(
+            content.contains("true"),
+            "Expected multi_agent = true in config.toml, got:\n{}",
+            content
+        );
+    }
+
+    #[test]
     fn test_subagent_c2x_report_enumerates_dropped() {
         use crate::core::report::build_report;
         use crate::handlers::EmitPlan;
@@ -889,7 +942,7 @@ You are a coding assistant.
         };
         let report = build_report(&ir, &empty_plan);
 
-        // dropped フィールドが report に列挙されていること
+        // Dropped fields should be enumerated in the report
         assert!(
             !report.dropped.is_empty(),
             "Expected dropped entries in report"
@@ -908,6 +961,349 @@ You are a coding assistant.
             dropped_ids.contains(&"subagents.background"),
             "Expected subagents.background in dropped, got: {:?}",
             dropped_ids
+        );
+    }
+
+    /// permissionMode values with no Codex equivalent (acceptEdits, auto, dontAsk)
+    /// must not produce sandbox_mode in the output TOML, and a Drop diagnostic
+    /// must appear in plan.diagnostics.
+    #[test]
+    fn test_c2x_permission_mode_unmapped_values_dropped() {
+        let h = make_handler();
+
+        for (perm_mode, label) in [
+            ("acceptEdits", "acceptEdits"),
+            ("auto", "auto"),
+            ("dontAsk", "dontAsk"),
+        ] {
+            let dir = TempDir::new().unwrap();
+            let agents_dir = dir.path().join(".claude").join("agents");
+            fs::create_dir_all(&agents_dir).unwrap();
+
+            let agent_path = agents_dir.join("t.md");
+            fs::write(
+                &agent_path,
+                format!(
+                    "---\nname: t\ndescription: D\npermissionMode: {}\n---\nBody.\n",
+                    perm_mode
+                ),
+            )
+            .unwrap();
+
+            let out_dir = TempDir::new().unwrap();
+            let parsed = h.parse(&agent_path).unwrap();
+            let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
+            let opts = default_opts(out_dir.path().to_str().unwrap());
+            let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
+
+            let agent_toml = plan
+                .files
+                .iter()
+                .find(|f| f.path.ends_with("t.toml"))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Expected t.toml in output for permissionMode={}, got: {:?}",
+                        label,
+                        plan.files.iter().map(|f| &f.path).collect::<Vec<_>>()
+                    )
+                });
+
+            assert!(
+                !agent_toml.content.contains("sandbox_mode"),
+                "sandbox_mode must not appear in TOML for permissionMode={}, got:\n{}",
+                label,
+                agent_toml.content
+            );
+
+            let has_drop = plan.diagnostics.iter().any(|d| {
+                d.id.as_deref() == Some("subagents.permissionMode") && d.level == DiagLevel::Drop
+            });
+            assert!(
+                has_drop,
+                "Expected Drop diagnostic for subagents.permissionMode (permissionMode={}), got: {:?}",
+                label,
+                plan.diagnostics
+                    .iter()
+                    .map(|d| (d.id.as_deref(), &d.level))
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    /// Valid permissionMode values (default, bypassPermissions, plan) that map
+    /// to a Codex sandbox_mode must still produce sandbox_mode in the TOML output.
+    #[test]
+    fn test_c2x_permission_mode_valid_values_emitted() {
+        let h = make_handler();
+
+        for (perm_mode, expected_sandbox, label) in [
+            (
+                "bypassPermissions",
+                "danger-full-access",
+                "bypassPermissions",
+            ),
+            ("plan", "read-only", "plan"),
+            ("default", "workspace-write", "default"),
+        ] {
+            let dir = TempDir::new().unwrap();
+            let agents_dir = dir.path().join(".claude").join("agents");
+            fs::create_dir_all(&agents_dir).unwrap();
+
+            let agent_path = agents_dir.join("t.md");
+            fs::write(
+                &agent_path,
+                format!(
+                    "---\nname: t\ndescription: D\npermissionMode: {}\n---\nBody.\n",
+                    perm_mode
+                ),
+            )
+            .unwrap();
+
+            let out_dir = TempDir::new().unwrap();
+            let parsed = h.parse(&agent_path).unwrap();
+            let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
+            let opts = default_opts(out_dir.path().to_str().unwrap());
+            let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
+
+            let agent_toml = plan
+                .files
+                .iter()
+                .find(|f| f.path.ends_with("t.toml"))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Expected t.toml in output for permissionMode={}, got: {:?}",
+                        label,
+                        plan.files.iter().map(|f| &f.path).collect::<Vec<_>>()
+                    )
+                });
+
+            assert!(
+                agent_toml
+                    .content
+                    .contains(&format!("sandbox_mode = \"{}\"", expected_sandbox)),
+                "Expected sandbox_mode=\"{}\" for permissionMode={}, got:\n{}",
+                expected_sandbox,
+                label,
+                agent_toml.content
+            );
+
+            let has_drop = plan.diagnostics.iter().any(|d| {
+                d.id.as_deref() == Some("subagents.permissionMode") && d.level == DiagLevel::Drop
+            });
+            assert!(
+                !has_drop,
+                "Must not have Drop diagnostic for valid permissionMode={}, got: {:?}",
+                label,
+                plan.diagnostics
+                    .iter()
+                    .map(|d| (d.id.as_deref(), &d.level))
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    /// x2c: Codex TOML with [skills]\nconfig = [{enabled=true, path="python"}] must lift
+    /// subagents.skills into the IR (not dropped as unknown key) and lower it to
+    /// a `skills:` list in the Claude agent frontmatter.
+    #[test]
+    fn test_subagent_x2c_skills_lifted() {
+        let dir = TempDir::new().unwrap();
+        let agents_dir = dir.path().join(".codex").join("agents");
+        fs::create_dir_all(&agents_dir).unwrap();
+
+        let agent_path = agents_dir.join("coder.toml");
+        fs::write(
+            &agent_path,
+            "name = \"coder\"\ndescription = \"D\"\ndeveloper_instructions = \"Body\"\n\n[skills]\nconfig = [{enabled = true, path = \"python\"}]\n",
+        )
+        .unwrap();
+
+        let h = make_handler();
+        let parsed = h.parse(&agent_path).unwrap();
+        let ir = h.lift(&parsed, ConvDir::X2c).unwrap();
+
+        // The IR must have subagents.skills — it must NOT be dropped as unknown
+        assert!(
+            ir.fields.contains_key("subagents.skills"),
+            "IR must contain subagents.skills; got fields: {:?}",
+            ir.fields.keys().collect::<Vec<_>>()
+        );
+
+        // No drop diagnostic for "skills"
+        let has_unknown_skills_drop = ir
+            .diagnostics
+            .iter()
+            .any(|d| d.level == DiagLevel::Drop && d.message.contains("skills"));
+        assert!(
+            !has_unknown_skills_drop,
+            "Must not have Drop diagnostic for skills; diagnostics: {:?}",
+            ir.diagnostics
+        );
+
+        // lower → Claude .md should contain skills: [python]
+        let out_dir = TempDir::new().unwrap();
+        let opts = default_opts(out_dir.path().to_str().unwrap());
+        let plan = h.lower(&ir, ConvDir::X2c, &opts).unwrap();
+
+        let agent_md = plan
+            .files
+            .iter()
+            .find(|f| f.path.ends_with("coder.md"))
+            .unwrap();
+        assert!(
+            agent_md.content.contains("python"),
+            "Output .md must contain 'python' in skills list; got:\n{}",
+            agent_md.content
+        );
+        assert!(
+            agent_md.content.contains("skills"),
+            "Output .md must contain 'skills' frontmatter key; got:\n{}",
+            agent_md.content
+        );
+
+        // A Warn diagnostic for the lossy mapping must be emitted
+        let has_skills_warn = plan
+            .diagnostics
+            .iter()
+            .any(|d| d.id.as_deref() == Some("subagents.skills") && d.level == DiagLevel::Warn);
+        assert!(
+            has_skills_warn,
+            "Expected subagents.skills Warn diagnostic; got: {:?}",
+            plan.diagnostics
+        );
+    }
+
+    /// gap 37/42: fields with loss:dropped + warn:true must appear in report.dropped
+    /// exactly once and must NOT appear in report.lossy at all.
+    ///
+    /// The four subagents fields disallowedTools, maxTurns, background, and
+    /// isolation are all loss:dropped + warn:true. Each must be counted once in
+    /// dropped[] only — never in lossy[] and never duplicated.
+    ///
+    /// This is a full-pipeline test: lift → lower (obtaining a real plan with its
+    /// diagnostics) → build_report. That ensures no duplication from any of the
+    /// three diagnostic sources (IRField loop, ir.diagnostics loop,
+    /// plan.diagnostics loop).
+    #[test]
+    fn test_subagent_c2x_dropped_warn_fields_not_in_lossy_not_duplicated() {
+        use crate::core::report::build_report;
+
+        let dir = TempDir::new().unwrap();
+        let agents_dir = dir.path().join(".claude").join("agents");
+        fs::create_dir_all(&agents_dir).unwrap();
+
+        let agent_path = agents_dir.join("full.md");
+        fs::write(
+            &agent_path,
+            "---\nname: full\ndescription: Full agent\nmaxTurns: 5\nbackground: true\nisolation: worktree\ndisallowedTools:\n  - Bash\n---\n\nFull agent body.\n",
+        )
+        .unwrap();
+
+        let h = make_handler();
+        let parsed = h.parse(&agent_path).unwrap();
+        let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
+
+        let out_dir = TempDir::new().unwrap();
+        let opts = default_opts(out_dir.path().to_str().unwrap());
+        let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
+
+        let report = build_report(&ir, &plan);
+
+        // Each loss:dropped + warn:true field must appear exactly once in dropped[].
+        for field_id in &[
+            "subagents.maxTurns",
+            "subagents.background",
+            "subagents.isolation",
+            "subagents.disallowedTools",
+        ] {
+            let dropped_count = report
+                .dropped
+                .iter()
+                .filter(|e| e.id.as_deref() == Some(field_id))
+                .count();
+            assert_eq!(
+                dropped_count, 1,
+                "{field_id} must appear exactly once in report.dropped, found {dropped_count} times. \
+                 Full dropped: {:?}",
+                report
+                    .dropped
+                    .iter()
+                    .map(|e| e.id.as_deref().unwrap_or("<none>"))
+                    .collect::<Vec<_>>()
+            );
+
+            // Must NOT appear in lossy[].
+            let in_lossy = report
+                .lossy
+                .iter()
+                .any(|e| e.id.as_deref() == Some(field_id));
+            assert!(
+                !in_lossy,
+                "{field_id} must NOT appear in report.lossy. \
+                 Full lossy: {:?}",
+                report
+                    .lossy
+                    .iter()
+                    .map(|e| e.id.as_deref().unwrap_or("<none>"))
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    /// c2x regression: skills: [python] in Claude .md must still convert to
+    /// skills = [...] in Codex TOML (regression guard for the c2x direction).
+    #[test]
+    fn test_subagent_c2x_skills_roundtrip() {
+        let dir = TempDir::new().unwrap();
+        let agents_dir = dir.path().join(".claude").join("agents");
+        fs::create_dir_all(&agents_dir).unwrap();
+
+        let agent_path = agents_dir.join("dev.md");
+        fs::write(
+            &agent_path,
+            "---\nname: dev\ndescription: D\nskills:\n  - python\n  - javascript\n---\nBody.\n",
+        )
+        .unwrap();
+
+        let h = make_handler();
+        let parsed = h.parse(&agent_path).unwrap();
+        let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
+
+        assert!(
+            ir.fields.contains_key("subagents.skills"),
+            "IR must contain subagents.skills"
+        );
+        assert_eq!(
+            ir.fields["subagents.skills"].value,
+            Value::Array(vec![
+                Value::String("python".to_string()),
+                Value::String("javascript".to_string()),
+            ])
+        );
+
+        let out_dir = TempDir::new().unwrap();
+        let opts = default_opts(out_dir.path().to_str().unwrap());
+        let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
+
+        let agent_toml = plan
+            .files
+            .iter()
+            .find(|f| f.path.ends_with("dev.toml"))
+            .unwrap();
+        assert!(
+            agent_toml.content.contains("python"),
+            "Codex TOML must contain python skill; got:\n{}",
+            agent_toml.content
+        );
+        assert!(
+            agent_toml.content.contains("javascript"),
+            "Codex TOML must contain javascript skill; got:\n{}",
+            agent_toml.content
+        );
+        assert!(
+            agent_toml.content.contains("enabled"),
+            "Codex TOML skills must have enabled field; got:\n{}",
+            agent_toml.content
         );
     }
 }

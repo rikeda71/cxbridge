@@ -5,9 +5,9 @@ use gray_matter::engine::YAML;
 use gray_matter::Matter;
 use serde_json::Value;
 
-/// frontmatter 付き Markdown ファイルを parse する。
+/// Parses a Markdown file with frontmatter.
 ///
-/// handler の parse() 契約に従う JSON Value `{frontmatter, body, path}` を返す。
+/// Returns a JSON Value `{frontmatter, body, path}` conforming to the handler parse() contract.
 pub fn parse_frontmatter_file(path: &Path) -> anyhow::Result<Value> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read file: {}", path.display()))?;
@@ -32,7 +32,7 @@ pub fn parse_frontmatter_file(path: &Path) -> anyhow::Result<Value> {
     }))
 }
 
-/// frontmatter と本文テキストを Markdown ファイルとして書き出す。
+/// Writes frontmatter and body text to a Markdown file.
 pub fn emit_frontmatter_file(
     path: &Path,
     frontmatter: &serde_json::Map<String, Value>,

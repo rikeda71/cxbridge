@@ -1,101 +1,101 @@
-# mappings/*.yaml スキーマ定義
+# mappings/*.yaml Schema Definition
 
-`mappings/*.yaml` は Claude Code ⇄ OpenAI Codex CLI の相互変換 CLI が読み込む**機械可読な変換テーブル**である。人間向け解説は `docs/` 側にあり、本 YAML はそのうち「フィールド対応」を機械処理可能な形に落としたもの。
+`mappings/*.yaml` is a **machine-readable conversion table** loaded by the Claude Code ⇄ OpenAI Codex CLI bidirectional conversion engine. Human-oriented explanations live in `docs/`; this YAML captures the "field correspondence" subset in a machine-processable form.
 
-## トップレベル構造
+## Top-Level Structure
 
 ```yaml
-domain: skills                      # 領域識別子（ファイル名と一致）
-title: "Skills (SKILL.md)"          # 人間向けタイトル
-doc: ../docs/spec.md           # 対応する解説ドキュメント（相対パス）
-files:                              # この領域が扱う設定ファイル
+domain: skills                      # Domain identifier (matches the filename)
+title: "Skills (SKILL.md)"          # Human-readable title
+doc: ../docs/spec.md           # Corresponding documentation document (relative path)
+files:                              # Configuration files covered by this domain
   claude:
     - ".claude/skills/<name>/SKILL.md"
     - "~/.claude/skills/<name>/SKILL.md"
   codex:
     - ".agents/skills/<name>/SKILL.md"
     - "~/.agents/skills/<name>/SKILL.md"
-format:                            # ファイル形式（リスト。1領域が複数形式を取りうる）
-  claude: [markdown+yaml-frontmatter] # 単一形式でもリストで書く
-  codex: [toml, json]                 # 例: Codex hooks は TOML または JSON
-entries:                           # フィールド対応エントリの配列（下記）
+format:                            # File formats (list; a single domain may use multiple formats)
+  claude: [markdown+yaml-frontmatter] # Write as a list even for a single format
+  codex: [toml, json]                 # Example: Codex hooks use TOML or JSON
+entries:                           # Array of field-correspondence entries (see below)
   - { ... }
-notes:                             # 領域全体にかかる注記（任意）
+notes:                             # Domain-wide annotations (optional)
   - "..."
 ```
 
-## entries[] の各エントリ
+## entries[] — Individual Entry
 
 ```yaml
-- id: skills.allowed-tools          # 一意なエントリ ID（領域.フィールド）
-  claude:                           # Claude 側の対応物（無い場合は null）
-    field: "allowed-tools"          # フィールド名/キーパス（ドット記法）
-    type: "string|list"             # 型
-    scope: skill                    # この設定が効くスコープ
-  codex:                            # Codex 側の対応物（無い場合は null）
-    field: null                     # 直接対応がなければ null
+- id: skills.allowed-tools          # Unique entry ID (domain.field)
+  claude:                           # Claude-side counterpart (null if absent)
+    field: "allowed-tools"          # Field name / key path (dot notation)
+    type: "string|list"             # Type
+    scope: skill                    # Scope where this setting takes effect
+  codex:                            # Codex-side counterpart (null if absent)
+    field: null                     # null if there is no direct counterpart
     type: null
     scope: null
   direction: claude_to_codex        # both | claude_to_codex | codex_to_claude
   loss: lossy                       # lossless | lossy | dropped
-  degrade:                          # スコープ降格情報（降格が起きる場合のみ）
-    to: session                     # 降格先スコープ
-    target: ".codex/rules/<skill>.rules (execpolicy allow)"  # 降格先の具体的な書き込み先
-  transform: null                   # 値の変換規則（下記の transform 語彙、無ければ null）
-  warn: true                        # 変換時にユーザー警告を出すべきか
-  notes: "skill 実行中だけの pre-approve は再現不可。.rules の allow に降格するとセッション全体に効く"
-  source: "https://..."             # 根拠 URL（任意）
+  degrade:                          # Scope-demotion info (only when demotion occurs)
+    to: session                     # Demoted-to scope
+    target: ".codex/rules/<skill>.rules (execpolicy allow)"  # Concrete write destination after demotion
+  transform: null                   # Value transformation rule (transform vocabulary below; null if none)
+  warn: true                        # Whether to emit a user warning during conversion
+  notes: "skill-only pre-approval cannot be reproduced. Demoting to .rules allow makes it effective for the entire session"
+  source: "https://..."             # Reference URL (optional)
 ```
 
-## フィールド語彙
+## Field Vocabulary
 
-### `scope`（設定が効く範囲）
-- `skill` / `command` / `agent` / `plugin` — そのコンポーネント実行中だけ
-- `session` — 起動中のセッション全体
-- `project` — プロジェクト（リポジトリ）単位
-- `user` — ユーザー（全プロジェクト）単位
-- `profile` — Codex の名前付きプロファイル単位
-- `subagent` — Codex の subagent（role/standalone TOML）単位
-- `managed` — 組織強制（managed settings / requirements.toml）
-- `global` — ツール全体
+### `scope` (Range where the setting is effective)
+- `skill` / `command` / `agent` / `plugin` — only while that component is running
+- `session` — the entire running session
+- `project` — per project (repository)
+- `user` — per user (all projects)
+- `profile` — per Codex named profile
+- `subagent` — per Codex subagent (role/standalone TOML)
+- `managed` — organization-enforced (managed settings / requirements.toml)
+- `global` — tool-wide
 
-### `direction`（変換方向）
-- `both` — 双方向に変換可能
-- `claude_to_codex` — Claude→Codex のみ意味を持つ（Codex→Claude では出力されない / 既定値）
-- `codex_to_claude` — Codex→Claude のみ
+### `direction` (Conversion direction)
+- `both` — bidirectional conversion is possible
+- `claude_to_codex` — meaningful only for Claude→Codex (not output for Codex→Claude / uses default)
+- `codex_to_claude` — Codex→Claude only
 
-### `loss`（情報損失レベル）
-- `lossless` — 完全に等価。値・書式変換のみ
-- `lossy` — 意味は近いが情報の一部が失われる / スコープが変わる / 値が丸まる
-- `dropped` — 対応物がなく破棄（手動対応 or 警告のみ）
+### `loss` (Information-loss level)
+- `lossless` — fully equivalent; value/format conversion only
+- `lossy` — meaning is close but some information is lost / scope changes / values are rounded
+- `dropped` — no counterpart; discarded (manual handling or warning only)
 
-### `degrade`（スコープ降格）
-`loss: lossy` で「skill スコープ → より広い/別スコープ」へ移る場合に記載。
-- `to`: 降格先 scope
-- `target`: 降格先の具体的な設定（書き込み先ファイル・キー）
+### `degrade` (Scope demotion)
+Recorded when `loss: lossy` and the setting moves from a skill scope to a broader or different scope.
+- `to`: demoted-to scope
+- `target`: concrete setting at the demotion destination (file / key to write to)
 
-### `transform`（値変換規則）— 文字列で記述、CLI 実装側でパース
-代表的な規則（CLI 実装で関数化する想定）:
-- `unit:ms_to_sec` / `unit:sec_to_ms` — タイムアウト等の単位変換（例: `60000`→`60.0`）
-- `polarity:invert` — 真偽の極性反転（例: Claude `disabled:true` ⇔ Codex `enabled:false`）
-- `enum_map:{a:b,...}` — enum 値の対応（例: effort `max`→`xhigh`）
-- `index_shift:+1` / `index_shift:-1` — 引数インデックスの 0基点⇔1基点シフト（`$ARGUMENTS[0]`⇔`$1`）
-- `str_to_list:space` / `list_to_str:space` — スペース区切り文字列 ⇔ 配列（OAuth scopes 等）
-- `rename` — キー名のみ変更（例: `headers`⇔`http_headers`）
-- `format:json_to_toml` / `format:toml_to_json` — シリアライズ形式変換
-- `extract:bearer_env` — `"Bearer ${VAR}"` から環境変数名 `VAR` を抽出（MCP Bearer token）
-- `path:remap` — パス規約の付け替え（`.claude/`⇔`.agents/` 等）
-- `inline_imports` — `@import` 参照をインライン展開（CLAUDE.md→AGENTS.md）
+### `transform` (Value transformation rules) — expressed as a string; parsed by the CLI implementation
+Representative rules (intended to be implemented as functions in the CLI):
+- `unit:ms_to_sec` / `unit:sec_to_ms` — unit conversion for timeouts, etc. (e.g., `60000`→`60.0`)
+- `polarity:invert` — boolean polarity inversion (e.g., Claude `disabled:true` ⇔ Codex `enabled:false`)
+- `enum_map:{a:b,...}` — enum value mapping (e.g., effort `max`→`xhigh`)
+- `index_shift:+1` / `index_shift:-1` — argument index 0-based ⇔ 1-based shift (`$ARGUMENTS[0]`⇔`$1`)
+- `str_to_list:space` / `list_to_str:space` — space-delimited string ⇔ array (OAuth scopes, etc.)
+- `rename` — key name change only (e.g., `headers`⇔`http_headers`)
+- `format:json_to_toml` / `format:toml_to_json` — serialization format conversion
+- `extract:bearer_env` — extract environment variable name `VAR` from `"Bearer ${VAR}"` (MCP Bearer token)
+- `path:remap` — path convention remapping (`.claude/`⇔`.agents/`, etc.)
+- `inline_imports` — inline-expand `@import` references (CLAUDE.md→AGENTS.md)
 
-複数規則は `;` 区切り（例: `unit:ms_to_sec; rename`）。
+Multiple rules are separated by `;` (e.g., `unit:ms_to_sec; rename`).
 
-## 変換エンジンが守るべき不変条件
-1. `loss: dropped` のエントリは、変換時に必ず conversion report に列挙する。
-2. `warn: true` のエントリは、変換実行時にユーザー警告を出す。
-3. `degrade` のあるエントリは、降格先スコープ（`to`）を report に明記する。
-4. `direction` が片方向のエントリは、逆方向変換では無視（または既定値復元）する。
-5. 同一 `id` は全 mappings を通じて一意。
+## Invariants the Conversion Engine Must Uphold
+1. Entries with `loss: dropped` must always be enumerated in the conversion report.
+2. Entries with `warn: true` must emit a user warning during conversion.
+3. Entries with `degrade` must have the demoted-to scope (`to`) stated in the report.
+4. Entries whose `direction` is one-way must be ignored (or have their default value restored) for the reverse direction.
+5. The same `id` must be unique across all mappings.
 
-## 補足
-- 本テーブルは「現行ドキュメント/スキーマ上の対応」を表す。実バイナリ挙動と差異がありうる項目は `notes` に明記する。
-- Codex 側仕様は流動的（2025-2026 の新機能）。`source` URL とともにバージョン依存性を `notes` に残す。
+## Notes
+- This table represents "correspondence as documented in the current spec/schema." Items where actual binary behavior may differ are noted in `notes`.
+- Codex-side specifications are fluid (new features in 2025-2026). Record version dependencies alongside `source` URLs in `notes`.

@@ -1,0 +1,19 @@
+{
+  "name": "codex-plugin",
+  "version": "1.0.0",
+  "description": "A Codex plugin",
+  "interface": {
+    "displayName": "Codex Plugin",
+    "websiteURL": "https://example.com",
+    "developerName": "OpenAI",
+    "category": "utility",
+    "longDescription": "A detailed description of the Codex plugin.",
+    "brandColor": "#FF0000",
+    "composerIcon": "./icons/composer.png",
+    "logo": "./icons/logo.png",
+    "capabilities": ["Interactive", "Read"],
+    "screenshots": [{"url": "./screenshots/1.png"}],
+    "privacyPolicyURL": "https://example.com/privacy",
+    "termsOfServiceURL": "https://example.com/terms"
+  }
+}

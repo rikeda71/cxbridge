@@ -8,7 +8,7 @@
             "type": "command",
             "command": "uv run \"$CLAUDE_PROJECT_DIR/scripts/validate-mappings.py\" || true",
             "timeout": 30,
-            "statusMessage": "mappings 不変条件を検証中..."
+            "statusMessage": "Validating mappings invariants..."
           }
         ]
       }

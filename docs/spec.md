@@ -604,10 +604,10 @@ Mostly mappings-driven mechanical transforms.
 - Transport: Claude explicit `type` ↔ Codex implicit (`command` present = stdio, `url` present = http)
 
 **HTTP transport `env` restriction:** Codex `env` is stdio-only. For c2x with http transport:
-1. `env` values in `${VAR}` form → convert to `env_http_headers` (header name = env key, value = `$VAR`).
+1. `env` values in `${VAR}` form → convert to `env_http_headers` (header name = env key, value = bare `VAR` — Codex maps a header to an env-var *name*, e.g. `{ "X-Auth": "AUTH_ENV" }`).
 2. Literal values → warn + request manual action.
 
-**`env_http_headers` x2c direction:** Codex `env_http_headers` entries are converted back to Claude `headers` as `${VAR}` form (e.g. `{ "Authorization": "$API_KEY" }` → `headers.Authorization: "${API_KEY}"`). This is the inverse of the c2x transform above.
+**`env_http_headers` x2c direction:** Codex `env_http_headers` entries are converted back to Claude `headers` as `${VAR}` form (e.g. `{ "Authorization": "API_KEY" }` → `headers.Authorization: "${API_KEY}"`). This is the inverse of the c2x transform above.
 
 **Dropped (c2x):** `alwaysLoad`, `headersHelper`, `sse`/`ws` transport, `oauth.authServerMetadataUrl`.  
 **Dropped (x2c):** `enabled_tools`, `disabled_tools`, `default_tools_approval_mode`, `tools.<name>.approval_mode`, `startup_timeout_sec`, `env_vars`, `required`, `supports_parallel_tool_calls`, `environment_id`, `oauth_resource`.  
@@ -641,8 +641,8 @@ The Plugins handler is the integration point. It coordinates skills/hooks/mcp ha
 - `interface.category` → lossy approximate → appended to `keywords` array
 - `interface.longDescription` → lossy approximate ↔ `description`
 
-**Lossless:** name, version, description, author/homepage/repository/license/keywords, displayName, skills path, marketplace core fields  
-**Lossy (c2x):** short-description, version strict-semver, mcpServers inline→file, hooks (event/type limits), commands, agents, defaultEnabled  
+**Lossless:** name, version, description, author/homepage/repository/license/keywords, displayName, marketplace core fields  
+**Lossy (c2x):** skills path (multi-path array cannot be fully represented in Codex manifest), short-description, version strict-semver, mcpServers inline→file, hooks (event/type limits), commands, agents, defaultEnabled  
 **Dropped (c2x):** see item 3 above (lspServers, outputStyles, experimental.themes, experimental.monitors, settings, channels, userConfig, dependencies)  
 **Dropped/lossy (x2c):** Codex `interface.*` fields as above
 
@@ -961,8 +961,8 @@ Total entries across all `mappings/*.yaml`: **287**
 
 | Loss level | Count | % |
 |---|---|---|
-| lossless | 71 | 25% |
-| lossy | 87 | 30% |
+| lossless | 70 | 24% |
+| lossy | 88 | 31% |
 | dropped | 129 | 45% |
 
 **Directional asymmetry:**
@@ -976,7 +976,7 @@ Total entries across all `mappings/*.yaml`: **287**
 | Skills | 22 | 5 | 12 | 5 | Core — degrade engine + body scanner |
 | Hooks | 83 | 34 | 6 | 43 | Core — JSON↔TOML structural conversion |
 | MCP | 30 | 10 | 4 | 16 | Lightweight mechanical transforms |
-| Plugins | 48 | 13 | 15 | 20 | Integration point; recursive |
+| Plugins | 48 | 12 | 16 | 20 | Integration point; recursive |
 | Memory | 16 | 3 | 5 | 8 | File rename + @import expansion |
 | Subagents | 25 | 4 | 10 | 11 | Large structural divergence |
 | Settings/Config | 49 | 2 (4%) | 30 | 17 | Hardest; permission axis mismatch |

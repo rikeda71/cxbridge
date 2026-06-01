@@ -1,9 +1,12 @@
+use toml_edit::{DocumentMut, Item, Table, Value as TomlValue};
+
 use crate::core::ir::{DiagLevel, Diagnostic, SideArtifact};
+use crate::handlers::Scope;
 
 /// Classifies each tool pattern and produces the corresponding SideArtifact and Diagnostic.
 ///
 /// Degradation targets by pattern:
-/// - `Bash(<cmd>)` → `.codex/rules/<skill>.rules` (execpolicy Starlark)
+/// - `Bash(<cmd>)` → `.codex/rules/<skill>.rules` (project) or `~/.codex/rules/default.rules` (user)
 /// - `Write(<glob>)` / `Edit(<glob>)` → `[permissions.<name>].filesystem.<glob> = "write"`
 /// - `Read(<glob>)` → `[permissions.<name>].filesystem.<glob> = "read"`
 /// - `WebFetch` / `WebSearch` → `[permissions.<name>].network` or `features.web_search`
@@ -13,11 +16,17 @@ pub fn degrade_allowed_tools(
     skill_name: &str,
     tools: &[String],
     is_allow: bool,
+    scope: Scope,
 ) -> (Vec<SideArtifact>, Vec<Diagnostic>) {
     let mut artifacts: Vec<SideArtifact> = Vec::new();
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
 
     let decision = if is_allow { "allow" } else { "forbidden" };
+    let tool_kind_id = if is_allow {
+        "allowed-tools"
+    } else {
+        "disallowed-tools"
+    };
 
     let bash_tools: Vec<&str> = tools
         .iter()
@@ -48,7 +57,21 @@ pub fn degrade_allowed_tools(
             ));
         }
 
-        let rules_path = format!(".codex/rules/{}.rules", skill_name);
+        let (rules_path, scope_label) = match scope {
+            Scope::User => {
+                let home = std::env::var("HOME").unwrap_or_else(|_| {
+                    #[allow(deprecated)]
+                    std::env::home_dir()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "~".to_string())
+                });
+                (format!("{}/.codex/rules/default.rules", home), "skill→user")
+            }
+            Scope::Project => (
+                format!(".codex/rules/{}.rules", skill_name),
+                "skill→project",
+            ),
+        };
         artifacts.push(SideArtifact {
             path: rules_path.clone(),
             content: rules_lines.join("\n") + "\n",
@@ -59,23 +82,10 @@ pub fn degrade_allowed_tools(
         });
         diagnostics.push(Diagnostic {
             level: DiagLevel::Warn,
-            id: Some(format!(
-                "skills.{}",
-                if is_allow {
-                    "allowed-tools"
-                } else {
-                    "disallowed-tools"
-                }
-            )),
+            id: Some(format!("skills.{}", tool_kind_id)),
             message: format!(
-                "Bash tools in {} degraded to {} (scope: skill→project). Generated: {}",
-                if is_allow {
-                    "allowed-tools"
-                } else {
-                    "disallowed-tools"
-                },
-                rules_path,
-                decision
+                "Bash tools in {} degraded to {} (scope: {}). Generated: {}",
+                tool_kind_id, rules_path, scope_label, decision
             ),
         });
     }
@@ -95,19 +105,6 @@ pub fn degrade_allowed_tools(
         })
         .collect();
 
-    if !write_tools.is_empty() {
-        for glob in &write_tools {
-            diagnostics.push(Diagnostic {
-                level: DiagLevel::Warn,
-                id: Some(format!("skill.{}", if is_allow { "allowed-tools" } else { "disallowed-tools" })),
-                message: format!(
-                    "Write/Edit tool permission for '{}' degraded to [permissions.{}].filesystem (scope: skill→project)",
-                    glob, skill_name
-                ),
-            });
-        }
-    }
-
     let read_tools: Vec<&str> = tools
         .iter()
         .filter_map(|t| {
@@ -119,14 +116,64 @@ pub fn degrade_allowed_tools(
         })
         .collect();
 
-    if !read_tools.is_empty() {
+    // Build config.toml SideArtifact when Write/Edit or Read globs are present.
+    if !write_tools.is_empty() || !read_tools.is_empty() {
+        let perm_value = if is_allow { "write" } else { "deny" };
+        let read_perm_value = if is_allow { "read" } else { "deny" };
+
+        let mut doc = DocumentMut::new();
+        {
+            let permissions = doc
+                .entry("permissions")
+                .or_insert(Item::Table(Table::new()))
+                .as_table_mut()
+                .expect("permissions is always a table");
+            let skill_table = permissions
+                .entry(skill_name)
+                .or_insert(Item::Table(Table::new()))
+                .as_table_mut()
+                .expect("skill permissions table");
+            let fs_table = skill_table
+                .entry("filesystem")
+                .or_insert(Item::Table(Table::new()))
+                .as_table_mut()
+                .expect("filesystem table");
+
+            for glob in &write_tools {
+                fs_table[glob] = Item::Value(TomlValue::from(perm_value));
+            }
+            for glob in &read_tools {
+                fs_table[glob] = Item::Value(TomlValue::from(read_perm_value));
+            }
+        }
+
+        let toml_string = doc.to_string();
+        artifacts.push(SideArtifact {
+            path: "config.toml".to_string(),
+            content: toml_string,
+            note: format!(
+                "Write/Edit/Read tool permissions degraded to [permissions.{}].filesystem (scope: skill→project)",
+                skill_name
+            ),
+        });
+
+        for glob in &write_tools {
+            diagnostics.push(Diagnostic {
+                level: DiagLevel::Warn,
+                id: Some(format!("skill.{}", tool_kind_id)),
+                message: format!(
+                    "Write/Edit tool permission for '{}' degraded to [permissions.{}].filesystem.\"{}\" = \"{}\" (scope: skill→project)",
+                    glob, skill_name, glob, perm_value
+                ),
+            });
+        }
         for glob in &read_tools {
             diagnostics.push(Diagnostic {
                 level: DiagLevel::Warn,
-                id: Some(format!("skill.{}", if is_allow { "allowed-tools" } else { "disallowed-tools" })),
+                id: Some(format!("skill.{}", tool_kind_id)),
                 message: format!(
-                    "Read tool permission for '{}' degraded to [permissions.{}].filesystem (scope: skill→project)",
-                    glob, skill_name
+                    "Read tool permission for '{}' degraded to [permissions.{}].filesystem.\"{}\" = \"{}\" (scope: skill→project)",
+                    glob, skill_name, glob, read_perm_value
                 ),
             });
         }
@@ -134,39 +181,45 @@ pub fn degrade_allowed_tools(
 
     let has_web_fetch = tools.iter().any(|t| t == "WebFetch");
     if has_web_fetch {
+        // allow → grant network; disallow → deny it. Never grant on a deny.
+        let net_value = if is_allow { "true" } else { "false" };
+        let content = format!("[permissions.{}]\nnetwork = {}\n", skill_name, net_value);
+        artifacts.push(SideArtifact {
+            path: "config.toml".to_string(),
+            content,
+            note: format!(
+                "WebFetch degraded to [permissions.{}].network = {} (scope: skill→project)",
+                skill_name, net_value
+            ),
+        });
         diagnostics.push(Diagnostic {
             level: DiagLevel::Warn,
-            id: Some(format!(
-                "skills.{}",
-                if is_allow {
-                    "allowed-tools"
-                } else {
-                    "disallowed-tools"
-                }
-            )),
+            id: Some(format!("skills.{}", tool_kind_id)),
             message: format!(
-                "WebFetch in {} degraded to [permissions.{}].network (manual: set network=true in config.toml)",
-                if is_allow { "allowed-tools" } else { "disallowed-tools" },
-                skill_name
+                "WebFetch in {} degraded to [permissions.{}].network = {} in config.toml",
+                tool_kind_id, skill_name, net_value
             ),
         });
     }
 
     let has_web_search = tools.iter().any(|t| t == "WebSearch");
     if has_web_search {
+        // allow → enable web search; disallow → disable it. Never enable on a deny.
+        let ws_value = if is_allow { "true" } else { "false" };
+        artifacts.push(SideArtifact {
+            path: "config.toml".to_string(),
+            content: format!("[features]\nweb_search = {}\n", ws_value),
+            note: format!(
+                "WebSearch degraded to [features].web_search = {} (scope: skill→project)",
+                ws_value
+            ),
+        });
         diagnostics.push(Diagnostic {
             level: DiagLevel::Warn,
-            id: Some(format!(
-                "skills.{}",
-                if is_allow {
-                    "allowed-tools"
-                } else {
-                    "disallowed-tools"
-                }
-            )),
+            id: Some(format!("skills.{}", tool_kind_id)),
             message: format!(
-                "WebSearch in {} degraded to features.web_search (manual: set features.web_search=true in config.toml)",
-                if is_allow { "allowed-tools" } else { "disallowed-tools" },
+                "WebSearch in {} degraded to [features].web_search = {} in config.toml",
+                tool_kind_id, ws_value
             ),
         });
     }
@@ -184,14 +237,7 @@ pub fn degrade_allowed_tools(
                 };
                 diagnostics.push(Diagnostic {
                     level: DiagLevel::Warn,
-                    id: Some(format!(
-                        "skills.{}",
-                        if is_allow {
-                            "allowed-tools"
-                        } else {
-                            "disallowed-tools"
-                        }
-                    )),
+                    id: Some(format!("skills.{}", tool_kind_id)),
                     message: format!(
                         "mcp tool '{}' degraded to [mcp_servers.{}].{} = ['{}'] (manual: add to config.toml)",
                         t, server, list_name, tool
@@ -201,14 +247,7 @@ pub fn degrade_allowed_tools(
                 // Pattern does not match mcp__<server>__<tool>; flag for manual review.
                 diagnostics.push(Diagnostic {
                     level: DiagLevel::Warn,
-                    id: Some(format!(
-                        "skills.{}",
-                        if is_allow {
-                            "allowed-tools"
-                        } else {
-                            "disallowed-tools"
-                        }
-                    )),
+                    id: Some(format!("skills.{}", tool_kind_id)),
                     message: format!(
                         "mcp tool '{}' does not match mcp__<server>__<tool> pattern; manual review required",
                         t
@@ -240,14 +279,7 @@ pub fn degrade_allowed_tools(
     for builtin in builtin_tools {
         diagnostics.push(Diagnostic {
             level: DiagLevel::Drop,
-            id: Some(format!(
-                "skills.{}",
-                if is_allow {
-                    "allowed-tools"
-                } else {
-                    "disallowed-tools"
-                }
-            )),
+            id: Some(format!("skills.{}", tool_kind_id)),
             message: format!(
                 "Built-in tool '{}' has no Codex equivalent and will be dropped",
                 builtin
@@ -256,4 +288,182 @@ pub fn degrade_allowed_tools(
     }
 
     (artifacts, diagnostics)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::handlers::Scope;
+
+    /// When scope=User, the .rules artifact path must be the user-scope path
+    /// (~/.codex/rules/default.rules), and the diagnostic message must say
+    /// "scope: skill→user".
+    #[test]
+    fn test_degrade_allowed_tools_scope_user_rules_path() {
+        let tools = vec!["Bash(npm run *)".to_string()];
+        let (artifacts, diagnostics) = degrade_allowed_tools("t", &tools, true, Scope::User);
+
+        let rules_art = artifacts
+            .iter()
+            .find(|a| a.path.ends_with(".rules"))
+            .expect("Expected a .rules SideArtifact for Scope::User");
+
+        // Must be a user-scope path (contains home dir and .codex/rules/default.rules)
+        assert!(
+            rules_art.path.contains(".codex/rules/default.rules"),
+            "User-scope .rules path must end with .codex/rules/default.rules, got: {}",
+            rules_art.path
+        );
+        // Must NOT be the project-scope path
+        assert!(
+            !rules_art.path.starts_with(".codex/"),
+            "User-scope .rules path must not be project-relative, got: {}",
+            rules_art.path
+        );
+
+        // Diagnostic message must reflect user scope
+        let diag = diagnostics
+            .iter()
+            .find(|d| d.message.contains("scope:"))
+            .expect("Expected a diagnostic with 'scope:' in message");
+        assert!(
+            diag.message.contains("skill→user"),
+            "Diagnostic must say 'skill→user' for Scope::User, got: {}",
+            diag.message
+        );
+    }
+
+    /// When scope=Project (default), the .rules artifact path must remain the
+    /// project-scope path (.codex/rules/<skill>.rules).
+    #[test]
+    fn test_degrade_allowed_tools_scope_project_rules_path() {
+        let tools = vec!["Bash(cargo build)".to_string()];
+        let (artifacts, diagnostics) = degrade_allowed_tools("build", &tools, true, Scope::Project);
+
+        let rules_art = artifacts
+            .iter()
+            .find(|a| a.path.ends_with(".rules"))
+            .expect("Expected a .rules SideArtifact for Scope::Project");
+
+        assert_eq!(
+            rules_art.path, ".codex/rules/build.rules",
+            "Project-scope .rules path must be .codex/rules/build.rules, got: {}",
+            rules_art.path
+        );
+
+        let diag = diagnostics
+            .iter()
+            .find(|d| d.message.contains("scope:"))
+            .expect("Expected a diagnostic with 'scope:' in message");
+        assert!(
+            diag.message.contains("skill→project"),
+            "Diagnostic must say 'skill→project' for Scope::Project, got: {}",
+            diag.message
+        );
+    }
+
+    /// Write/Edit and Read patterns must produce a config.toml SideArtifact with
+    /// [permissions.<skill>].filesystem entries.
+    #[test]
+    fn test_degrade_allowed_tools_produces_config_toml_artifact() {
+        let tools = vec!["Write(**/*.py)".to_string(), "Read(~/.ssh/*)".to_string()];
+        let (artifacts, _diagnostics) = degrade_allowed_tools("ed", &tools, true, Scope::Project);
+
+        let config_artifact = artifacts
+            .iter()
+            .find(|a| a.path == "config.toml")
+            .expect("Expected a config.toml SideArtifact");
+
+        assert!(
+            config_artifact.content.contains("[permissions.ed]"),
+            "Expected [permissions.ed] in config.toml, got:\n{}",
+            config_artifact.content
+        );
+        assert!(
+            config_artifact.content.contains("\"write\"")
+                || config_artifact.content.contains("= \"write\""),
+            "Expected write permission entry in config.toml, got:\n{}",
+            config_artifact.content
+        );
+        assert!(
+            config_artifact.content.contains("\"read\"")
+                || config_artifact.content.contains("= \"read\""),
+            "Expected read permission entry in config.toml, got:\n{}",
+            config_artifact.content
+        );
+    }
+
+    /// disallowed-tools Write/Edit/Read patterns must produce config.toml with "deny" entries.
+    #[test]
+    fn test_degrade_disallowed_tools_produces_deny_config_toml() {
+        let tools = vec!["Write(**/*.py)".to_string(), "Read(~/.ssh/*)".to_string()];
+        let (artifacts, _diagnostics) = degrade_allowed_tools("ed", &tools, false, Scope::Project);
+
+        let config_artifact = artifacts
+            .iter()
+            .find(|a| a.path == "config.toml")
+            .expect("Expected a config.toml SideArtifact for disallowed-tools");
+
+        assert!(
+            config_artifact.content.contains("[permissions.ed]"),
+            "Expected [permissions.ed] in config.toml, got:\n{}",
+            config_artifact.content
+        );
+        assert!(
+            config_artifact.content.contains("\"deny\"")
+                || config_artifact.content.contains("= \"deny\""),
+            "Expected deny permission entry in config.toml, got:\n{}",
+            config_artifact.content
+        );
+    }
+
+    /// WebFetch in allowed-tools must produce a config.toml SideArtifact with
+    /// [permissions.<skill>].network = true.
+    #[test]
+    fn test_degrade_web_fetch_produces_config_toml_artifact() {
+        let tools = vec!["WebFetch".to_string()];
+        let (artifacts, _diagnostics) =
+            degrade_allowed_tools("net-skill", &tools, true, Scope::Project);
+
+        let config_artifact = artifacts
+            .iter()
+            .find(|a| a.path == "config.toml")
+            .expect("Expected a config.toml SideArtifact for WebFetch");
+
+        assert!(
+            config_artifact.content.contains("[permissions.net-skill]"),
+            "Expected [permissions.net-skill] in config.toml, got:\n{}",
+            config_artifact.content
+        );
+        assert!(
+            config_artifact.content.contains("network = true"),
+            "Expected 'network = true' in config.toml, got:\n{}",
+            config_artifact.content
+        );
+    }
+
+    /// WebSearch in allowed-tools must produce a config.toml SideArtifact with
+    /// [features].web_search = true.
+    #[test]
+    fn test_degrade_web_search_produces_config_toml_artifact() {
+        let tools = vec!["WebSearch".to_string()];
+        let (artifacts, _diagnostics) =
+            degrade_allowed_tools("search-skill", &tools, true, Scope::Project);
+
+        let config_artifact = artifacts
+            .iter()
+            .find(|a| a.path == "config.toml")
+            .expect("Expected a config.toml SideArtifact for WebSearch");
+
+        assert!(
+            config_artifact.content.contains("[features]"),
+            "Expected [features] section in config.toml, got:\n{}",
+            config_artifact.content
+        );
+        assert!(
+            config_artifact.content.contains("web_search = true"),
+            "Expected 'web_search = true' in config.toml, got:\n{}",
+            config_artifact.content
+        );
+    }
 }

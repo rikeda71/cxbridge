@@ -1,0 +1,25 @@
+{
+  "plugins": [
+    {
+      "name": "plugin-a",
+      "source": "./local-plugin",
+      "category": "productivity"
+    },
+    {
+      "name": "plugin-b",
+      "source": {
+        "source": "relative",
+        "path": "./another-plugin"
+      },
+      "category": "utility"
+    },
+    {
+      "name": "plugin-c",
+      "source": {
+        "source": "npm",
+        "package": "my-plugin"
+      },
+      "category": "tools"
+    }
+  ]
+}

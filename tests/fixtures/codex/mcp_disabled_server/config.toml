@@ -1,0 +1,4 @@
+[mcp_servers.s]
+command = "node"
+args = ["server.js"]
+enabled = false

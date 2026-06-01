@@ -10,7 +10,7 @@ use crate::core::mappings::DomainMap;
 use crate::core::transforms::ConvDir;
 use crate::handlers::{EmitFile, EmitPlan, Handler, LowerOpts, Scope};
 
-/// 共通 10 イベント（both / lossless）のリスト。
+/// The 10 common events (both / lossless).
 const COMMON_EVENTS: &[&str] = &[
     "SessionStart",
     "UserPromptSubmit",
@@ -24,7 +24,7 @@ const COMMON_EVENTS: &[&str] = &[
     "Stop",
 ];
 
-/// Claude 固有イベント（claude_to_codex / dropped）のリスト。
+/// Claude-specific events (claude_to_codex / dropped).
 const CLAUDE_ONLY_EVENTS: &[&str] = &[
     "Setup",
     "UserPromptExpansion",
@@ -48,10 +48,10 @@ const CLAUDE_ONLY_EVENTS: &[&str] = &[
     "SessionEnd",
 ];
 
-/// c2x で dropped される hook フィールド（args/shell/if/once/asyncRewake）。
+/// Hook fields dropped in c2x (args/shell/if/once/asyncRewake).
 const DROPPED_C2X_HOOK_FIELDS: &[&str] = &["args", "shell", "if", "once", "asyncRewake"];
 
-/// hooks ドメインのハンドラ。
+/// Handler for the hooks domain.
 pub struct HooksHandler {
     pub map: DomainMap,
 }
@@ -63,7 +63,7 @@ impl Handler for HooksHandler {
 
     fn detect(&self, path: &Path) -> bool {
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        // hooks.json (Claude) または hooks セクション含む config.toml (Codex)
+        // hooks.json (Claude) or config.toml containing a hooks section (Codex)
         name == "hooks.json" || name == "settings.json"
     }
 
@@ -92,21 +92,21 @@ impl Handler for HooksHandler {
 }
 
 impl HooksHandler {
-    /// Claude JSON hooks → IR（c2x）
+    /// Lift Claude JSON hooks → IR (c2x).
     fn lift_c2x(&self, parsed: &Value) -> anyhow::Result<IRNode> {
         let source_path = parsed["path"].as_str().unwrap_or("").to_string();
         let mut node = new_node(Kind::Hooks, Tool::Claude, &source_path);
 
-        // parsed は hooks.json の raw JSON または settings.json の "hooks" キー以下
-        // 形式: {"hooks": {"EventName": [{matcher, hooks:[{type,...}]}]}}
-        // あるいは直接 {"EventName": [...]}
+        // `parsed` is the raw JSON of hooks.json, or the "hooks" key of settings.json.
+        // Format: {"hooks": {"EventName": [{matcher, hooks:[{type,...}]}]}}
+        // or directly: {"EventName": [...]}
         let hooks_obj = if let Some(h) = parsed.get("hooks").and_then(|v| v.as_object()) {
             h.clone()
         } else if let Some(fm) = parsed.get("frontmatter").and_then(|v| v.as_object()) {
             if let Some(h) = fm.get("hooks").and_then(|v| v.as_object()) {
                 h.clone()
             } else {
-                // frontmatter 全体を hooks として扱う
+                // Treat the entire frontmatter as hooks
                 fm.clone()
             }
         } else if let Some(obj) = parsed.as_object() {
@@ -116,13 +116,13 @@ impl HooksHandler {
         };
 
         for (event_name, event_entries) in &hooks_obj {
-            // meta フィールド（path 等）はスキップ
+            // Skip meta fields such as "path"
             if event_name == "path" || event_name == "body" || event_name == "frontmatter" {
                 continue;
             }
 
             if CLAUDE_ONLY_EVENTS.contains(&event_name.as_str()) {
-                // dropped
+                // dropped — IRField is the single canonical source; no diagnostic needed here.
                 node.fields.insert(
                     format!("hooks.event.{}", event_name),
                     IRField {
@@ -140,34 +140,47 @@ impl HooksHandler {
                         }),
                     },
                 );
-                node.diagnostics.push(Diagnostic {
-                    level: DiagLevel::Drop,
-                    id: Some(format!("hooks.event.{}", event_name)),
-                    message: format!(
-                        "Event '{}' is Claude-specific and will be dropped in c2x conversion",
-                        event_name
-                    ),
-                });
                 continue;
             }
 
             if COMMON_EVENTS.contains(&event_name.as_str()) {
                 // Process each hook entry in the event array
-                let processed = process_hook_entries_c2x(event_name, event_entries, &mut node);
+                let (processed, any_survived) =
+                    process_hook_entries_c2x(event_name, event_entries, &mut node);
+                // If every hook item was dropped (e.g. all are type:http), the event
+                // carries no surviving semantic content and must be classified as Dropped.
+                let (loss, dropped_info, warning_msg) = if any_survived {
+                    (Loss::Lossless, None, None)
+                } else {
+                    (
+                        Loss::Dropped,
+                        Some(DroppedInfo {
+                            reason: format!(
+                                "All hook types for event '{}' were dropped \
+                                 (http/mcp_tool/prompt/agent have no Codex equivalent)",
+                                event_name
+                            ),
+                        }),
+                        Some(format!(
+                            "Event '{}': all hook items were dropped; no Codex equivalent",
+                            event_name
+                        )),
+                    )
+                };
                 node.fields.insert(
                     format!("hooks.event.{}", event_name),
                     IRField {
                         id: format!("hooks.event.{}", event_name),
                         value: processed,
-                        loss: Loss::Lossless,
+                        loss,
                         transforms_applied: vec!["format:json_to_toml".to_string()],
                         degrade: None,
-                        warning: None,
-                        dropped: None,
+                        warning: warning_msg,
+                        dropped: dropped_info,
                     },
                 );
             } else {
-                // unknown event → dropped
+                // unknown event → dropped — IRField is the single canonical source.
                 node.fields.insert(
                     format!("hooks.event.{}", event_name),
                     IRField {
@@ -182,25 +195,31 @@ impl HooksHandler {
                         }),
                     },
                 );
-                node.diagnostics.push(Diagnostic {
-                    level: DiagLevel::Drop,
-                    id: None,
-                    message: format!("Unknown hook event '{}' dropped", event_name),
-                });
             }
         }
 
         Ok(node)
     }
 
-    /// Codex TOML hooks → IR（x2c）
+    /// Lift Codex TOML hooks → IR (x2c).
     fn lift_x2c(&self, parsed: &Value) -> anyhow::Result<IRNode> {
         let source_path = parsed["path"].as_str().unwrap_or("").to_string();
         let mut node = new_node(Kind::Hooks, Tool::Codex, &source_path);
 
-        // parsed はすでに {"hooks": {"EventName": [...]}} 構造
+        // Resolve the event-keyed object from whatever parse() produced.
+        // parse_json_file wraps file content under "frontmatter"; flat Codex hooks.json
+        // ({"EventName":[...]}) therefore arrives as frontmatter rather than a "hooks" key.
         let hooks_obj = if let Some(h) = parsed.get("hooks").and_then(|v| v.as_object()) {
+            // TOML parser path: {"path":..., "hooks":{"EventName":[...]}}
             h.clone()
+        } else if let Some(fm) = parsed.get("frontmatter").and_then(|v| v.as_object()) {
+            // JSON parser path: frontmatter may have a nested "hooks" key (settings.json-style)
+            // or may itself be the flat event map (standalone hooks.json).
+            if let Some(h) = fm.get("hooks").and_then(|v| v.as_object()) {
+                h.clone()
+            } else {
+                fm.clone()
+            }
         } else if let Some(obj) = parsed.as_object() {
             obj.clone()
         } else {
@@ -248,9 +267,9 @@ impl HooksHandler {
         Ok(node)
     }
 
-    /// c2x: IR → Codex TOML hooks
+    /// c2x: IR → Codex TOML hooks.
     fn lower_c2x(&self, ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPlan> {
-        let mut diagnostics = ir.diagnostics.clone();
+        let mut diagnostics = Vec::new();
         let out_root = opts.out.as_deref().unwrap_or(".");
 
         // #16430 warn: plugin-bundled hooks are not loaded by Codex
@@ -303,9 +322,9 @@ impl HooksHandler {
         Ok(EmitPlan { files, diagnostics })
     }
 
-    /// x2c: IR → Claude JSON hooks
+    /// x2c: IR → Claude JSON hooks.
     fn lower_x2c(&self, ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPlan> {
-        let diagnostics = ir.diagnostics.clone();
+        let diagnostics = Vec::new();
         let out_root = opts.out.as_deref().unwrap_or(".");
 
         let mut hooks_obj = serde_json::Map::new();
@@ -333,52 +352,67 @@ impl HooksHandler {
     }
 }
 
-/// hooks の各エントリを c2x 方向で処理する（matcher 正規化、dropped フィールドの除外）。
-/// 副作用として node.diagnostics に警告を追加する。
-fn process_hook_entries_c2x(event_name: &str, entries: &Value, node: &mut IRNode) -> Value {
+/// Processes each hook entry in the c2x direction (matcher normalization, filtering dropped fields).
+/// Side effect: appends warnings to node.diagnostics.
+///
+/// Returns `(processed_value, any_survived)` where `any_survived` is `true` if
+/// at least one hook item survived filtering across all matcher groups.
+fn process_hook_entries_c2x(event_name: &str, entries: &Value, node: &mut IRNode) -> (Value, bool) {
     let arr = match entries.as_array() {
         Some(a) => a,
-        None => return entries.clone(),
+        None => return (entries.clone(), true),
     };
 
+    let mut any_survived = false;
     let processed: Vec<Value> = arr
         .iter()
         .filter_map(|entry| {
             let obj = entry.as_object()?;
             let mut new_obj = serde_json::Map::new();
 
-            // matcher 正規化
+            // Normalize the matcher
             if let Some(matcher) = obj.get("matcher").and_then(|v| v.as_str()) {
-                let (normalized, lossy) = normalize_matcher_c2x(matcher);
+                let (normalized, kind) = normalize_matcher_c2x(matcher);
                 new_obj.insert("matcher".to_string(), Value::String(normalized.clone()));
-                if lossy {
-                    node.diagnostics.push(Diagnostic {
-                        level: DiagLevel::Warn,
-                        id: Some("hooks.matcher.exact".to_string()),
-                        message: format!(
-                            "Event '{}' matcher '{}' normalized to '{}' (lossy: Codex uses regex evaluation)",
-                            event_name, matcher, normalized
-                        ),
-                    });
-                } else {
-                    // regex passthrough: Codex evaluates matchers as regexes; preserve and warn
-                    node.diagnostics.push(Diagnostic {
-                        level: DiagLevel::Warn,
-                        id: Some("hooks.matcher.regex".to_string()),
-                        message: format!(
-                            "Event '{}' matcher '{}' passed through as-is (contains regex characters; Codex evaluates it as a regex)",
-                            event_name, matcher
-                        ),
-                    });
+                match kind {
+                    MatcherKind::Wildcard => {
+                        node.diagnostics.push(Diagnostic {
+                            level: DiagLevel::Warn,
+                            id: Some("hooks.matcher.wildcard".to_string()),
+                            message: format!(
+                                "Event '{}' matcher '{}' is a Claude wildcard; normalized to '' for Codex (lossy)",
+                                event_name, matcher
+                            ),
+                        });
+                    }
+                    MatcherKind::Exact => {
+                        node.diagnostics.push(Diagnostic {
+                            level: DiagLevel::Warn,
+                            id: Some("hooks.matcher.exact".to_string()),
+                            message: format!(
+                                "Event '{}' matcher '{}' normalized to '{}' (lossy: Codex uses regex evaluation)",
+                                event_name, matcher, normalized
+                            ),
+                        });
+                    }
+                    // Regex matchers are passed through unchanged (lossless, warn:false per
+                    // mappings/hooks.yaml `hooks.matcher.regex`). No diagnostic is emitted.
+                    MatcherKind::Regex => {}
                 }
             }
 
-            // hooks 配列
+            // hooks array
             if let Some(hooks_arr) = obj.get("hooks").and_then(|v| v.as_array()) {
                 let processed_hooks: Vec<Value> = hooks_arr
                     .iter()
                     .filter_map(|h| process_single_hook_c2x(h, event_name, node))
                     .collect();
+                if processed_hooks.is_empty() {
+                    // All hooks in this matcher group were dropped; omit the whole entry
+                    // so no dead `{ "matcher": ..., "hooks": [] }` appears in output.
+                    return None;
+                }
+                any_survived = true;
                 new_obj.insert("hooks".to_string(), Value::Array(processed_hooks));
             }
 
@@ -386,10 +420,10 @@ fn process_hook_entries_c2x(event_name: &str, entries: &Value, node: &mut IRNode
         })
         .collect();
 
-    Value::Array(processed)
+    (Value::Array(processed), any_survived)
 }
 
-/// hooks の各エントリを x2c 方向で処理する（commandWindows → shell 変換等）。
+/// Processes each hook entry in the x2c direction (commandWindows → shell conversion, etc.).
 fn process_hook_entries_x2c(_event_name: &str, entries: &Value, node: &mut IRNode) -> Value {
     let arr = match entries.as_array() {
         Some(a) => a,
@@ -402,12 +436,12 @@ fn process_hook_entries_x2c(_event_name: &str, entries: &Value, node: &mut IRNod
             let obj = entry.as_object()?;
             let mut new_obj = serde_json::Map::new();
 
-            // matcher: Codex は常に regex なので そのまま転写
+            // matcher: Codex always uses regex, so pass it through as-is
             if let Some(matcher) = obj.get("matcher") {
                 new_obj.insert("matcher".to_string(), matcher.clone());
             }
 
-            // hooks 配列
+            // hooks array
             if let Some(hooks_arr) = obj.get("hooks").and_then(|v| v.as_array()) {
                 let processed_hooks: Vec<Value> = hooks_arr
                     .iter()
@@ -423,9 +457,9 @@ fn process_hook_entries_x2c(_event_name: &str, entries: &Value, node: &mut IRNod
     Value::Array(processed)
 }
 
-/// 単一 hook エントリを c2x 変換する。
-/// dropped フィールド（args/shell/if/once/asyncRewake）を除外し、
-/// args がある場合は command に合成、http/mcp_tool タイプは None（除外）を返す。
+/// Converts a single hook entry in the c2x direction.
+/// Drops the fields args/shell/if/once/asyncRewake; synthesizes args into command
+/// when present; returns None (excluded) for http/mcp_tool types.
 fn process_single_hook_c2x(hook: &Value, event_name: &str, node: &mut IRNode) -> Option<Value> {
     let obj = hook.as_object()?;
     let hook_type = obj
@@ -433,7 +467,7 @@ fn process_single_hook_c2x(hook: &Value, event_name: &str, node: &mut IRNode) ->
         .and_then(|v| v.as_str())
         .unwrap_or("command");
 
-    // http/mcp_tool タイプは dropped
+    // http/mcp_tool types are dropped
     if hook_type == "http" || hook_type == "mcp_tool" {
         node.diagnostics.push(Diagnostic {
             level: DiagLevel::Drop,
@@ -446,7 +480,7 @@ fn process_single_hook_c2x(hook: &Value, event_name: &str, node: &mut IRNode) ->
         return None;
     }
 
-    // Codex は prompt/agent タイプを parse するが実行しないため dropped にする
+    // Codex parses prompt/agent types but does not execute them, so they are dropped
     if hook_type == "prompt" || hook_type == "agent" {
         node.diagnostics.push(Diagnostic {
             level: DiagLevel::Drop,
@@ -461,19 +495,19 @@ fn process_single_hook_c2x(hook: &Value, event_name: &str, node: &mut IRNode) ->
 
     let mut new_obj = serde_json::Map::new();
 
-    // type をそのまま転写
+    // Pass the "type" field through unchanged
     new_obj.insert("type".to_string(), Value::String(hook_type.to_string()));
 
-    // command フィールドの処理（args がある場合は合成）
+    // Process the command field (synthesize args into it when present)
     let command = obj.get("command").and_then(|v| v.as_str());
     let args = obj.get("args").and_then(|v| v.as_array());
 
     if let Some(args_arr) = args {
-        // args は c2x で dropped だが、command に合成する
+        // args is dropped in c2x, but synthesized into command
         let synthesized = synthesize_command(command, args_arr);
         new_obj.insert("command".to_string(), Value::String(synthesized));
         node.diagnostics.push(Diagnostic {
-            level: DiagLevel::Warn,
+            level: DiagLevel::Drop,
             id: Some("hooks.command.args".to_string()),
             message: format!(
                 "Event '{}': 'args' field dropped (synthesized into 'command' with shell escaping)",
@@ -484,17 +518,17 @@ fn process_single_hook_c2x(hook: &Value, event_name: &str, node: &mut IRNode) ->
         new_obj.insert("command".to_string(), Value::String(cmd.to_string()));
     }
 
-    // timeout, statusMessage, async → lossless
+    // timeout, statusMessage, async → pass through losslessly
     for field_name in &["timeout", "statusMessage", "async"] {
         if let Some(v) = obj.get(*field_name) {
             new_obj.insert(field_name.to_string(), v.clone());
         }
     }
 
-    // dropped フィールドの警告
+    // Warn about dropped fields
     for dropped_field in DROPPED_C2X_HOOK_FIELDS {
         if obj.contains_key(*dropped_field) && *dropped_field != "args" {
-            // args はすでに処理済み
+            // args was already handled above
             node.diagnostics.push(Diagnostic {
                 level: DiagLevel::Drop,
                 id: Some(format!("hooks.command.{}", dropped_field)),
@@ -509,7 +543,7 @@ fn process_single_hook_c2x(hook: &Value, event_name: &str, node: &mut IRNode) ->
     Some(Value::Object(new_obj))
 }
 
-/// 単一 hook エントリを x2c 変換する（commandWindows → Claude shell:powershell warn）。
+/// Converts a single hook entry in the x2c direction (warns about commandWindows → Claude shell:powershell).
 fn process_single_hook_x2c(hook: &Value, node: &mut IRNode) -> Option<Value> {
     let obj = hook.as_object()?;
     let mut new_obj = serde_json::Map::new();
@@ -517,7 +551,7 @@ fn process_single_hook_x2c(hook: &Value, node: &mut IRNode) -> Option<Value> {
     for (k, v) in obj {
         match k.as_str() {
             "commandWindows" | "command_windows" => {
-                // x2c: commandWindows は Claude 側に直接対応なし → warn
+                // x2c: commandWindows has no direct Claude equivalent → warn
                 node.diagnostics.push(Diagnostic {
                     level: DiagLevel::Warn,
                     id: Some("hooks.command.commandWindows".to_string()),
@@ -525,7 +559,7 @@ fn process_single_hook_x2c(hook: &Value, node: &mut IRNode) -> Option<Value> {
                         "commandWindows has no direct Claude equivalent; consider shell:powershell"
                             .to_string(),
                 });
-                // 出力に含めない（lossy）
+                // Excluded from output (lossy)
             }
             _ => {
                 new_obj.insert(k.clone(), v.clone());
@@ -536,39 +570,41 @@ fn process_single_hook_x2c(hook: &Value, node: &mut IRNode) -> Option<Value> {
     Some(Value::Object(new_obj))
 }
 
-/// matcher 正規化（c2x）。
-/// - exact（英数字・_・| のみ）→ "^Bash$" / "^(Edit|Write)$"
-/// - wildcard（"*" または ""）→ "" (全マッチ)
-/// - regex 的文字を含む → そのまま（warn）
+/// Classifier for the matcher normalization result.
+#[derive(Debug, PartialEq, Eq)]
+enum MatcherKind {
+    /// "*" or "" — maps to `hooks.matcher.wildcard` (lossy).
+    Wildcard,
+    /// Alphanumeric/`_`/`|` only — maps to `hooks.matcher.exact` (lossy).
+    Exact,
+    /// Contains regex metacharacters — passed through as-is (`hooks.matcher.regex`, lossless).
+    Regex,
+}
+
+/// Normalises a Claude matcher string for Codex (c2x direction).
 ///
-/// Returns (normalized_matcher, is_lossy)
-fn normalize_matcher_c2x(matcher: &str) -> (String, bool) {
+/// Returns `(normalized, MatcherKind)`.
+fn normalize_matcher_c2x(matcher: &str) -> (String, MatcherKind) {
     if matcher.is_empty() || matcher == "*" {
-        // wildcard → "" (全マッチ)
-        return ("".to_string(), true);
+        return ("".to_string(), MatcherKind::Wildcard);
     }
 
-    // 英数字・_・| のみかチェック
     let is_exact = matcher
         .chars()
         .all(|c| c.is_alphanumeric() || c == '_' || c == '|');
 
     if is_exact {
-        // exact or alternation
         if matcher.contains('|') {
-            // alternation → "^(Edit|Write)$"
-            (format!("^({})$", matcher), true)
+            (format!("^({})$", matcher), MatcherKind::Exact)
         } else {
-            // single exact → "^Bash$"
-            (format!("^{}$", matcher), true)
+            (format!("^{}$", matcher), MatcherKind::Exact)
         }
     } else {
-        // regex 的文字を含む → そのまま（warn）
-        (matcher.to_string(), false)
+        (matcher.to_string(), MatcherKind::Regex)
     }
 }
 
-/// command + args 配列を shell form に合成する（shlex::quote でエスケープ）。
+/// Synthesizes command + args array into shell form (escaping with shlex::quote).
 fn synthesize_command(command: Option<&str>, args: &[Value]) -> String {
     let mut parts: Vec<String> = Vec::new();
 
@@ -578,7 +614,7 @@ fn synthesize_command(command: Option<&str>, args: &[Value]) -> String {
 
     for arg in args {
         if let Some(s) = arg.as_str() {
-            // shlex::try_quote でシェル特殊文字をエスケープ
+            // Escape shell metacharacters with shlex::try_quote
             let quoted =
                 shlex::try_quote(s).unwrap_or_else(|_| std::borrow::Cow::Owned(format!("'{}'", s)));
             parts.push(quoted.to_string());
@@ -588,11 +624,11 @@ fn synthesize_command(command: Option<&str>, args: &[Value]) -> String {
     parts.join(" ")
 }
 
-/// hooks エントリを Codex TOML の [[hooks.EventName]] 形式に変換する。
+/// Converts hooks entries to Codex TOML [[hooks.EventName]] format.
 fn build_hooks_toml(hooks_entries: &[(String, Value)]) -> anyhow::Result<String> {
     let mut doc = DocumentMut::new();
 
-    // [hooks] テーブルを構築
+    // Build the [hooks] table
     let hooks_item = doc.entry("hooks").or_insert(Item::Table(Table::new()));
     let hooks_tbl = hooks_item
         .as_table_mut()
@@ -648,7 +684,7 @@ fn build_hooks_toml(hooks_entries: &[(String, Value)]) -> anyhow::Result<String>
     Ok(doc.to_string())
 }
 
-/// JSON Value を toml_edit Item に変換する（ベストエフォート）。
+/// Converts a JSON Value to a toml_edit Item (best-effort).
 fn json_value_to_toml_item(v: &Value) -> Option<Item> {
     match v {
         Value::String(s) => Some(toml_edit::value(s.as_str())),
@@ -681,8 +717,8 @@ fn json_value_to_toml_item(v: &Value) -> Option<Item> {
     }
 }
 
-/// Codex config.toml の [hooks] セクションを読み込み、JSON Value として返す。
-/// 形式: {"path": "...", "hooks": {"EventName": [{matcher, hooks:[{type,...}]}]}}
+/// Reads the [hooks] section from Codex config.toml and returns it as a JSON Value.
+/// Format: {"path": "...", "hooks": {"EventName": [{matcher, hooks:[{type,...}]}]}}
 fn parse_codex_hooks_toml(path: &Path) -> anyhow::Result<Value> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| anyhow::anyhow!("Failed to read {}: {}", path.display(), e))?;
@@ -736,7 +772,7 @@ fn parse_codex_hooks_toml(path: &Path) -> anyhow::Result<Value> {
     }))
 }
 
-/// toml_edit Table を serde_json Map に変換するヘルパ。
+/// Converts a toml_edit Table to a serde_json Map.
 fn toml_table_to_json(tbl: &Table) -> serde_json::Map<String, Value> {
     let mut map = serde_json::Map::new();
     for (k, v) in tbl {
@@ -747,7 +783,7 @@ fn toml_table_to_json(tbl: &Table) -> serde_json::Map<String, Value> {
     map
 }
 
-/// toml_edit Item を serde_json Value に変換するヘルパ。
+/// Converts a toml_edit Item to a serde_json Value.
 fn toml_item_to_json(item: &Item) -> Option<Value> {
     match item {
         Item::Value(v) => toml_value_to_json(v),
@@ -766,7 +802,7 @@ fn toml_item_to_json(item: &Item) -> Option<Value> {
     }
 }
 
-/// toml_edit::Value を serde_json::Value に変換するヘルパ。
+/// Converts a toml_edit::Value to a serde_json::Value.
 fn toml_value_to_json(tv: &toml_edit::Value) -> Option<Value> {
     use toml_edit::Value as TV;
     match tv {
@@ -808,12 +844,14 @@ mod tests {
     fn default_opts(out_dir: &str) -> LowerOpts {
         LowerOpts {
             out: Some(out_dir.to_string()),
+            only: vec![],
             scope: Scope::Project,
             dual_manifest: false,
             hooks_target: Scope::User,
             skill_target: crate::handlers::SkillTargetMode::Skill,
             interactive: false,
             rewrite_body: false,
+            keep_claude_frontmatter: false,
         }
     }
 
@@ -828,37 +866,84 @@ mod tests {
 
     #[test]
     fn test_normalize_matcher_exact() {
-        let (norm, lossy) = normalize_matcher_c2x("Bash");
+        let (norm, kind) = normalize_matcher_c2x("Bash");
         assert_eq!(norm, "^Bash$");
-        assert!(lossy);
+        assert_eq!(kind, MatcherKind::Exact);
     }
 
     #[test]
     fn test_normalize_matcher_alternation() {
-        let (norm, lossy) = normalize_matcher_c2x("Edit|Write");
+        let (norm, kind) = normalize_matcher_c2x("Edit|Write");
         assert_eq!(norm, "^(Edit|Write)$");
-        assert!(lossy);
+        assert_eq!(kind, MatcherKind::Exact);
     }
 
     #[test]
     fn test_normalize_matcher_wildcard_star() {
-        let (norm, lossy) = normalize_matcher_c2x("*");
+        let (norm, kind) = normalize_matcher_c2x("*");
         assert_eq!(norm, "");
-        assert!(lossy);
+        assert_eq!(kind, MatcherKind::Wildcard);
     }
 
     #[test]
     fn test_normalize_matcher_wildcard_empty() {
-        let (norm, lossy) = normalize_matcher_c2x("");
+        let (norm, kind) = normalize_matcher_c2x("");
         assert_eq!(norm, "");
-        assert!(lossy);
+        assert_eq!(kind, MatcherKind::Wildcard);
+    }
+
+    /// Regression test for gap 40/42: empty-string matcher must emit id
+    /// "hooks.matcher.wildcard", not "hooks.matcher.exact".
+    /// The value does not change ("" → ""), so no exact-normalization diagnostic
+    /// should be emitted; the only diagnostic must be the wildcard one.
+    #[test]
+    fn test_normalize_matcher_wildcard_empty_emits_correct_id() {
+        let h = make_handler();
+        let hooks_json = serde_json::json!({
+            "hooks": {
+                "Stop": [{
+                    "matcher": "",
+                    "hooks": [{ "type": "command", "command": "echo stop" }]
+                }]
+            }
+        });
+
+        let ir = h.lift_c2x(&hooks_json).unwrap();
+
+        // Must emit id "hooks.matcher.wildcard" for the empty-string matcher.
+        let has_wildcard_id = ir
+            .diagnostics
+            .iter()
+            .any(|d| d.id.as_deref() == Some("hooks.matcher.wildcard"));
+        assert!(
+            has_wildcard_id,
+            "Empty-string matcher must emit id 'hooks.matcher.wildcard'; diagnostics: {:?}",
+            ir.diagnostics
+                .iter()
+                .map(|d| d.id.as_deref().unwrap_or("<none>"))
+                .collect::<Vec<_>>()
+        );
+
+        // Must NOT emit "hooks.matcher.exact" — the value did not change.
+        let has_exact_id = ir
+            .diagnostics
+            .iter()
+            .any(|d| d.id.as_deref() == Some("hooks.matcher.exact"));
+        assert!(
+            !has_exact_id,
+            "Empty-string matcher must NOT emit 'hooks.matcher.exact'; diagnostics: {:?}",
+            ir.diagnostics
+                .iter()
+                .map(|d| d.id.as_deref().unwrap_or("<none>"))
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn test_normalize_matcher_regex_passthrough() {
-        let (norm, lossy) = normalize_matcher_c2x("^Bash.*");
+        let (norm, kind) = normalize_matcher_c2x("^Bash.*");
         assert_eq!(norm, "^Bash.*");
-        assert!(!lossy);
+        assert_eq!(kind, MatcherKind::Regex);
     }
 
     #[test]
@@ -908,13 +993,19 @@ mod tests {
 
         let field = ir.fields.get("hooks.event.Setup");
         assert!(field.is_some(), "Expected Setup field");
-        assert_eq!(field.unwrap().loss, Loss::Dropped);
-        // diagnostic
-        let has_drop_diag = ir
-            .diagnostics
-            .iter()
-            .any(|d| d.level == DiagLevel::Drop && d.message.contains("Setup"));
-        assert!(has_drop_diag, "Expected Drop diagnostic for Setup event");
+        let f = field.unwrap();
+        assert_eq!(f.loss, Loss::Dropped);
+        // The canonical dropped info lives in the IRField; no separate diagnostic is emitted
+        // to avoid double-counting in build_report.
+        assert!(
+            f.dropped.is_some(),
+            "Expected dropped reason in IRField for Setup"
+        );
+        assert!(
+            f.dropped.as_ref().unwrap().reason.contains("Setup"),
+            "Expected 'Setup' in dropped reason, got: {}",
+            f.dropped.as_ref().unwrap().reason
+        );
     }
 
     #[test]
@@ -1123,6 +1214,245 @@ mod tests {
         );
     }
 
+    /// Verifies that lift_x2c handles a parse_json_file-wrapped value correctly.
+    /// parse_json_file wraps top-level JSON content under a "frontmatter" key;
+    /// lift_x2c must unwrap it before iterating event keys.
+    #[test]
+    fn test_hooks_lift_x2c_json_flat_format() {
+        // Simulate what parse_json_file produces from a flat Codex hooks.json
+        // (i.e., {"PreToolUse":[...]} wrapped as {"frontmatter":{...}, "body":"", "path":"..."})
+        let parsed = serde_json::json!({
+            "frontmatter": {
+                "PreToolUse": [
+                    {
+                        "matcher": "^Bash$",
+                        "hooks": [
+                            { "type": "command", "command": "echo test" }
+                        ]
+                    }
+                ]
+            },
+            "body": "",
+            "path": "/tmp/hooks.json"
+        });
+
+        let h = make_handler();
+        let ir = h.lift_x2c(&parsed).unwrap();
+
+        let field = ir.fields.get("hooks.event.PreToolUse");
+        assert!(
+            field.is_some(),
+            "Expected hooks.event.PreToolUse in IR; fields were: {:?}",
+            ir.fields.keys().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            field.unwrap().loss,
+            Loss::Lossless,
+            "PreToolUse must be Lossless"
+        );
+    }
+
+    /// Wildcard matchers ("*" and "") must emit `id: "hooks.matcher.wildcard"`, not
+    /// `"hooks.matcher.exact"`.  Spec entry `hooks.matcher.wildcard` exists in
+    /// mappings/hooks.yaml and covers the lossy conversion "*" / "" → "".
+    #[test]
+    fn test_hooks_matcher_wildcard_id() {
+        let h = make_handler();
+
+        for wildcard_matcher in &["*", ""] {
+            let hooks_json = serde_json::json!({
+                "hooks": {
+                    "Stop": [{
+                        "matcher": wildcard_matcher,
+                        "hooks": [{ "type": "command", "command": "echo done" }]
+                    }]
+                }
+            });
+
+            let ir = h.lift_c2x(&hooks_json).unwrap();
+
+            let has_wildcard_id = ir
+                .diagnostics
+                .iter()
+                .any(|d| d.id.as_deref() == Some("hooks.matcher.wildcard"));
+            assert!(
+                has_wildcard_id,
+                "matcher '{}' must emit id 'hooks.matcher.wildcard' but diagnostics were: {:?}",
+                wildcard_matcher,
+                ir.diagnostics
+                    .iter()
+                    .map(|d| d.id.as_deref().unwrap_or("<none>"))
+                    .collect::<Vec<_>>()
+            );
+
+            // Must NOT emit hooks.matcher.exact for a wildcard
+            let has_exact_id = ir
+                .diagnostics
+                .iter()
+                .any(|d| d.id.as_deref() == Some("hooks.matcher.exact"));
+            assert!(
+                !has_exact_id,
+                "matcher '{}' must NOT emit 'hooks.matcher.exact', diagnostics: {:?}",
+                wildcard_matcher,
+                ir.diagnostics
+                    .iter()
+                    .map(|d| d.id.as_deref().unwrap_or("<none>"))
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+
+    /// Regex passthrough matchers (e.g. "^Bash.*") must emit NO diagnostic
+    /// (loss:lossless, warn:false per mappings/hooks.yaml `hooks.matcher.regex`).
+    /// The event must NOT have any "hooks.matcher.regex" Warn diagnostic.
+    #[test]
+    fn test_hooks_regex_matcher_no_warn() {
+        let h = make_handler();
+
+        let hooks_json = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [{
+                    "matcher": "^Bash.*",
+                    "hooks": [{ "type": "command", "command": "echo test" }]
+                }]
+            }
+        });
+
+        let ir = h.lift_c2x(&hooks_json).unwrap();
+
+        // Must NOT emit any hooks.matcher.regex Warn diagnostic
+        let regex_warn_diags: Vec<_> = ir
+            .diagnostics
+            .iter()
+            .filter(|d| {
+                d.id.as_deref() == Some("hooks.matcher.regex") && d.level == DiagLevel::Warn
+            })
+            .collect();
+        assert!(
+            regex_warn_diags.is_empty(),
+            "regex passthrough must produce no Warn diagnostic; got: {:?}",
+            regex_warn_diags
+                .iter()
+                .map(|d| &d.message)
+                .collect::<Vec<_>>()
+        );
+
+        // The event field must be Lossless (regex passthrough is lossless)
+        let field = ir.fields.get("hooks.event.PreToolUse").unwrap();
+        assert_eq!(
+            field.loss,
+            Loss::Lossless,
+            "hooks.event.PreToolUse must be Lossless for regex matcher"
+        );
+
+        // The matcher value must be preserved unchanged
+        let entries = field.value.as_array().unwrap();
+        let matcher = entries[0].get("matcher").and_then(|v| v.as_str()).unwrap();
+        assert_eq!(
+            matcher, "^Bash.*",
+            "regex matcher must be passed through unchanged"
+        );
+    }
+
+    /// gap 29/42: `hooks.command.args` must emit DiagLevel::Drop (not Warn).
+    /// mappings/hooks.yaml declares `id: hooks.command.args` with `loss: dropped`.
+    /// Spec §7 invariant #1: dropped entries must always be listed as dropped.
+    #[test]
+    fn test_hooks_lift_c2x_args_emits_drop_diagnostic() {
+        let hooks_json = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [{
+                    "matcher": "Bash",
+                    "hooks": [{
+                        "type": "command",
+                        "command": "my-script",
+                        "args": ["--flag"]
+                    }]
+                }]
+            }
+        });
+
+        let h = make_handler();
+        let ir = h.lift_c2x(&hooks_json).unwrap();
+
+        // Must emit exactly one diagnostic with id "hooks.command.args"
+        let args_diags: Vec<_> = ir
+            .diagnostics
+            .iter()
+            .filter(|d| d.id.as_deref() == Some("hooks.command.args"))
+            .collect();
+        assert!(
+            !args_diags.is_empty(),
+            "Expected a diagnostic with id 'hooks.command.args'"
+        );
+
+        // That diagnostic MUST be DiagLevel::Drop, not Warn
+        for diag in &args_diags {
+            assert_eq!(
+                diag.level,
+                DiagLevel::Drop,
+                "hooks.command.args diagnostic must be DiagLevel::Drop (mappings: loss:dropped), got {:?}",
+                diag.level
+            );
+        }
+    }
+
+    /// gap 29/42: build_report must place hooks.command.args in `dropped`, not `lossy`.
+    #[test]
+    fn test_hooks_args_in_report_dropped_not_lossy() {
+        let hooks_json = serde_json::json!({
+            "hooks": {
+                "PreToolUse": [{
+                    "matcher": "Bash",
+                    "hooks": [{
+                        "type": "command",
+                        "command": "my-script",
+                        "args": ["--flag"]
+                    }]
+                }]
+            }
+        });
+
+        let h = make_handler();
+        let ir = h.lift_c2x(&hooks_json).unwrap();
+
+        let dir = TempDir::new().unwrap();
+        let opts = default_opts(dir.path().to_str().unwrap());
+        let plan = h.lower_c2x(&ir, &opts).unwrap();
+
+        let report = crate::core::report::build_report(&ir, &plan);
+
+        // Must appear in dropped
+        let in_dropped = report
+            .dropped
+            .iter()
+            .any(|e| e.id.as_deref() == Some("hooks.command.args"));
+        assert!(
+            in_dropped,
+            "hooks.command.args must appear in report.dropped; dropped={:?}",
+            report
+                .dropped
+                .iter()
+                .map(|e| e.id.as_deref().unwrap_or("<none>"))
+                .collect::<Vec<_>>()
+        );
+
+        // Must NOT appear in lossy
+        let in_lossy = report
+            .lossy
+            .iter()
+            .any(|e| e.id.as_deref() == Some("hooks.command.args"));
+        assert!(
+            !in_lossy,
+            "hooks.command.args must NOT appear in report.lossy; lossy={:?}",
+            report
+                .lossy
+                .iter()
+                .map(|e| e.id.as_deref().unwrap_or("<none>"))
+                .collect::<Vec<_>>()
+        );
+    }
+
     #[test]
     fn test_hooks_lift_c2x_16430_warn() {
         let hooks_json = serde_json::json!({
@@ -1146,5 +1476,64 @@ mod tests {
             .iter()
             .any(|d| d.message.contains("#16430"));
         assert!(has_16430_warn, "Expected #16430 warning in diagnostics");
+    }
+
+    /// gap 41/42: when all hook items within an event entry are dropped (e.g. only
+    /// `type:http`), the event field must be `Loss::Dropped`, not `Loss::Lossless`.
+    #[test]
+    fn test_hooks_lift_c2x_all_http_event_is_dropped() {
+        let hooks_json = serde_json::json!({
+            "hooks": {
+                "PostToolUse": [{
+                    "matcher": "",
+                    "hooks": [{ "type": "http", "url": "https://example.com" }]
+                }]
+            }
+        });
+
+        let h = make_handler();
+        let ir = h.lift_c2x(&hooks_json).unwrap();
+
+        let field = ir
+            .fields
+            .get("hooks.event.PostToolUse")
+            .expect("hooks.event.PostToolUse must exist");
+        assert_eq!(
+            field.loss,
+            Loss::Dropped,
+            "Event with only http hooks must be Loss::Dropped, got {:?}",
+            field.loss
+        );
+        assert!(field.dropped.is_some(), "dropped reason must be populated");
+    }
+
+    /// gap 41/42: a common event where at least one command hook survives must
+    /// remain `Loss::Lossless` even if other hooks in the same entry are dropped.
+    #[test]
+    fn test_hooks_lift_c2x_mixed_hooks_event_is_lossless() {
+        let hooks_json = serde_json::json!({
+            "hooks": {
+                "PostToolUse": [{
+                    "matcher": "",
+                    "hooks": [
+                        { "type": "http", "url": "https://example.com" },
+                        { "type": "command", "command": "echo post" }
+                    ]
+                }]
+            }
+        });
+
+        let h = make_handler();
+        let ir = h.lift_c2x(&hooks_json).unwrap();
+
+        let field = ir
+            .fields
+            .get("hooks.event.PostToolUse")
+            .expect("hooks.event.PostToolUse must exist");
+        assert_eq!(
+            field.loss,
+            Loss::Lossless,
+            "Event where at least one hook survives must remain Loss::Lossless"
+        );
     }
 }

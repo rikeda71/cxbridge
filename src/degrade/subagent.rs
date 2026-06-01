@@ -56,23 +56,23 @@ pub fn decide_skill_target(ir: &IRNode, opts: &LowerOpts) -> SkillTarget {
     }
 }
 
-/// TTY 対話で変換先を確認する（dialoguer を使用）。
+/// Prompts the user via TTY to choose a conversion target (uses dialoguer).
 fn ask_user_skill_target(ir: &IRNode) -> SkillTarget {
     use dialoguer::Select;
 
     let skill_name = ir.source_path.as_str();
     let items = &[
-        "skill (権限は session 降格・自動発火を維持)",
-        "subagent (権限を subagent に束ねる・明示起動)",
+        "skill (permissions degrade to session scope; auto-trigger preserved)",
+        "subagent (permissions bundled into subagent; explicit invocation required)",
     ];
 
     let selection = Select::new()
         .with_prompt(format!(
-            "skill '{}' は allowed-tools を持ちます。変換先を選択してください",
+            "skill '{}' has allowed-tools. Choose a conversion target",
             skill_name
         ))
         .items(items)
-        .default(1) // 保守的デフォルト: subagent
+        .default(1) // conservative default: subagent
         .interact();
 
     match selection {
@@ -180,8 +180,8 @@ pub fn degrade_to_subagent(skill_name: &str, ir: &IRNode) -> (Vec<SideArtifact>,
         id: Some("skills.context-fork".to_string()),
         message: format!(
             "skill '{}' degraded to subagent (.codex/agents/{}.toml). \
-             自動 fork ではなく spawn_agent の明示起動になります。\
-             features.multi_agent=true の設定も必要です。",
+             Auto-fork is replaced by an explicit spawn_agent call. \
+             features.multi_agent=true must also be set.",
             skill_name, skill_name
         ),
     });

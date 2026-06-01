@@ -4,40 +4,40 @@ paths:
   - "tests/**"
 ---
 
-# Rust 実装規約
+# Rust Implementation Rules
 
-## フォーマット・品質
+## Formatting & quality
 
-- `cargo fmt` を通す（フォーマット違反をコミットしない）
-- `cargo clippy -- -D warnings` を通す（警告をエラーとして扱う）
-- `cargo test` を通す
+- Pass `cargo fmt` (do not commit formatting violations)
+- Pass `cargo clippy -- -D warnings` (treat warnings as errors)
+- Pass `cargo test`
 
-## エラーハンドリング
+## Error handling
 
-- エラーは `anyhow` で扱う（`anyhow::Error` / `anyhow::Result` / `anyhow::bail!` / `anyhow::Context`）
-- パニックや `unwrap()` を本番ロジックに残さない
+- Use `anyhow` for errors (`anyhow::Error` / `anyhow::Result` / `anyhow::bail!` / `anyhow::Context`)
+- Do not leave panics or `unwrap()` in production logic
 
-## 型・フローの正本
+## Source of truth for types and flow
 
-- 型定義・処理フローは `docs/spec.md` を正とする
-- コードと設計書に齟齬があれば `docs/spec.md` に合わせる
-- `todo!()` を本番ロジックに残さない（スタブは段階的に実装する）
+- `docs/spec.md` is the source of truth for type definitions and processing flow
+- If code and the design document diverge, align to `docs/spec.md`
+- Do not leave `todo!()` in production logic (implement stubs incrementally)
 
-## mappings との関係
+## Relationship with mappings
 
-- `mappings/*.yaml` が変換の正本データ。コードはそれを駆動するエンジン
-- YAML の意味をコードで変えない。不明な場合は `mappings/SCHEMA.md` と `notes` を参照
-- `MappingDirection`（mappings 用）と `ConvDir`（pipeline 用）を混同しない
+- `mappings/*.yaml` is the authoritative data for conversions. Code is the engine that drives it.
+- Do not alter the semantics of YAML in code. When in doubt, consult `mappings/SCHEMA.md` and `notes`.
+- Do not conflate `MappingDirection` (for mappings) with `ConvDir` (for the pipeline).
 
-## 変換実装の原則（`docs/spec.md §6 IR Data Model` 〜 `docs/spec.md §10 Degrade Engine` に詳細）
+## Conversion implementation principles (see `docs/spec.md §6 IR Data Model` through `docs/spec.md §10 Degrade Engine` for details)
 
-- **model はティア const**（opus/sonnet/haiku ⇄ high/mid/low）。`model-map.yaml` は存在しない。ティア定義は `docs/spec.md §8 Transform Registry`（Model Tier Mapping 節）
-- **skill→skill か skill→subagent か**は `--skill-target`/`--interactive`/`decide_skill_target` で決定（`docs/spec.md §9.1 Skills`）。`model`/`effort`/skill 限定権限があれば subagent、純粋指示なら skill
-- **降格（skill→session/subagent）はスコープが変わる**。conversion report に**必ず明記**。`dropped` も silent にせず列挙（`docs/spec.md §10 Degrade Engine`、`docs/spec.md §12 Conversion Report`）
-- **Codex 側は流動的**（plugin 同梱 hooks は未ロードの可能性 `openai/codex#16430`、skill loader は未知 frontmatter を fail-open で無視、等）。`docs/spec.md §17 Codex Interop Notes & Known Issues` と各 `mappings` の `notes` を参照。降格結果は実機検証を推奨
+- **Model as tier const** (opus/sonnet/haiku ⇄ high/mid/low). `model-map.yaml` does not exist. Tier definitions are in `docs/spec.md §8 Transform Registry` (Model Tier Mapping section).
+- **skill→skill vs skill→subagent** is determined by `--skill-target` / `--interactive` / `decide_skill_target` (`docs/spec.md §9.1 Skills`). Use subagent if `model`/`effort`/skill-scoped permissions are present; use skill for pure instructions.
+- **Demotion (skill→session/subagent) changes scope.** Always record this explicitly in the conversion report. Also enumerate `dropped` entries — do not discard them silently (`docs/spec.md §10 Degrade Engine`, `docs/spec.md §12 Conversion Report`).
+- **The Codex side is fluid** (plugin-bundled hooks may not be loaded `openai/codex#16430`; the skill loader silently ignores unknown frontmatter fields in fail-open mode; etc.). Refer to `docs/spec.md §17 Codex Interop Notes & Known Issues` and each mapping's `notes`. Verify demotion results against a real Codex instance.
 
-## テスト戦略（`docs/spec.md §18 Testing Strategy`）
+## Test strategy (`docs/spec.md §18 Testing Strategy`)
 
-- `insta` スナップショット: `tests/fixtures/` をゴールデンとして使用
-- 往復テスト: `c2x → x2c` で `lossless` エントリは完全一致、`lossy`/`dropped` は既知差分のみ許容
-- mappings 不変条件テストは `rules/mappings.md` 参照
+- `insta` snapshots: use `tests/fixtures/` as golden files
+- Round-trip tests: `c2x → x2c` must produce exact matches for `lossless` entries; only known diffs are permitted for `lossy`/`dropped`
+- Mappings invariant tests: see `rules/mappings.md`

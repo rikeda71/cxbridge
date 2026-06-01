@@ -1,0 +1,5 @@
+{
+  "name": "npm-source-test-plugin",
+  "version": "1.0.0",
+  "description": "Test plugin for marketplace npm source dropped diagnostic"
+}

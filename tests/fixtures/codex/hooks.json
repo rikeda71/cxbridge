@@ -1,0 +1,24 @@
+{
+  "PreToolUse": [
+    {
+      "matcher": "^Bash$",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "echo pre-tool-use"
+        }
+      ]
+    }
+  ],
+  "Stop": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "echo done"
+        }
+      ]
+    }
+  ]
+}

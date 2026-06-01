@@ -1,0 +1,11 @@
+name = "skills-agent"
+description = "Agent with skills configuration"
+developer_instructions = '''
+You are a Python and JavaScript expert.
+'''
+
+[skills]
+config = [
+  { enabled = true, path = "python" },
+  { enabled = true, path = "javascript" },
+]

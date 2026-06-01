@@ -7,12 +7,12 @@ use crate::core::ir::{
     new_node, DegradeInfo, DiagLevel, Diagnostic, DroppedInfo, IRField, IRNode, Kind, Loss, Tool,
 };
 use crate::core::mappings::{
-    applies_direction, index_by_claude_field, index_by_codex_field, DomainMap, LossSpec,
+    applies_direction, index_by_claude_field, index_by_codex_field, DomainMap,
 };
 use crate::core::transforms::{apply_transforms, ConvDir, TransformCtx};
 use crate::handlers::{EmitFile, EmitPlan, Handler, LowerOpts};
 
-/// MCP ドメインのハンドラ。
+/// Handler for the MCP domain.
 pub struct McpHandler {
     pub map: DomainMap,
 }
@@ -30,10 +30,10 @@ impl Handler for McpHandler {
     fn parse(&self, path: &Path) -> anyhow::Result<Value> {
         let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
         if file_name == "config.toml" {
-            // config.toml は TOML 形式でパース
+            // config.toml is parsed as TOML
             parse_toml_mcp_config(path)
         } else {
-            // .mcp.json は JSON 形式でパース
+            // .mcp.json is parsed as JSON
             crate::core::serialize::json::parse_json_file(path)
         }
     }
@@ -63,13 +63,13 @@ impl Handler for McpHandler {
 }
 
 impl McpHandler {
-    /// Claude .mcp.json → IR（c2x 方向）
+    /// Lift Claude .mcp.json → IR (c2x direction).
     fn lift_c2x(&self, parsed: &Value, node: &mut IRNode) -> anyhow::Result<()> {
         let frontmatter = parsed["frontmatter"]
             .as_object()
             .ok_or_else(|| anyhow::anyhow!("Expected object at top level of .mcp.json"))?;
 
-        // .mcp.json トップレベル: { "mcpServers": { "<name>": { ... } } }
+        // .mcp.json top level: { "mcpServers": { "<name>": { ... } } }
         let servers = match frontmatter.get("mcpServers").and_then(|v| v.as_object()) {
             Some(s) => s,
             None => return Ok(()),
@@ -77,7 +77,7 @@ impl McpHandler {
 
         let idx = index_by_claude_field(&self.map);
 
-        // mcp.format エントリの記録
+        // Record the mcp.format entry
         if let Some(entry) = idx.get("mcpServers") {
             if applies_direction(entry, ConvDir::C2x) {
                 let ctx = TransformCtx {
@@ -105,7 +105,7 @@ impl McpHandler {
             }
         }
 
-        // 各サーバーを子 IRNode として処理
+        // Process each server as a child IRNode
         for (server_name, server_cfg) in servers {
             let child = self.lift_server_c2x(server_name, server_cfg, &idx)?;
             node.children.push(child);
@@ -129,17 +129,13 @@ impl McpHandler {
 
         for (key, value) in cfg {
             match key.as_str() {
-                // transport 判定: type フィールドは特殊処理
+                // Transport determination: the "type" field requires special handling
                 "type" => {
                     let transport_type = value.as_str().unwrap_or("");
                     match transport_type {
                         "sse" => {
-                            child.diagnostics.push(Diagnostic {
-                                level: DiagLevel::Drop,
-                                id: Some("mcp.transport_sse".to_string()),
-                                message: "SSE transport not supported by Codex (dropped)"
-                                    .to_string(),
-                            });
+                            // Drop recorded via IRField.dropped; no separate diagnostic to
+                            // avoid double-counting in the report.
                             child.fields.insert(
                                 "mcp.transport_type".to_string(),
                                 IRField {
@@ -158,12 +154,8 @@ impl McpHandler {
                             );
                         }
                         "ws" => {
-                            child.diagnostics.push(Diagnostic {
-                                level: DiagLevel::Drop,
-                                id: Some("mcp.transport_ws".to_string()),
-                                message: "WebSocket transport not supported by Codex (dropped)"
-                                    .to_string(),
-                            });
+                            // Drop recorded via IRField.dropped; no separate diagnostic to
+                            // avoid double-counting in the report.
                             child.fields.insert(
                                 "mcp.transport_type".to_string(),
                                 IRField {
@@ -180,7 +172,7 @@ impl McpHandler {
                             );
                         }
                         _ => {
-                            // stdio/http/streamable-http: type フィールドは Codex では暗黙なので記録だけ
+                            // stdio/http/streamable-http: the "type" field is implicit in Codex, so just record it
                             child.fields.insert(
                                 "mcp.transport_type".to_string(),
                                 IRField {
@@ -196,13 +188,19 @@ impl McpHandler {
                         }
                     }
                 }
-                // headers: Authorization Bearer の特殊処理
+                // headers: special handling for Authorization Bearer
                 "headers" => {
                     if let Some(headers) = value.as_object() {
                         self.lift_headers_c2x(headers, &mut child, idx);
                     }
                 }
-                // その他のフィールド
+                // oauth: nested sub-object — iterate sub-keys and look up via "oauth.<sub_key>"
+                "oauth" => {
+                    if let Some(oauth_obj) = value.as_object() {
+                        self.lift_oauth_c2x(oauth_obj, &mut child, idx);
+                    }
+                }
+                // All other fields
                 _ => {
                     if let Some(entry) = idx.get(key.as_str()) {
                         if !applies_direction(entry, ConvDir::C2x) {
@@ -216,11 +214,7 @@ impl McpHandler {
                         let (v, applied) =
                             apply_transforms(value, entry.transform.as_deref(), &ctx);
 
-                        let loss = match entry.loss {
-                            LossSpec::Lossless => Loss::Lossless,
-                            LossSpec::Lossy => Loss::Lossy,
-                            LossSpec::Dropped => Loss::Dropped,
-                        };
+                        let loss = Loss::from(&entry.loss);
                         let degrade_info = entry.degrade.as_ref().map(|d| DegradeInfo {
                             to: d.to.clone(),
                             target: d.target.clone(),
@@ -235,13 +229,12 @@ impl McpHandler {
                         } else {
                             None
                         };
-                        if entry.warn == Some(true) {
+                        // Dropped fields are recorded via IRField.dropped; no additional
+                        // diagnostic is needed.  For genuinely lossy warn:true fields,
+                        // emit one Warn diagnostic so build_report routes them correctly.
+                        if entry.warn == Some(true) && !matches!(loss, Loss::Dropped) {
                             child.diagnostics.push(Diagnostic {
-                                level: if matches!(loss, Loss::Dropped) {
-                                    DiagLevel::Drop
-                                } else {
-                                    DiagLevel::Warn
-                                },
+                                level: DiagLevel::Warn,
                                 id: Some(entry.id.clone()),
                                 message: entry.notes.clone().unwrap_or_else(|| entry.id.clone()),
                             });
@@ -270,17 +263,25 @@ impl McpHandler {
             }
         }
 
-        // env の http_transport 特殊変換
-        if let Some(env_obj) = cfg.get("env").and_then(|v| v.as_object()) {
-            // transport type を確認
-            let transport = cfg.get("type").and_then(|v| v.as_str()).unwrap_or("stdio");
-            if transport == "http" || transport == "streamable-http" {
-                // http transport の env → env_http_headers 変換
+        // For http/streamable-http transport, env entries with ${VAR} values are
+        // consumed into env_http_headers.  Convert them, then replace the
+        // mcp.env IRField (which the generic arm inserted as Lossless) with a
+        // Lossy marker so the report accurately reflects the transformation.
+        let transport = cfg.get("type").and_then(|v| v.as_str()).unwrap_or("stdio");
+        if transport == "http" || transport == "streamable-http" {
+            if let Some(env_obj) = cfg.get("env").and_then(|v| v.as_object()) {
                 self.convert_env_to_http_headers(env_obj, &mut child);
+            }
+            // Replace the Lossless mcp.env marker with a Lossy one to show
+            // the field was transformed, not passed through unchanged.
+            if let Some(env_field) = child.fields.get_mut("mcp.env") {
+                env_field.loss = Loss::Lossy;
+                env_field.warning =
+                    Some("env converted to env_http_headers for http transport".to_string());
             }
         }
 
-        // server_name をタグとして保存
+        // Store server_name as a tag
         child.source_path = server_name.to_string();
 
         Ok(child)
@@ -310,22 +311,56 @@ impl McpHandler {
                             dropped: None,
                         },
                     );
-                    // 他のヘッダを http_headers として収集
-                    let other_headers: Map<String, Value> = headers
-                        .iter()
-                        .filter(|(k, _)| *k != "Authorization")
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect();
-                    if !other_headers.is_empty() {
+                    // Apply the same ${VAR} split logic for remaining headers as the
+                    // non-Bearer path: route ${VAR} values to env_http_headers and
+                    // literal values to http_headers with a Warn diagnostic.
+                    let mut env_http_headers: Map<String, Value> = Map::new();
+                    let mut static_headers: Map<String, Value> = Map::new();
+                    for (k, v) in headers.iter().filter(|(k, _)| *k != "Authorization") {
+                        if let Some(val_str) = v.as_str() {
+                            if let Some(bare) = extract_env_var_ref(val_str) {
+                                env_http_headers.insert(k.clone(), Value::String(bare.to_string()));
+                            } else {
+                                child.diagnostics.push(Diagnostic {
+                                    level: DiagLevel::Warn,
+                                    id: Some("mcp.env_http_headers".to_string()),
+                                    message: format!(
+                                        "Header '{}' has literal value '{}': cannot auto-convert to env_http_headers (manual action required)",
+                                        k, val_str
+                                    ),
+                                });
+                                static_headers.insert(k.clone(), v.clone());
+                            }
+                        } else {
+                            static_headers.insert(k.clone(), v.clone());
+                        }
+                    }
+                    if !static_headers.is_empty() {
                         child.fields.insert(
                             "mcp.headers".to_string(),
                             IRField {
                                 id: "mcp.headers".to_string(),
-                                value: Value::Object(other_headers),
+                                value: Value::Object(static_headers),
                                 loss: Loss::Lossless,
                                 transforms_applied: vec!["rename".to_string()],
                                 degrade: None,
                                 warning: None,
+                                dropped: None,
+                            },
+                        );
+                    }
+                    if !env_http_headers.is_empty() {
+                        child.fields.insert(
+                            "mcp.env_http_headers".to_string(),
+                            IRField {
+                                id: "mcp.env_http_headers".to_string(),
+                                value: Value::Object(env_http_headers),
+                                loss: Loss::Lossy,
+                                transforms_applied: vec![],
+                                degrade: None,
+                                warning: Some(
+                                    "${VAR} headers converted to env_http_headers".to_string(),
+                                ),
                                 dropped: None,
                             },
                         );
@@ -335,17 +370,17 @@ impl McpHandler {
             }
         }
 
-        // Authorization に Bearer がない場合は全ヘッダを http_headers に変換
-        // ${VAR} パターンのヘッダは env_http_headers に変換
+        // When Authorization does not contain Bearer, convert all headers to http_headers.
+        // Headers with ${VAR} patterns are converted to env_http_headers.
         let mut env_http_headers: Map<String, Value> = Map::new();
         let mut static_headers: Map<String, Value> = Map::new();
 
         for (k, v) in headers {
             if let Some(val_str) = v.as_str() {
                 if let Some(var_name) = extract_env_var_ref(val_str) {
-                    env_http_headers.insert(k.clone(), Value::String(format!("${}", var_name)));
+                    env_http_headers.insert(k.clone(), Value::String(var_name.to_string()));
                 } else {
-                    // リテラル値は warn
+                    // Literal value — warn
                     child.diagnostics.push(Diagnostic {
                         level: DiagLevel::Warn,
                         id: Some("mcp.env_http_headers".to_string()),
@@ -392,16 +427,162 @@ impl McpHandler {
         }
     }
 
-    /// http transport の env フィールドを env_http_headers に変換する
+    /// Converts the oauth sub-object from Claude .mcp.json into IR fields.
+    ///
+    /// Each sub-key is looked up as `"oauth.<sub_key>"` in the index, and IR fields
+    /// are produced using the same logic as the generic `_` arm of `lift_server_c2x`.
+    fn lift_oauth_c2x(
+        &self,
+        oauth_obj: &Map<String, Value>,
+        child: &mut IRNode,
+        idx: &std::collections::HashMap<String, &crate::core::mappings::MapEntry>,
+    ) {
+        for (sub_key, value) in oauth_obj {
+            let dot_key = format!("oauth.{}", sub_key);
+            if let Some(entry) = idx.get(dot_key.as_str()) {
+                if !applies_direction(entry, ConvDir::C2x) {
+                    continue;
+                }
+                let ctx = TransformCtx {
+                    direction: ConvDir::C2x,
+                    args: None,
+                    field: entry,
+                };
+                let (v, applied) = apply_transforms(value, entry.transform.as_deref(), &ctx);
+
+                let loss = Loss::from(&entry.loss);
+                let degrade_info = entry.degrade.as_ref().map(|d| DegradeInfo {
+                    to: d.to.clone(),
+                    target: d.target.clone(),
+                });
+                let dropped_info = if matches!(loss, Loss::Dropped) {
+                    Some(DroppedInfo {
+                        reason: entry
+                            .notes
+                            .clone()
+                            .unwrap_or_else(|| format!("{} dropped in Codex", dot_key)),
+                    })
+                } else {
+                    None
+                };
+                // Dropped fields are recorded via IRField.dropped; no additional
+                // diagnostic is needed.  For genuinely lossy warn:true fields,
+                // emit one Warn diagnostic so build_report routes them correctly.
+                if entry.warn == Some(true) && !matches!(loss, Loss::Dropped) {
+                    child.diagnostics.push(Diagnostic {
+                        level: DiagLevel::Warn,
+                        id: Some(entry.id.clone()),
+                        message: entry.notes.clone().unwrap_or_else(|| entry.id.clone()),
+                    });
+                }
+                child.fields.insert(
+                    entry.id.clone(),
+                    IRField {
+                        id: entry.id.clone(),
+                        value: v,
+                        loss,
+                        transforms_applied: applied,
+                        degrade: degrade_info,
+                        warning: None,
+                        dropped: dropped_info,
+                    },
+                );
+            } else {
+                child.diagnostics.push(Diagnostic {
+                    level: DiagLevel::Drop,
+                    id: None,
+                    message: format!("unknown MCP oauth field: {}", sub_key),
+                });
+            }
+        }
+    }
+
+    /// Converts the oauth sub-object from Codex config.toml into IR fields.
+    ///
+    /// Each sub-key is looked up in the x2c index as `"oauth.<sub_key>"` first, then as
+    /// the bare `sub_key`. Codex's `scopes` maps to the `mcp.oauth.scopes` entry whose
+    /// `codex.field` is `"scopes"` (bare), so the dot-prefixed form is tried first.
+    fn lift_oauth_x2c(
+        &self,
+        oauth_obj: &Map<String, Value>,
+        child: &mut IRNode,
+        idx: &std::collections::HashMap<String, &crate::core::mappings::MapEntry>,
+    ) {
+        for (sub_key, value) in oauth_obj {
+            let dot_key = format!("oauth.{}", sub_key);
+            let entry = idx
+                .get(dot_key.as_str())
+                .or_else(|| idx.get(sub_key.as_str()));
+            if let Some(entry) = entry {
+                if !applies_direction(entry, ConvDir::X2c) {
+                    continue;
+                }
+                let ctx = TransformCtx {
+                    direction: ConvDir::X2c,
+                    args: None,
+                    field: entry,
+                };
+                let (v, applied) = apply_transforms(value, entry.transform.as_deref(), &ctx);
+
+                let loss = Loss::from(&entry.loss);
+                let dropped_info = if matches!(loss, Loss::Dropped) {
+                    Some(DroppedInfo {
+                        reason: entry
+                            .notes
+                            .clone()
+                            .unwrap_or_else(|| format!("{} Codex-only field", sub_key)),
+                    })
+                } else {
+                    None
+                };
+                // Dropped fields are recorded via IRField.dropped; no additional
+                // diagnostic is needed.  For genuinely lossy warn:true fields,
+                // emit one Warn diagnostic so build_report routes them correctly.
+                if entry.warn == Some(true) && !matches!(loss, Loss::Dropped) {
+                    child.diagnostics.push(Diagnostic {
+                        level: DiagLevel::Warn,
+                        id: Some(entry.id.clone()),
+                        message: entry.notes.clone().unwrap_or_else(|| entry.id.clone()),
+                    });
+                }
+                child.fields.insert(
+                    entry.id.clone(),
+                    IRField {
+                        id: entry.id.clone(),
+                        value: v,
+                        loss,
+                        transforms_applied: applied,
+                        degrade: None,
+                        warning: None,
+                        dropped: dropped_info,
+                    },
+                );
+            } else {
+                child.diagnostics.push(Diagnostic {
+                    level: DiagLevel::Warn,
+                    id: None,
+                    message: format!("unknown Codex MCP oauth field (x2c): {}", sub_key),
+                });
+            }
+        }
+    }
+
+    /// Converts http-transport `env` entries into `env_http_headers`, merging
+    /// with any existing `mcp.env_http_headers` IRField produced by `lift_headers_c2x`.
+    ///
+    /// When both `headers` and `env` are present on an http server, each source
+    /// independently contributes entries.  Inserting a fresh IRField would
+    /// overwrite the headers-derived entries, causing silent data loss.  Instead
+    /// we extract the existing object (if any) and merge the new entries into it.
     fn convert_env_to_http_headers(&self, env: &Map<String, Value>, child: &mut IRNode) {
-        let mut env_http: Map<String, Value> = Map::new();
+        // Collect new entries from env.
+        let mut new_entries: Map<String, Value> = Map::new();
         for (k, v) in env {
             if let Some(val_str) = v.as_str() {
                 if let Some(var_name) = extract_env_var_ref(val_str) {
-                    // ${VAR} → $VAR
-                    env_http.insert(k.clone(), Value::String(format!("${}", var_name)));
+                    new_entries.insert(k.clone(), Value::String(var_name.to_string()));
                 } else {
-                    // リテラル値 → warn
+                    // Literal value — cannot safely emit as env_http_headers.
                     child.diagnostics.push(Diagnostic {
                         level: DiagLevel::Warn,
                         id: Some("mcp.env_http_headers".to_string()),
@@ -413,12 +594,37 @@ impl McpHandler {
                 }
             }
         }
-        if !env_http.is_empty() {
+
+        if new_entries.is_empty() {
+            return;
+        }
+
+        // Merge into the existing IRField if one was already inserted by
+        // lift_headers_c2x, or insert a fresh one.
+        if let Some(existing) = child.fields.get_mut("mcp.env_http_headers") {
+            if let Value::Object(ref mut existing_map) = existing.value {
+                for (k, v) in new_entries {
+                    if existing_map.contains_key(&k) {
+                        // Key collision: warn and keep the first (headers-derived) value.
+                        child.diagnostics.push(Diagnostic {
+                            level: DiagLevel::Warn,
+                            id: Some("mcp.env_http_headers".to_string()),
+                            message: format!(
+                                "env_http_headers key '{}' from env conflicts with headers-derived entry; headers value kept",
+                                k
+                            ),
+                        });
+                    } else {
+                        existing_map.insert(k, v);
+                    }
+                }
+            }
+        } else {
             child.fields.insert(
                 "mcp.env_http_headers".to_string(),
                 IRField {
                     id: "mcp.env_http_headers".to_string(),
-                    value: Value::Object(env_http),
+                    value: Value::Object(new_entries),
                     loss: Loss::Lossy,
                     transforms_applied: vec![],
                     degrade: None,
@@ -431,14 +637,14 @@ impl McpHandler {
         }
     }
 
-    /// Codex config.toml → IR（x2c 方向）
+    /// Lift Codex config.toml → IR (x2c direction).
     fn lift_x2c(&self, parsed: &Value, node: &mut IRNode) -> anyhow::Result<()> {
-        // config.toml の場合は frontmatter に mcp_servers が格納されている
+        // For config.toml, mcp_servers is stored under "frontmatter"
         let frontmatter = parsed["frontmatter"]
             .as_object()
             .ok_or_else(|| anyhow::anyhow!("Expected object at frontmatter"))?;
 
-        // mcp_servers が存在しない場合も許容（空 map として処理）
+        // Tolerate missing mcp_servers (treat as empty map)
         let servers = match frontmatter.get("mcp_servers").and_then(|v| v.as_object()) {
             Some(s) => s,
             None => return Ok(()),
@@ -467,9 +673,12 @@ impl McpHandler {
             None => return Ok(child),
         };
 
-        // enabled: false のエントリは除外
+        // Exclude entries with enabled: false
         if let Some(enabled) = cfg.get("enabled") {
             if enabled == &Value::Bool(false) {
+                // Push exactly one Drop diagnostic so build_report records one entry.
+                // lower_x2c detects disabled servers via this diagnostic; no IRField
+                // is inserted to avoid surfacing internal bookkeeping in the report.
                 child.diagnostics.push(Diagnostic {
                     level: DiagLevel::Drop,
                     id: Some("mcp.enabled".to_string()),
@@ -478,24 +687,11 @@ impl McpHandler {
                         server_name
                     ),
                 });
-                // enabled=false フラグを設定して lower で除外できるようにする
-                child.fields.insert(
-                    "__disabled".to_string(),
-                    IRField {
-                        id: "__disabled".to_string(),
-                        value: Value::Bool(true),
-                        loss: Loss::Dropped,
-                        transforms_applied: vec![],
-                        degrade: None,
-                        warning: None,
-                        dropped: None,
-                    },
-                );
                 return Ok(child);
             }
         }
 
-        // transport 判定: command 有 → stdio、url 有 → http
+        // Transport determination: command present → stdio; url present → http
         let has_command = cfg.contains_key("command");
         let has_url = cfg.contains_key("url");
         let transport_type = if has_command {
@@ -551,6 +747,12 @@ impl McpHandler {
                             dropped: None,
                         },
                     );
+                }
+                // oauth: nested sub-object in Codex config.toml
+                "oauth" => {
+                    if let Some(oauth_obj) = value.as_object() {
+                        self.lift_oauth_x2c(oauth_obj, &mut child, idx);
+                    }
                 }
                 "bearer_token_env_var" => {
                     // bearer_token_env_var → headers.Authorization: "Bearer ${VAR}"
@@ -609,11 +811,7 @@ impl McpHandler {
                         let (v, applied) =
                             apply_transforms(value, entry.transform.as_deref(), &ctx);
 
-                        let loss = match entry.loss {
-                            LossSpec::Lossless => Loss::Lossless,
-                            LossSpec::Lossy => Loss::Lossy,
-                            LossSpec::Dropped => Loss::Dropped,
-                        };
+                        let loss = Loss::from(&entry.loss);
                         let dropped_info = if matches!(loss, Loss::Dropped) {
                             Some(DroppedInfo {
                                 reason: entry
@@ -624,13 +822,12 @@ impl McpHandler {
                         } else {
                             None
                         };
-                        if entry.warn == Some(true) {
+                        // Dropped fields are recorded via IRField.dropped; no additional
+                        // diagnostic is needed.  For genuinely lossy warn:true fields,
+                        // emit one Warn diagnostic so build_report routes them correctly.
+                        if entry.warn == Some(true) && !matches!(loss, Loss::Dropped) {
                             child.diagnostics.push(Diagnostic {
-                                level: if matches!(loss, Loss::Dropped) {
-                                    DiagLevel::Drop
-                                } else {
-                                    DiagLevel::Warn
-                                },
+                                level: DiagLevel::Warn,
                                 id: Some(entry.id.clone()),
                                 message: entry.notes.clone().unwrap_or_else(|| entry.id.clone()),
                             });
@@ -648,7 +845,7 @@ impl McpHandler {
                             },
                         );
                     } else {
-                        // Codex 固有のフィールドはそのまま記録しておく（warn）
+                        // Record unknown Codex-specific fields with a warning
                         child.diagnostics.push(Diagnostic {
                             level: DiagLevel::Warn,
                             id: None,
@@ -663,10 +860,10 @@ impl McpHandler {
         Ok(child)
     }
 
-    /// Claude .mcp.json を生成（c2x 方向）
+    /// Generate Claude .mcp.json (c2x direction).
     fn lower_c2x(&self, ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPlan> {
         let mut files = Vec::new();
-        let mut diagnostics = Vec::new();
+        let diagnostics = Vec::new();
 
         let out_root = opts.out.as_deref().unwrap_or(".");
         let output_path = format!("{}/.mcp.json", out_root);
@@ -675,7 +872,7 @@ impl McpHandler {
 
         for child in &ir.children {
             let server_name = child.source_path.clone();
-            let server_cfg = self.build_codex_server_cfg(child, &mut diagnostics)?;
+            let server_cfg = self.build_codex_server_cfg(child)?;
             mcp_servers.insert(server_name, server_cfg);
         }
 
@@ -692,29 +889,30 @@ impl McpHandler {
         Ok(EmitPlan { files, diagnostics })
     }
 
-    /// x2c: Codex config.toml の [mcp_servers.*] → Claude .mcp.json
+    /// x2c: Codex config.toml [mcp_servers.*] → Claude .mcp.json
     fn lower_x2c(&self, ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPlan> {
         let mut files = Vec::new();
-        let mut diagnostics = Vec::new();
+        let diagnostics = Vec::new();
 
         let out_root = opts.out.as_deref().unwrap_or(".");
 
-        // x2c は .mcp.json のみ出力する（config.toml は出力しない）
+        // x2c outputs .mcp.json only (config.toml is not emitted)
         let mut mcp_servers_map: Map<String, Value> = Map::new();
 
         for child in &ir.children {
-            // enabled=false は除外
-            if child.fields.contains_key("__disabled") {
-                diagnostics.push(Diagnostic {
-                    level: DiagLevel::Drop,
-                    id: Some("mcp.enabled".to_string()),
-                    message: format!("Server '{}' excluded (enabled=false)", child.source_path),
-                });
+            // Skip entries with enabled=false. Drop diagnostics are already pushed
+            // to child.diagnostics by lift_server_x2c, so they are not added to
+            // plan.diagnostics here.
+            let is_disabled = child
+                .diagnostics
+                .iter()
+                .any(|d| d.id.as_deref() == Some("mcp.enabled") && d.level == DiagLevel::Drop);
+            if is_disabled {
                 continue;
             }
 
             let server_name = child.source_path.clone();
-            let server_cfg = self.build_claude_server_cfg(child, &mut diagnostics)?;
+            let server_cfg = self.build_claude_server_cfg(child)?;
             mcp_servers_map.insert(server_name, server_cfg);
         }
 
@@ -731,18 +929,14 @@ impl McpHandler {
         Ok(EmitPlan { files, diagnostics })
     }
 
-    /// IRNode(child) から Codex MCP サーバー設定を構築する（c2x）
-    fn build_codex_server_cfg(
-        &self,
-        child: &IRNode,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> anyhow::Result<Value> {
+    /// Build Codex MCP server configuration from an IRNode child (c2x).
+    fn build_codex_server_cfg(&self, child: &IRNode) -> anyhow::Result<Value> {
         let mut cfg: Map<String, Value> = Map::new();
 
         for (id, field) in &child.fields {
             match id.as_str() {
-                "mcp.format" | "mcp.transport_type" | "__disabled" => {
-                    // これらは直接出力しない（transport_type は command/url から暗黙に決まる）
+                "mcp.format" | "mcp.transport_type" => {
+                    // Not emitted directly; transport_type is implied by command/url.
                 }
                 "mcp.command" => {
                     if let Some(entry) = self.map.entries.iter().find(|e| e.id == "mcp.command") {
@@ -763,14 +957,15 @@ impl McpHandler {
                     }
                 }
                 "mcp.env" => {
-                    // env は stdio 専用。http/streamable-http では env_http_headers に変換済みなのでスキップ。
+                    // env is stdio-only; for http/streamable-http it has already been
+                    // converted to env_http_headers, so skip it.
                     let transport = child
                         .fields
                         .get("mcp.transport_type")
                         .and_then(|f| f.value.as_str())
                         .unwrap_or("stdio");
                     if transport == "http" || transport == "streamable-http" {
-                        // http transport では env は env_http_headers に変換済みなのでスキップ
+                        // Already converted to env_http_headers for http transport
                     } else if let Some(entry) = self.map.entries.iter().find(|e| e.id == "mcp.env")
                     {
                         if let Some(codex_field) =
@@ -828,14 +1023,8 @@ impl McpHandler {
                     }
                 }
                 _ => {
-                    // dropped フィールドは出力しない
-                    if matches!(field.loss, Loss::Dropped) {
-                        diagnostics.push(Diagnostic {
-                            level: DiagLevel::Drop,
-                            id: Some(id.clone()),
-                            message: format!("{} dropped in c2x", id),
-                        });
-                    }
+                    // Dropped fields are already recorded via IRField.dropped and
+                    // reported by build_report.  No additional diagnostic needed here.
                 }
             }
         }
@@ -843,22 +1032,18 @@ impl McpHandler {
         Ok(Value::Object(cfg))
     }
 
-    /// IRNode(child) から Claude MCP サーバー設定を構築する（x2c）
-    fn build_claude_server_cfg(
-        &self,
-        child: &IRNode,
-        diagnostics: &mut Vec<Diagnostic>,
-    ) -> anyhow::Result<Value> {
+    /// Build Claude MCP server configuration from an IRNode child (x2c).
+    fn build_claude_server_cfg(&self, child: &IRNode) -> anyhow::Result<Value> {
         let mut cfg: Map<String, Value> = Map::new();
 
-        // transport_type → type フィールド
+        // transport_type → "type" field
         if let Some(f) = child.fields.get("mcp.transport_type") {
             cfg.insert("type".to_string(), f.value.clone());
         }
 
         for (id, field) in &child.fields {
             match id.as_str() {
-                "mcp.transport_type" | "__disabled" | "mcp.enabled" => {}
+                "mcp.transport_type" | "mcp.enabled" => {}
                 "mcp.command" => {
                     cfg.insert("command".to_string(), field.value.clone());
                 }
@@ -885,14 +1070,19 @@ impl McpHandler {
                     }
                 }
                 "mcp.env_http_headers" => {
-                    // env_http_headers → headers (${VAR} 展開)
+                    // env_http_headers → headers: wrap bare var names in ${...}
                     let headers = cfg
                         .entry("headers".to_string())
                         .or_insert_with(|| Value::Object(Map::new()));
                     if let Some(obj) = headers.as_object_mut() {
                         if let Some(env_headers) = field.value.as_object() {
                             for (k, v) in env_headers {
-                                obj.insert(k.clone(), v.clone());
+                                let expanded = if let Some(var_name) = v.as_str() {
+                                    Value::String(format!("${{{}}}", var_name))
+                                } else {
+                                    v.clone()
+                                };
+                                obj.insert(k.clone(), expanded);
                             }
                         }
                     }
@@ -929,13 +1119,8 @@ impl McpHandler {
                     }
                 }
                 _ => {
-                    if matches!(field.loss, Loss::Dropped) {
-                        diagnostics.push(Diagnostic {
-                            level: DiagLevel::Drop,
-                            id: Some(id.clone()),
-                            message: format!("{} dropped in x2c", id),
-                        });
-                    }
+                    // Dropped fields are already recorded via IRField.dropped and
+                    // reported by build_report.  No additional diagnostic needed here.
                 }
             }
         }
@@ -944,22 +1129,21 @@ impl McpHandler {
     }
 }
 
-/// config.toml をパースして handler の parse() 契約に従う Value を返す。
-/// [mcp_servers.*] セクションを mcpServers として frontmatter に格納する。
+/// Parses config.toml and returns a Value conforming to the handler's parse() contract.
+/// The [mcp_servers.*] section is stored as "mcp_servers" under "frontmatter".
 fn parse_toml_mcp_config(path: &Path) -> anyhow::Result<Value> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read config.toml: {}", path.display()))?;
 
     let abs_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
 
-    // toml を serde_json::Value に変換
-    // toml クレートを使って型変換
+    // Convert TOML to serde_json::Value using the toml crate
     let toml_val: toml::Value = content
         .parse()
         .with_context(|| format!("Failed to parse TOML: {}", path.display()))?;
 
-    // TOML Value → JSON Value の変換
-    let json_val = toml_to_json(&toml_val);
+    // Convert TOML Value → JSON Value
+    let json_val = crate::core::serialize::toml_to_json(&toml_val)?;
 
     Ok(serde_json::json!({
         "frontmatter": json_val,
@@ -968,28 +1152,7 @@ fn parse_toml_mcp_config(path: &Path) -> anyhow::Result<Value> {
     }))
 }
 
-/// toml::Value → serde_json::Value の変換ヘルパ。
-fn toml_to_json(v: &toml::Value) -> Value {
-    match v {
-        toml::Value::String(s) => Value::String(s.clone()),
-        toml::Value::Integer(i) => Value::Number(serde_json::Number::from(*i)),
-        toml::Value::Float(f) => {
-            Value::Number(serde_json::Number::from_f64(*f).unwrap_or(serde_json::Number::from(0)))
-        }
-        toml::Value::Boolean(b) => Value::Bool(*b),
-        toml::Value::Array(arr) => Value::Array(arr.iter().map(toml_to_json).collect()),
-        toml::Value::Table(tbl) => {
-            let mut map = serde_json::Map::new();
-            for (k, v) in tbl {
-                map.insert(k.clone(), toml_to_json(v));
-            }
-            Value::Object(map)
-        }
-        toml::Value::Datetime(dt) => Value::String(dt.to_string()),
-    }
-}
-
-/// "Bearer ${VAR}" から VAR を抽出するヘルパ。
+/// Extracts VAR from a "Bearer ${VAR}" string.
 fn extract_bearer_env_var(s: &str) -> Option<String> {
     if let Some(rest) = s.strip_prefix("Bearer ${") {
         if let Some(end) = rest.rfind('}') {
@@ -1002,13 +1165,14 @@ fn extract_bearer_env_var(s: &str) -> Option<String> {
     None
 }
 
-/// "${VAR}" から VAR を抽出するヘルパ。
-/// 値全体が `${VAR}` 形式（純粋な環境変数参照）のみ抽出する。
-/// `${VAR} suffix` のような複合値は None を返す（部分マッチを防止するため末尾 '}' を検証）。
+/// Extracts VAR from a "${VAR}" string.
+/// Only pure environment-variable references of the form `${VAR}` are extracted.
+/// Composite values such as `${VAR} suffix` return None (the trailing `}` is
+/// verified to prevent partial matches).
 fn extract_env_var_ref(s: &str) -> Option<String> {
     if s.starts_with("${") && s.ends_with('}') {
         let inner = &s[2..s.len() - 1];
-        // ${VAR:-default} のデフォルト値部分は無視し VAR のみ取得
+        // For ${VAR:-default}, ignore the default part and extract only VAR
         let var_name = inner.split(":-").next().unwrap_or(inner);
         if !var_name.is_empty() {
             return Some(var_name.to_string());
@@ -1034,12 +1198,14 @@ mod tests {
     fn default_opts() -> LowerOpts {
         LowerOpts {
             out: None,
+            only: vec![],
             scope: crate::handlers::Scope::Project,
             dual_manifest: false,
             hooks_target: crate::handlers::Scope::User,
             skill_target: crate::handlers::SkillTargetMode::Skill,
             interactive: false,
             rewrite_body: false,
+            keep_claude_frontmatter: false,
         }
     }
 
@@ -1138,8 +1304,8 @@ mod tests {
         let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
         let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
 
-        // .mcp.json が生成されているか確認（c2x では Claude の .mcp.json のまま変換先）
-        // 実際は Codex 側への変換なので .mcp.json が生成される
+        // Verify that .mcp.json was generated.
+        // c2x converts to Codex, so .mcp.json is the output format.
         assert!(!plan.files.is_empty());
         let mcp_file = plan.files.iter().find(|f| f.path.ends_with(".mcp.json"));
         assert!(mcp_file.is_some(), "Expected .mcp.json in output");
@@ -1163,15 +1329,15 @@ mod tests {
         let parsed = h.parse(&mcp_path).unwrap();
         let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
 
-        // alwaysLoad, headersHelper は Claude 固有なので Drop 診断が出るか、
-        // or 未知フィールドとして Drop される
+        // alwaysLoad, headersHelper are Claude-specific, so either Drop diagnostics
+        // are emitted or they are dropped as unknown fields.
         let child = &ir.children[0];
         let drop_diags: Vec<_> = child
             .diagnostics
             .iter()
             .filter(|d| d.level == DiagLevel::Drop)
             .collect();
-        // alwaysLoad と headersHelper は unknown MCP fields or dropped
+        // alwaysLoad and headersHelper are either unknown MCP fields or dropped
         assert!(
             !drop_diags.is_empty()
                 || child
@@ -1201,5 +1367,203 @@ mod tests {
             Some("API_KEY".to_string())
         );
         assert_eq!(extract_env_var_ref("literal_value"), None);
+    }
+
+    // gap 5/42: OAuth nested fields silently dropped
+
+    /// c2x: oauth sub-object must produce mcp.oauth.client_id (lossless),
+    /// mcp.oauth.scopes (lossless, array), mcp.oauth.callback_port (lossy),
+    /// and mcp.oauth.auth_server_metadata_url (dropped+warn).
+    #[test]
+    fn test_mcp_lift_c2x_oauth_roundtrip() {
+        let dir = TempDir::new().unwrap();
+        let mcp_path = dir.path().join(".mcp.json");
+        std::fs::write(
+            &mcp_path,
+            r#"{
+  "mcpServers": {
+    "s": {
+      "type": "http",
+      "url": "https://x.com",
+      "oauth": {
+        "clientId": "id",
+        "scopes": "a:read b:write",
+        "callbackPort": 9876,
+        "authServerMetadataUrl": "https://auth.example.com"
+      }
+    }
+  }
+}"#,
+        )
+        .unwrap();
+
+        let h = make_handler();
+        let parsed = h.parse(&mcp_path).unwrap();
+        let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
+        let child = &ir.children[0];
+
+        // mcp.oauth.client_id: lossless
+        let cid = child
+            .fields
+            .get("mcp.oauth.client_id")
+            .expect("mcp.oauth.client_id must be in IR");
+        assert_eq!(cid.value, Value::String("id".to_string()));
+        assert!(matches!(cid.loss, Loss::Lossless));
+
+        // mcp.oauth.scopes: lossless, array after str_to_list:space
+        let scopes = child
+            .fields
+            .get("mcp.oauth.scopes")
+            .expect("mcp.oauth.scopes must be in IR");
+        assert!(matches!(scopes.loss, Loss::Lossless));
+        let arr = scopes.value.as_array().expect("scopes must be array");
+        assert_eq!(
+            arr,
+            &vec![
+                Value::String("a:read".to_string()),
+                Value::String("b:write".to_string()),
+            ]
+        );
+
+        // mcp.oauth.callback_port: lossy
+        let cp = child
+            .fields
+            .get("mcp.oauth.callback_port")
+            .expect("mcp.oauth.callback_port must be in IR");
+        assert!(matches!(cp.loss, Loss::Lossy));
+        assert_eq!(cp.value, Value::Number(serde_json::Number::from(9876)));
+
+        // mcp.oauth.auth_server_metadata_url: dropped
+        // The field is represented via IRField.loss == Dropped; build_report reads
+        // it from ir.fields.  No additional Diagnostic is pushed (doing so would
+        // cause each dropped field to be counted multiple times in the summary).
+        let asm = child
+            .fields
+            .get("mcp.oauth.auth_server_metadata_url")
+            .expect("mcp.oauth.auth_server_metadata_url must be in IR");
+        assert!(matches!(asm.loss, Loss::Dropped));
+        // No spurious Diagnostic must be pushed for this dropped field.
+        let has_spurious_diag = child
+            .diagnostics
+            .iter()
+            .any(|d| d.id.as_deref() == Some("mcp.oauth.auth_server_metadata_url"));
+        assert!(
+            !has_spurious_diag,
+            "mcp.oauth.auth_server_metadata_url must NOT push a redundant Diagnostic \
+             (the IRField.dropped entry is the canonical source); diagnostics: {:?}",
+            child.diagnostics
+        );
+
+        // no unknown-field diagnostic for oauth
+        let has_unknown = child
+            .diagnostics
+            .iter()
+            .any(|d| d.message.contains("unknown MCP server field: oauth"));
+        assert!(
+            !has_unknown,
+            "oauth must not produce unknown-field diagnostic"
+        );
+    }
+
+    /// c2x: server with both headers (${VAR}) and env (${VAR}) must merge both
+    /// into a single env_http_headers IRField — no silent overwrite.
+    #[test]
+    fn test_lift_c2x_merges_headers_and_env_into_env_http_headers() {
+        let parsed = serde_json::json!({
+            "frontmatter": {
+                "mcpServers": {
+                    "s": {
+                        "type": "http",
+                        "url": "https://x.com",
+                        "headers": { "X-From-Headers": "${FROM_HEADERS}" },
+                        "env":     { "API_KEY": "${API_KEY}" }
+                    }
+                }
+            },
+            "body": ""
+        });
+
+        let h = make_handler();
+        let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
+        let server = ir.children.iter().find(|c| c.source_path == "s").unwrap();
+
+        // Only one env_http_headers field must exist (merged)
+        let env_hdr = server
+            .fields
+            .get("mcp.env_http_headers")
+            .expect("mcp.env_http_headers must be present");
+        let hdr_obj = env_hdr
+            .value
+            .as_object()
+            .expect("env_http_headers must be an object");
+
+        assert!(
+            hdr_obj.contains_key("X-From-Headers"),
+            "headers-derived entry must survive merge: {:?}",
+            hdr_obj
+        );
+        assert_eq!(
+            hdr_obj["X-From-Headers"],
+            Value::String("FROM_HEADERS".to_string())
+        );
+        assert!(
+            hdr_obj.contains_key("API_KEY"),
+            "env-derived entry must survive merge: {:?}",
+            hdr_obj
+        );
+        assert_eq!(hdr_obj["API_KEY"], Value::String("API_KEY".to_string()));
+
+        // mcp.env must NOT remain as a separate Lossless IRField for http transport
+        // (it was fully consumed by env_http_headers, so it should not show lossless)
+        if let Some(env_field) = server.fields.get("mcp.env") {
+            assert!(
+                !matches!(env_field.loss, Loss::Lossless),
+                "mcp.env must not be Lossless for http transport (it was transformed)"
+            );
+        }
+    }
+
+    /// x2c: Codex config.toml with [oauth] sub-table must produce
+    /// mcp.oauth.client_id (lossless) and mcp.oauth.scopes (lossless, joined string).
+    #[test]
+    fn test_mcp_lift_x2c_oauth() {
+        let dir = TempDir::new().unwrap();
+        let config_path = dir.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            r#"[mcp_servers.s]
+url = "https://x.com"
+
+[mcp_servers.s.oauth]
+client_id = "id"
+scopes = ["a:read", "b:write"]
+"#,
+        )
+        .unwrap();
+
+        let h = make_handler();
+        let parsed = h.parse(&config_path).unwrap();
+        let ir = h.lift(&parsed, ConvDir::X2c).unwrap();
+        let child = &ir.children[0];
+
+        // mcp.oauth.client_id: lossless
+        let cid = child
+            .fields
+            .get("mcp.oauth.client_id")
+            .expect("mcp.oauth.client_id must be in x2c IR");
+        assert_eq!(cid.value, Value::String("id".to_string()));
+        assert!(matches!(cid.loss, Loss::Lossless));
+
+        // mcp.oauth.scopes: lossless, joined by space
+        let scopes = child
+            .fields
+            .get("mcp.oauth.scopes")
+            .expect("mcp.oauth.scopes must be in x2c IR");
+        assert!(matches!(scopes.loss, Loss::Lossless));
+        assert_eq!(
+            scopes.value,
+            Value::String("a:read b:write".to_string()),
+            "scopes must be joined by space in x2c"
+        );
     }
 }

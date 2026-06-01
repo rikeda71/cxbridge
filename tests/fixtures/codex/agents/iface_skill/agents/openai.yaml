@@ -1,0 +1,10 @@
+policy:
+  allow_implicit_invocation: true
+interface:
+  display_name: "My Skill"
+  icon_small: icon.png
+  brand_color: "#FF0"
+  default_prompt: "Start with:"
+dependencies:
+  tools:
+    - mcp__srv__tool

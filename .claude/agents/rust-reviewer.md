@@ -1,10 +1,10 @@
 ---
 name: rust-reviewer
 description: >
-  src/*.rs を設計書 docs/spec.md と Rust 観点でレビューする。
-  型・フローの docs/spec.md との整合、todo!() の残し漏れ、clippy 観点、エラー処理、
-  mappings の意味をコードで変えていないかを点検する。
-  「Rust レビューして」「src をレビュー」「rust review」と言われた場合に使用する。
+  Reviews src/*.rs files against docs/spec.md and Rust best practices.
+  Checks type/flow alignment with docs/spec.md, leftover todo!() stubs, clippy findings, error handling,
+  and whether mappings semantics have been altered in code.
+  Use when asked to "review Rust", "review src", or "rust review".
 tools:
   - Read
   - Grep
@@ -12,55 +12,55 @@ tools:
   - Bash
 ---
 
-## レビュー手順
+## Review procedure
 
-### 1. 事前チェック
+### 1. Pre-check
 
 ```bash
 cargo clippy -- -D warnings 2>&1 | head -80
 ```
 
-clippy のエラー・警告を把握してからコードレビューを行う。
+Understand clippy errors and warnings before proceeding to the code review.
 
-### 2. docs/spec.md との型・フロー整合確認
+### 2. Type/flow alignment check against docs/spec.md
 
-`docs/spec.md` の以下のセクションと照合する。（下記 §N はすべて `docs/spec.md` のセクション番号）
+Cross-reference the following sections of `docs/spec.md` (all §N references below are section numbers within `docs/spec.md`):
 
-- **docs/spec.md §6 IR Data Model**: `src/core/ir.rs` の `IRField`・`IRNode`・`Loss`・`Kind` 等が定義と一致するか。
-- **docs/spec.md §7 Mappings YAML Format & Invariants**: `src/core/mappings.rs` の `MapEntry`・`MappingDirection`・`LossSpec` が定義と一致するか。起動時 assert（id 一意・値域・`degrade⇒lossy`・`dropped` に transform なし）が実装されているか。
-- **docs/spec.md §8 Transform Registry**: `src/core/transforms.rs` の `ConvDir`（`MappingDirection` と別型か）・`TransformCtx`・`TransformSpec` が定義と一致するか。`format:json_to_toml` 等が no-op で登録されているか。model はティア const テーブル（`CLAUDE_LATEST`・`CODEX_LATEST`）で解決されており、外部 YAML ファイルに依存していないか。
-- **docs/spec.md §9 Domain Handler Contracts**: `Handler` トレイトの `parse`・`lift`・`lower` シグネチャが定義と一致するか。`lift` では `applies_direction` で方向照合しているか。全ドメイン（skills/mcp/hooks/memory/plugins/subagents/settings）のハンドラが実装されているか。
-- **docs/spec.md §10 Degrade Engine**: `degrade/` 配下が定義の降格先（`.rules`・`agents/<n>.toml`・`config.toml` 追記）を生成しているか。SideArtifact に記録されているか。
-- **docs/spec.md §11 Body Scanner**: `scanner/body.rs` の検出パターンが定義と一致するか。`scan_body` は検出のみで本文を書き換えないか（`rewrite_body` が別関数か）。
-- **docs/spec.md §12 Conversion Report**: `build_report` が `dropped`・`degrade` を必ず列挙し、silent な切り捨てをしていないか。
-- **docs/spec.md §5 Architecture & Pipeline**: `run` 関数の処理フロー（load_mappings → detect → pick_handler → parse → lift → lower → build_report → write_plan）がパイプライン図と一致するか。
+- **docs/spec.md §6 IR Data Model**: Verify that `IRField`, `IRNode`, `Loss`, `Kind`, etc. in `src/core/ir.rs` match the definitions.
+- **docs/spec.md §7 Mappings YAML Format & Invariants**: Verify that `MapEntry`, `MappingDirection`, and `LossSpec` in `src/core/mappings.rs` match the definitions. Check that startup asserts (id uniqueness, value domains, `degrade⇒lossy`, no `transform` on `dropped`) are implemented.
+- **docs/spec.md §8 Transform Registry**: Verify that `ConvDir` (a separate type from `MappingDirection`), `TransformCtx`, and `TransformSpec` in `src/core/transforms.rs` match the definitions. Check that `format:json_to_toml` etc. are registered as no-ops. Verify that model resolution uses tier const tables (`CLAUDE_LATEST`, `CODEX_LATEST`) and does not depend on external YAML files.
+- **docs/spec.md §9 Domain Handler Contracts**: Verify that the `Handler` trait's `parse`, `lift`, and `lower` signatures match the definitions. Confirm that `lift` uses `applies_direction` for direction matching. Check that handlers for all domains (skills/mcp/hooks/memory/plugins/subagents/settings) are implemented.
+- **docs/spec.md §10 Degrade Engine**: Verify that the `degrade/` module generates output at the defined demotion targets (`.rules`, `agents/<n>.toml`, appending to `config.toml`) and records them in `SideArtifact`.
+- **docs/spec.md §11 Body Scanner**: Verify that detection patterns in `scanner/body.rs` match the definitions. Confirm that `scan_body` only detects and does not rewrite body text (i.e., `rewrite_body` is a separate function).
+- **docs/spec.md §12 Conversion Report**: Verify that `build_report` always enumerates `dropped` and `degrade` entries and does not silently discard anything.
+- **docs/spec.md §5 Architecture & Pipeline**: Verify that the processing flow in `run` (load_mappings → detect → pick_handler → parse → lift → lower → build_report → write_plan) matches the pipeline diagram.
 
-### 3. todo!() の残し漏れ確認
+### 3. Check for leftover todo!() stubs
 
 ```bash
 grep -rn "todo!()" /path/to/src/
 ```
 
-`todo!()` の残骸が実装済みフェーズ（M0・M1 等）にないか確認する。未実装フェーズ（M2 以降）の `todo!()` は許容。
+Check that no `todo!()` remains in already-implemented phases (M0, M1, etc.). `todo!()` in unimplemented phases (M2 and later) is acceptable.
 
-### 4. エラー処理確認
+### 4. Error handling check
 
-- `anyhow::Result` / `anyhow::bail!` / `.context()` で統一されているか（`unwrap` / `expect` が本番コードに残っていないか）。
-- `parse` はパース失敗でも他ファイルの処理を止めないか（skip + error 診断の継続設計）。
+- Verify that `anyhow::Result` / `anyhow::bail!` / `.context()` are used consistently (`unwrap` / `expect` must not remain in production code).
+- Verify that `parse` does not abort processing of other files on parse failure (skip + continue emitting error diagnostics).
 
-### 5. mappings の意味をコードで変えていないかの確認
+### 5. Check that mappings semantics have not been altered in code
 
-- `lift` で transform を適用せずに値を書き換えていないか。
-- `lower` で mappings に宣言されていない変換を暗黙に行っていないか。
-- `direction` 照合（`applies_direction`）をスキップしていないか。
-- `degrade` truthy のみ `run_degrade` を呼んでいるか（`disable-model-invocation` の特殊ケース等との混同がないか）。
+- Verify that `lift` does not rewrite values without applying a transform.
+- Verify that `lower` does not implicitly perform conversions not declared in mappings.
+- Verify that `direction` matching (`applies_direction`) is not skipped.
+- Verify that `run_degrade` is called only when `degrade` is truthy (no conflation with special cases like `disable-model-invocation`).
 
-### 6. レビュー結果の報告
+### 6. Reporting review findings
 
-発見した問題を以下の区分で報告する。
+Report findings under the following categories:
 
-- **設計不一致**: docs/spec.md の型・フローと実装が食い違う箇所。要修正。
-- **未実装（要対応）**: 現フェーズで埋めるべき `todo!()` が残っている箇所。
-- **エラー処理の不備**: `unwrap` / `expect` の放置、継続実行できない実装。
-- **mappings 意味の逸脱**: transform・degrade・direction の扱いが YAML 宣言と異なる箇所。
-- **Clippy 指摘**: clippy が検出したコード品質の問題。
+- **Design mismatch**: Where implementation diverges from types/flow in docs/spec.md. Must be fixed.
+- **Unimplemented (action required)**: Where `todo!()` remains for stubs that should be filled in the current phase.
+- **Error handling deficiency**: Leftover `unwrap` / `expect`, or implementations that cannot continue execution.
+- **Mappings semantic deviation**: Where the handling of transform, degrade, or direction differs from the YAML declaration.
+- **Clippy findings**: Code quality issues detected by clippy.

@@ -1,33 +1,33 @@
 use crate::core::ir::{DiagLevel, IRNode, Loss};
 use crate::handlers::EmitPlan;
 
-/// 各診断エントリの共通表現。
+/// Common representation of a diagnostic entry.
 #[derive(Debug, Clone)]
 pub struct DiagEntry {
-    /// mappings の entry id（例: "skill.allowed-tools"）
+    /// Entry id from mappings (e.g. "skill.allowed-tools")
     pub id: Option<String>,
     pub message: String,
 }
 
-/// build_report が返す集計済みレポート。
-/// dropped / degraded は必ず列挙（silent な切り捨て厳禁）。
+/// Aggregated report returned by build_report.
+/// dropped and degraded fields must always be enumerated — silent truncation is forbidden.
 pub struct Report {
-    /// lossless フィールド id の一覧
+    /// List of lossless field ids
     pub lossless: Vec<String>,
-    /// lossy 変換（変換成功だが意味差あり）
+    /// Lossy conversions (successful but with semantic differences)
     pub lossy: Vec<DiagEntry>,
-    /// 変換先なしで切り捨てられたフィールド
+    /// Fields dropped due to having no conversion target
     pub dropped: Vec<DiagEntry>,
-    /// degrade エンジンで別スコープへ降格されたフィールド
+    /// Fields relocated to a different scope by the degrade engine
     pub degraded: Vec<DiagEntry>,
-    /// 本文スキャナが検出した警告
+    /// Warnings detected by the body scanner
     pub body_warnings: Vec<DiagEntry>,
 }
 
-/// IR ノードと EmitPlan から Report を構築する。
+/// Builds a Report from an IR node and an EmitPlan.
 ///
-/// IR の diagnostics と各 IRField を集計する。
-/// dropped / degraded は必ず列挙する（silent な切り捨て厳禁）。
+/// Aggregates the IR diagnostics and each IRField.
+/// dropped and degraded fields must always be enumerated — silent truncation is forbidden.
 pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
     let mut lossless = Vec::new();
     let mut lossy = Vec::new();
@@ -155,6 +155,26 @@ pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
         body_warnings.extend(child_report.body_warnings);
     }
 
+    // Defense-in-depth: deduplicate dropped by id (keep first occurrence).
+    // A field may be recorded both via IRField{loss:Dropped} and via a
+    // DiagLevel::Drop diagnostic; collapse them here regardless of source.
+    let mut seen_dropped_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    dropped.retain(|e| {
+        if let Some(id) = &e.id {
+            seen_dropped_ids.insert(id.clone())
+        } else {
+            true
+        }
+    });
+
+    // Defense-in-depth: a field classified as Dropped must never also appear
+    // in lossy. Remove any lossy entry whose id matches a dropped id.
+    lossy.retain(|e| {
+        e.id.as_ref()
+            .map(|id| !seen_dropped_ids.contains(id.as_str()))
+            .unwrap_or(true)
+    });
+
     Report {
         lossless,
         lossy,
@@ -164,12 +184,12 @@ pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
     }
 }
 
-/// Report を標準出力に表示する。
+/// Prints a Report to standard output.
 ///
-/// fmt が Some("json") の場合は機械可読 JSON で出力（CI 用）。
-/// fmt が None の場合はヒューマンリーダブルなテキスト形式で出力。
+/// When fmt is Some("json"), outputs machine-readable JSON (for CI use).
+/// When fmt is None, outputs human-readable text format.
 ///
-/// 表示形式（テキスト）:
+/// Text format:
 /// ```text
 /// ✔ <source> → <output>
 ///   ◎ <lossless fields>                    lossless
@@ -304,7 +324,7 @@ mod tests {
                 degrade: None,
                 warning: None,
                 dropped: Some(DroppedInfo {
-                    reason: "Codex に概念なし".to_string(),
+                    reason: "No Codex equivalent".to_string(),
                 }),
             },
         );
@@ -359,5 +379,215 @@ mod tests {
             .dropped
             .iter()
             .any(|e| e.message.contains("my_field")));
+    }
+
+    // gap 20/42: loss:dropped + warn:true must appear only in `dropped`, not in `lossy`.
+    // A DiagLevel::Warn diagnostic on a field whose IRField.loss == Dropped must
+    // not cause that field to be promoted into the lossy list.
+    #[test]
+    fn test_build_report_dropped_with_warn_diag_not_in_lossy() {
+        let mut node = new_node(Kind::Skill, Tool::Claude, "/test/SKILL.md");
+
+        // Simulate a warn:true + loss:dropped field (e.g. skills.user-invocable)
+        node.fields.insert(
+            "skills.user-invocable".to_string(),
+            IRField {
+                id: "skills.user-invocable".to_string(),
+                value: serde_json::json!(false),
+                loss: Loss::Dropped,
+                transforms_applied: vec![],
+                degrade: None,
+                warning: Some("skills.user-invocable: warn".to_string()),
+                dropped: Some(DroppedInfo {
+                    reason: "Codex has no user-invocable concept".to_string(),
+                }),
+            },
+        );
+
+        // Simulate what the broken lift() used to push:
+        // a DiagLevel::Warn diagnostic for a dropped field.
+        // After the fix this should NOT be pushed; this test verifies the
+        // report builder itself is resilient even if such a diagnostic
+        // were present (e.g. from an older handler that was not yet fixed).
+        // The IRField.loss takes precedence: it is Dropped, so the entry
+        // must end up only in `dropped`.
+        // (The actual fix prevents the Warn diag from being pushed for
+        //  dropped fields, but we test the report routing here too.)
+        node.diagnostics.push(Diagnostic {
+            level: DiagLevel::Warn,
+            id: Some("skills.user-invocable".to_string()),
+            message: "skills.user-invocable: warn".to_string(),
+        });
+
+        let plan = empty_plan();
+        let report = build_report(&node, &plan);
+
+        // Must be in dropped
+        assert!(
+            report
+                .dropped
+                .iter()
+                .any(|e| e.id.as_deref() == Some("skills.user-invocable")),
+            "skills.user-invocable must appear in dropped"
+        );
+
+        // Must NOT appear in lossy: build_report enforces that a dropped field
+        // is never also listed as lossy, even when a spurious DiagLevel::Warn
+        // diagnostic carrying the same id is present.
+        assert!(
+            !report
+                .lossy
+                .iter()
+                .any(|e| e.id.as_deref() == Some("skills.user-invocable")),
+            "skills.user-invocable must NOT appear in lossy when it is classified as Dropped"
+        );
+
+        // dropped must have exactly one entry for this id (no duplicates).
+        let count = report
+            .dropped
+            .iter()
+            .filter(|e| e.id.as_deref() == Some("skills.user-invocable"))
+            .count();
+        assert_eq!(
+            count, 1,
+            "skills.user-invocable must appear exactly once in dropped, found {} times",
+            count
+        );
+    }
+
+    // A dropped field must appear exactly once in report.dropped regardless of
+    // whether a duplicate DiagLevel::Drop diagnostic with the same id is also
+    // present (defense-in-depth dedup inside build_report).
+    #[test]
+    fn test_build_report_dropped_field_once_from_ir_fields_only() {
+        let mut node = new_node(Kind::Plugin, Tool::Claude, "/test/plugin.json");
+
+        node.fields.insert(
+            "plugins.lspServers".to_string(),
+            IRField {
+                id: "plugins.lspServers".to_string(),
+                value: serde_json::json!("./lsp.json"),
+                loss: Loss::Dropped,
+                transforms_applied: vec![],
+                degrade: None,
+                warning: None,
+                dropped: Some(DroppedInfo {
+                    reason: "lspServers has no Codex equivalent".to_string(),
+                }),
+            },
+        );
+
+        // No plan diagnostics — only the IRField source.
+        let plan = empty_plan();
+        let report = build_report(&node, &plan);
+
+        let count = report
+            .dropped
+            .iter()
+            .filter(|e| e.id.as_deref() == Some("plugins.lspServers"))
+            .count();
+        assert_eq!(
+            count, 1,
+            "plugins.lspServers must appear exactly once in report.dropped when only \
+             the IRField source is present; found {} times",
+            count
+        );
+
+        // Also not in lossy.
+        assert!(
+            !report
+                .lossy
+                .iter()
+                .any(|e| e.id.as_deref() == Some("plugins.lspServers")),
+            "plugins.lspServers must NOT appear in lossy"
+        );
+    }
+
+    // When BOTH an IRField{loss:Dropped} AND a DiagLevel::Drop diagnostic with
+    // the same id are present, build_report must deduplicate to exactly one entry.
+    #[test]
+    fn test_build_report_dropped_dedup_when_both_ir_field_and_diag_present() {
+        let mut node = new_node(Kind::Plugin, Tool::Claude, "/test/plugin.json");
+
+        node.fields.insert(
+            "plugins.lspServers".to_string(),
+            IRField {
+                id: "plugins.lspServers".to_string(),
+                value: serde_json::json!("./lsp.json"),
+                loss: Loss::Dropped,
+                transforms_applied: vec![],
+                degrade: None,
+                warning: None,
+                dropped: Some(DroppedInfo {
+                    reason: "lspServers has no Codex equivalent".to_string(),
+                }),
+            },
+        );
+
+        // Simulate a handler that also pushes a DiagLevel::Drop for the same id.
+        node.diagnostics.push(Diagnostic {
+            level: DiagLevel::Drop,
+            id: Some("plugins.lspServers".to_string()),
+            message: "plugins.lspServers: dropped (duplicate diag)".to_string(),
+        });
+
+        let plan = empty_plan();
+        let report = build_report(&node, &plan);
+
+        let count = report
+            .dropped
+            .iter()
+            .filter(|e| e.id.as_deref() == Some("plugins.lspServers"))
+            .count();
+        assert_eq!(
+            count, 1,
+            "plugins.lspServers must appear exactly once in report.dropped even when \
+             both IRField and DiagLevel::Drop sources are present; found {} times",
+            count
+        );
+    }
+
+    // gap 32/42: a dropped+warn field must appear only in dropped, not in lossy,
+    // when the handler correctly omits the spurious DiagLevel::Drop/Warn diagnostic.
+    #[test]
+    fn test_build_report_dropped_field_not_in_lossy_without_spurious_diagnostic() {
+        let mut node = new_node(Kind::Plugin, Tool::Claude, "/test/plugin.json");
+
+        // IRField with loss:Dropped and a warning (warn:true in mappings).
+        node.fields.insert(
+            "plugins.channels".to_string(),
+            IRField {
+                id: "plugins.channels".to_string(),
+                value: serde_json::json!([]),
+                loss: Loss::Dropped,
+                transforms_applied: vec![],
+                degrade: None,
+                warning: Some("channels: no Codex equivalent".to_string()),
+                dropped: Some(DroppedInfo {
+                    reason: "channels has no Codex equivalent".to_string(),
+                }),
+            },
+        );
+
+        // No spurious diagnostic pushed — this is the post-fix state.
+        let plan = empty_plan();
+        let report = build_report(&node, &plan);
+
+        assert!(
+            report
+                .dropped
+                .iter()
+                .any(|e| e.id.as_deref() == Some("plugins.channels")),
+            "plugins.channels must appear in dropped"
+        );
+
+        let in_lossy = report
+            .lossy
+            .iter()
+            .any(|e| e.id.as_deref() == Some("plugins.channels"));
+        assert!(
+            !in_lossy,
+            "plugins.channels must NOT appear in lossy when no spurious Warn diagnostic is pushed"
+        );
     }
 }

@@ -15,71 +15,75 @@ pub mod settings;
 pub mod skills;
 pub mod subagents;
 
-/// 出力先スコープ（.rules / agents の配置先）。
+/// Output scope (placement target for .rules / agents).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Scope {
-    /// ~/.codex/（ユーザー全体）
+    /// ~/.codex/ (user-wide)
     User,
-    /// .codex/（プロジェクト）
+    /// .codex/ (project)
     Project,
 }
 
-/// skill の変換先選択モード。
+/// Skill conversion target selection mode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SkillTargetMode {
-    /// 自動判定（決定的ケース自動 + グレーケースは保守的デフォルト or 対話）
+    /// Automatic: deterministic cases resolved automatically; ambiguous cases use conservative default or interactive prompt
     Auto,
-    /// 常に skill（.agents/skills/<n>/SKILL.md）へ変換
+    /// Always convert to skill (.agents/skills/<n>/SKILL.md)
     Skill,
-    /// 常に subagent（.codex/agents/<n>.toml）へ変換
+    /// Always convert to subagent (.codex/agents/<n>.toml)
     Subagent,
 }
 
-/// handler.lower() に渡すオプション群。
+/// Options passed to handler.lower().
 #[derive(Debug, Clone)]
 pub struct LowerOpts {
-    /// 出力先ディレクトリ（省略時: *.converted/ サブディレクトリ）
+    /// Output directory (default: *.converted/ subdirectory)
     pub out: Option<String>,
-    /// 降格先スコープ（.rules / agents の配置）
+    /// Domain filter for conversion (empty means all domains)
+    pub only: Vec<String>,
+    /// Scope for degraded output (.rules / agents placement)
     pub scope: Scope,
-    /// plugin で .claude-plugin/ を残し .codex-plugin/ を追加生成
+    /// Retain .claude-plugin/ while also generating .codex-plugin/
     pub dual_manifest: bool,
-    /// hooks の書き出し先（#16430 回避）
+    /// Destination scope for hooks output (workaround for #16430)
     pub hooks_target: Scope,
-    /// skill の変換先選択モード
+    /// Skill conversion target selection mode
     pub skill_target: SkillTargetMode,
-    /// グレーケースを TTY 対話で確認する
+    /// Confirm ambiguous cases interactively via TTY
     pub interactive: bool,
-    /// 本文の変数/記法を自動書き換え（既定: false = 検出のみ）
+    /// Rewrite body variables/syntax automatically (default: false = detect only)
     pub rewrite_body: bool,
+    /// Retain Claude-specific frontmatter keys in Codex output (Codex ignores them via fail-open)
+    pub keep_claude_frontmatter: bool,
 }
 
-/// handler.lower() が返す出力計画。
+/// Output plan returned by handler.lower().
 pub struct EmitPlan {
-    /// 書き出すファイルの一覧
+    /// List of files to write
     pub files: Vec<EmitFile>,
-    /// 変換中に発生した診断エントリ
+    /// Diagnostic entries produced during conversion
     pub diagnostics: Vec<Diagnostic>,
 }
 
-/// 書き出すファイルの1エントリ（出力ルートからの相対パスで保持）。
+/// A single file entry to write (path stored relative to the output root).
 pub struct EmitFile {
-    /// 出力ルートからの相対パス
+    /// Path relative to the output root
     pub path: String,
-    /// ファイル内容
+    /// File contents
     pub content: String,
 }
 
-/// 領域ハンドラのトレイト。各ハンドラは対応する DomainMap を保持する。
+/// Domain handler trait. Each handler holds its corresponding DomainMap.
 pub trait Handler {
     fn kind(&self) -> Kind;
 
-    /// このハンドラが対象とするパスかどうかを判定する。
+    /// Returns true if this handler should process the given path.
     fn detect(&self, path: &Path) -> bool;
 
-    /// ファイルを読み込み、handler 間共通の内部表現 Value を返す。
+    /// Reads a file and returns the shared internal Value representation.
     ///
-    /// # 返値の構造
+    /// # Return value shape
     /// ```json
     /// {
     ///   "frontmatter": { "name": "...", "description": "..." },
@@ -89,12 +93,12 @@ pub trait Handler {
     /// ```
     fn parse(&self, path: &Path) -> anyhow::Result<Value>;
 
-    /// パース済み Value を IRNode に変換する（mappings 駆動）。
+    /// Converts a parsed Value into an IRNode (mappings-driven).
     ///
-    /// `dir` は pipeline の実行方向（ConvDir）。
+    /// `dir` is the pipeline execution direction (ConvDir).
     fn lift(&self, parsed: &Value, dir: ConvDir) -> anyhow::Result<crate::core::ir::IRNode>;
 
-    /// IRNode を出力ファイル群（EmitPlan）に変換する。
+    /// Converts an IRNode into an output file set (EmitPlan).
     fn lower(
         &self,
         ir: &crate::core::ir::IRNode,
@@ -103,7 +107,21 @@ pub trait Handler {
     ) -> anyhow::Result<EmitPlan>;
 }
 
-/// Kind と全 domain map を受け取り、対応するハンドラをボックス化して返す。
+/// Helper that converts a JSON Value into a list of strings.
+///
+/// `Value::String` → `[string]`, `Value::Array` → each element as a string, anything else → `[]`.
+pub(crate) fn json_to_string_list(v: &Value) -> Vec<String> {
+    match v {
+        Value::String(s) => vec![s.clone()],
+        Value::Array(arr) => arr
+            .iter()
+            .filter_map(|x| x.as_str().map(|s| s.to_string()))
+            .collect(),
+        _ => vec![],
+    }
+}
+
+/// Returns a boxed handler for the given Kind, looked up from the full domain map set.
 pub fn pick_handler(kind: &Kind, maps: &HashMap<String, DomainMap>) -> Box<dyn Handler> {
     match kind {
         Kind::Skill => Box::new(skills::SkillsHandler {

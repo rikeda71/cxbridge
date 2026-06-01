@@ -2,7 +2,7 @@
 name = "ccx"
 version = "0.1.0"
 edition = "2021"
-description = "Claude Code ⇄ Codex 設定ファイル双方向変換 CLI"
+description = "Claude Code ⇄ Codex config file bidirectional conversion CLI"
 
 [[bin]]
 name = "ccx"

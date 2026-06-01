@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "env-header-server": {
+      "type": "http",
+      "url": "https://api.example.com/mcp",
+      "headers": {
+        "X-Api-Key": "${API_KEY}",
+        "X-Tenant": "${TENANT_ID}"
+      }
+    }
+  }
+}

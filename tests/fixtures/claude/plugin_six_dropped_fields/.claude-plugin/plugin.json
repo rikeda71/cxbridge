@@ -1,0 +1,11 @@
+{
+  "name": "test-plugin",
+  "version": "1.0.0",
+  "description": "Plugin with six dropped fields for duplicate-diagnostic regression test",
+  "lspServers": "./lsp.json",
+  "outputStyles": "./styles/",
+  "channels": [],
+  "settings": {"agent": "test"},
+  "dependencies": ["other-plugin"],
+  "userConfig": {"MY_KEY": {"type": "string", "title": "My Key", "description": "desc"}}
+}
