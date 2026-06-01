@@ -575,7 +575,7 @@ Priority: explicit `--skill-target` > deterministic auto-detection > gray-case (
 
 **Dropped output fields (x2c):** `updatedMCPToolOutput` (Codex PostToolUse only), `model`, `turn_id`, `tool_use_id` (Codex-only stdin fields).
 
-**Plugin-bundled hooks (c2x warning — issue #16430):** Codex does not load `hooks.json` from the plugin root due to a bug. The CLI defaults to writing hooks to `~/.codex/hooks.json` (user scope) or `.codex/config.toml` `[hooks]` section (project scope) via `--hooks-target`, and always emits a warning about #16430.
+**Plugin-bundled hooks (c2x — issue #16430, effectively fixed in source):** Codex now discovers and loads `hooks/hooks.json` from installed plugin roots (`append_plugin_hook_sources()` in `discovery.rs`; `PluginHooks` feature flag removed in PR #22552, merged 2026-05-21). Plugin-bundled hooks are therefore loaded by Codex, subject to its hook trust prompt. The `--hooks-target=user|project` flag is no longer required solely to make plugin hooks work — it remains available as an optional write-destination preference. The CLI emits an informational note (not a hard warning) referencing #16430.
 
 **Codex-specific stdin fields (x2c handling):** Codex adds extra stdin fields not present in Claude. The x2c handler must drop these when converting Codex hook configurations toward Claude:
 - `SessionStart` input: `source` field (`startup|resume|clear|compact`) — Codex-only, dropped on x2c
@@ -631,7 +631,7 @@ The Plugins handler is the integration point. It coordinates skills/hooks/mcp ha
 5. `marketplace.json`: near-identical schema; `source` type normalization required (Claude `relative` → Codex `{source:"local",...}`); `npm`-type sources dropped. Missing `policy` entries get default values (`installation=AVAILABLE`, `authentication=ON_INSTALL`) with report annotation. Additional dropped fields (c2x): `marketplace.owner`, `allowCrossMarketplaceDependenciesOn`, `forceRemoveDeletedPlugins`. `marketplace.plugins[].policy` is Codex-only and dropped on x2c.
 6. **Dual manifest strategy (`--dual-manifest`):** Retain `.claude-plugin/` and generate `.codex-plugin/plugin.json` alongside. This is the only way to get native Codex recognition.
 
-**Hook #16430 warning applies here too.** Plugin-bundled hooks are not loaded by Codex.
+**Hook #16430 (effectively fixed in source) applies here too.** Plugin-bundled hooks ARE now discovered and loaded by Codex (PR #22552, merged 2026-05-21). The `--hooks-target` flag is an optional write-destination preference, not a required workaround.
 
 **x2c dropped/lossy — Codex-specific `interface.*` fields:** When converting Codex → Claude, the following Codex `interface.*` fields have no direct Claude plugin receptacle and are handled as follows:
 - `interface.brandColor`, `interface.composerIcon`, `interface.logo`, `interface.capabilities`, `interface.screenshots`, `interface.privacyPolicyURL`, `interface.termsOfServiceURL` → **dropped** (x2c)
@@ -882,7 +882,7 @@ ccx check <path>            # Pre-conversion diagnosis (dropped count estimate, 
 | `--interactive` | false | TTY confirmation for gray-case skills |
 | `--rewrite-body` | false | Apply body substitutions (default: detect-only) |
 | `--dual-manifest` | false | Keep `.claude-plugin/` and generate `.codex-plugin/` alongside |
-| `--hooks-target <user\|project>` | `user` | Hooks write destination (workaround for #16430) |
+| `--hooks-target <user\|project>` | `user` | Hooks write destination (optional; #16430 effectively fixed in source — no longer a required workaround) |
 | `--report[=json]` | none | Emit detailed report (`=json` for machine-readable) |
 | `--dry-run` | false | Report only, no file writes |
 | `--strict` | false | Exit 2 if any dropped entries exist (CI use) |
@@ -1015,9 +1015,9 @@ The CLI mirrors this philosophy: unknown fields produce drop diagnostics but pro
 
 | Issue | Description | CLI Behavior |
 |---|---|---|
-| **#16430** | Plugin-bundled `hooks.json` not loaded from plugin root — hook discovery scans only the config folder | Always emit warn; default `--hooks-target=user` writes to `~/.codex/hooks.json` instead |
+| **#16430** | Plugin-bundled `hooks.json` not loaded — **effectively fixed in source** (PR #22552, merged 2026-05-21): `append_plugin_hook_sources()` now auto-detects `hooks/hooks.json`; `PluginHooks` feature flag removed. Issue still open in tracker but code is shipped. | Emit informational note (not hard warn); `--hooks-target` is optional, not a required workaround |
 | **#14161** | `[[skills.config]]` per-skill override: `enabled` and `path` fields inside `SkillConfig` are silently ignored at runtime (bug open since 2026-03). Other fields in the override struct are also unverified. | Emit warning when skill config override is generated; note the specific broken fields (`enabled`, `path`) in the diagnostic |
-| **#21753** | Hook event parity in progress — Claude-only events may be implemented in future | Mark 20 Claude-only events as `⏳ awaiting-codex` in mappings; drop + warn now |
+| **#21753** | Hook event parity tracker (still open) — `SubagentStart`/`SubagentStop` are listed as "Missing" in the tracker matrix, but **both ARE implemented** in the current Codex source (`HookEventName` enum). Source is authoritative; tracker is stale for these two events. Other Claude-only events remain unimplemented. | Treat `SubagentStart`/`SubagentStop` as common events (both/lossless). Mark remaining 20 Claude-only events as `⏳ awaiting-codex`; drop + warn. |
 | **#5019** | Dynamic injection `` !`cmd` `` — "not planned" | Body scanner detects + warns; no auto-removal (too destructive); user must manually handle |
 
 **Awaiting-Codex follow-up policy:** Fields currently `dropped` due to missing Codex implementation carry `notes: "status: awaiting-codex"` in their mappings entry. When Codex ships the feature, update the entry (`loss: dropped` → `both`/`lossy`, add `codex.field` and any `transform`). No CLI engine code change is needed — the mappings-driven design handles it automatically.
