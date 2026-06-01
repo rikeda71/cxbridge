@@ -39,3 +39,11 @@ Implement the following tests on the implementation side (`src/**`, `tests/**`):
 - `loss` only takes values `lossless` / `lossy` / `dropped`
 - Entries with `degrade` must have `loss: lossy`
 - Entries with `loss: dropped` must not have `transform`
+
+## Compatibility-first conversion
+
+Prefer the maximally-compatible Claude⇄Codex mapping. If a field or directory
+has any Codex receptacle, convert it (path-remap / approximation) rather than
+marking it `dropped`. When in doubt between `dropped` and a lossy conversion,
+choose the lossy conversion that preserves the most behavior; reserve `dropped`
+for cases with genuinely no Codex equivalent.

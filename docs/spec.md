@@ -436,17 +436,19 @@ Model names are not automatically inferred from ID strings. Instead, models are 
 pub enum Tier { High, Mid, Low }
 
 // Claude: opus → High, sonnet → Mid, haiku → Low
-// Codex: -high/-xhigh suffix → High, -mini suffix → Low, other → Mid
+// Codex: explicit lookup against CODEX_LATEST first (roundtrip invariant);
+//        fallback heuristic for unknown names: "mini" in name → Low, else Mid.
+//        No suffix-based rule (-high/-xhigh) — current Codex models do not use such suffixes.
 
 const CODEX_LATEST: &[(Tier, &str)] = &[
-    (Tier::High, "gpt-5.x-high"),   // update at CLI release
-    (Tier::Mid,  "gpt-5.x"),
-    (Tier::Low,  "gpt-5.x-mini"),
+    (Tier::High, "gpt-5.5"),      // current frontier flagship; update at Codex release
+    (Tier::Mid,  "gpt-5.4"),      // balanced default
+    (Tier::Low,  "gpt-5.4-mini"), // fast/lightweight
 ];
 const CLAUDE_LATEST: &[(Tier, &str)] = &[
-    (Tier::High, "claude-opus-latest"),
-    (Tier::Mid,  "claude-sonnet-latest"),
-    (Tier::Low,  "claude-haiku-latest"),
+    (Tier::High, "claude-opus-4-8"),
+    (Tier::Mid,  "claude-sonnet-4-6"),
+    (Tier::Low,  "claude-haiku-4-5"),
 ];
 ```
 
@@ -627,8 +629,8 @@ The Plugins handler is the integration point. It coordinates skills/hooks/mcp ha
 2. Delegate `skills/`, `hooks/`, `.mcp.json` sub-directories to their respective handlers; store results in `IRNode.children`.
 3. **c2x dropped fields:** `lspServers`, `outputStyles`, `experimental.themes`, `experimental.monitors`, `settings`, `channels`, `userConfig`, `dependencies`. All emit dropped + warn diagnostics.
    - `userConfig` carries extra warn: unresolved `${user_config.KEY}` references in MCP/hooks may silently break.
-4. **c2x lossy fields:** `commands` → best-effort conversion to a SKILL.md wrapper (proposed in report). `agents` → subagents handler conversion. `defaultEnabled` → `policy.installation: INSTALLED_BY_DEFAULT` (lossy approximate — not fully equivalent).
-5. `marketplace.json`: near-identical schema; `source` type normalization required (Claude `relative` → Codex `{source:"local",...}`); `npm`-type sources dropped. Missing `policy` entries get default values (`installation=AVAILABLE`, `authentication=ON_INSTALL`) with report annotation. Additional dropped fields (c2x): `marketplace.owner`, `allowCrossMarketplaceDependenciesOn`, `forceRemoveDeletedPlugins`. `marketplace.plugins[].policy` is Codex-only and dropped on x2c.
+4. **c2x/x2c fields:** `commands` → lossless path-remap (`commands/` auto-discovered on both sides; no SKILL.md wrapper required). `agents` → lossy path-remap; per-file frontmatter converted via subagents domain rules. `defaultEnabled` → `policy.installation: INSTALLED_BY_DEFAULT` (lossy approximate — not fully equivalent).
+5. `marketplace.json`: near-identical schema; `source` type normalization required (Claude `relative` → Codex `{source:"local",...}`); Claude `github` source → approximate with `git-subdir` or `url` (Codex has no `github` shorthand source type); `npm`-type sources dropped. Missing `policy` entries get default values (`installation=AVAILABLE`, `authentication=ON_INSTALL`) with report annotation. Additional dropped fields (c2x): `marketplace.owner`, `allowCrossMarketplaceDependenciesOn`, `forceRemoveDeletedPlugins`. `marketplace.plugins[].policy` is Codex-only and dropped on x2c.
 6. **Dual manifest strategy (`--dual-manifest`):** Retain `.claude-plugin/` and generate `.codex-plugin/plugin.json` alongside. This is the only way to get native Codex recognition.
 
 **Hook #16430 (effectively fixed in source) applies here too.** Plugin-bundled hooks ARE now discovered and loaded by Codex (PR #22552, merged 2026-05-21). The `--hooks-target` flag is an optional write-destination preference, not a required workaround.
@@ -641,10 +643,11 @@ The Plugins handler is the integration point. It coordinates skills/hooks/mcp ha
 - `interface.category` → lossy approximate → appended to `keywords` array
 - `interface.longDescription` → lossy approximate ↔ `description`
 
-**Lossless:** name, version, description, author/homepage/repository/license/keywords, displayName, marketplace core fields  
-**Lossy (c2x):** skills path (multi-path array cannot be fully represented in Codex manifest), short-description, version strict-semver, mcpServers inline→file, hooks (event/type limits), commands, agents, defaultEnabled  
+**Lossless:** name, version, description, author/homepage/repository/license/keywords, displayName, marketplace core fields, commands (path-remap)  
+**Lossy (c2x/x2c):** skills path (multi-path array cannot be fully represented in Codex manifest), short-description, version strict-semver, mcpServers inline→file, hooks (event/type limits), agents (per-file frontmatter via subagents rules), defaultEnabled  
 **Dropped (c2x):** see item 3 above (lspServers, outputStyles, experimental.themes, experimental.monitors, settings, channels, userConfig, dependencies)  
-**Dropped/lossy (x2c):** Codex `interface.*` fields as above
+**Dropped/lossy (x2c):** Codex `interface.*` fields as above  
+**marketplace `source`:** Codex supports only `local`, `url`, `git-subdir` — there is no `github` shorthand; Claude `github` sources approximate to `git-subdir`/`url`.
 
 ### 9.5 Memory
 
@@ -961,8 +964,8 @@ Total entries across all `mappings/*.yaml`: **304**
 
 | Loss level | Count | % |
 |---|---|---|
-| lossless | 72 | 24% |
-| lossy | 90 | 30% |
+| lossless | 73 | 24% |
+| lossy | 89 | 29% |
 | dropped | 142 | 47% |
 
 **Directional asymmetry:**
@@ -976,7 +979,7 @@ Total entries across all `mappings/*.yaml`: **304**
 | Skills | 23 | 5 | 13 | 5 | Core — degrade engine + body scanner |
 | Hooks | 83 | 34 | 6 | 43 | Core — JSON↔TOML structural conversion |
 | MCP | 32 | 10 | 4 | 18 | Lightweight mechanical transforms |
-| Plugins | 48 | 12 | 16 | 20 | Integration point; recursive |
+| Plugins | 48 | 13 | 15 | 20 | Integration point; recursive |
 | Memory | 18 | 3 | 5 | 10 | File rename + @import expansion |
 | Subagents | 25 | 4 | 10 | 11 | Large structural divergence |
 | Settings/Config | 60 | 2 (3%) | 31 | 27 | Hardest; permission axis mismatch |

@@ -39,23 +39,31 @@ pub fn claude_tier(m: &str) -> Option<Tier> {
 }
 
 /// Maps a Codex model name to a Tier.
-/// Rules: -high/-xhigh → High, -mini → Low, all others → Mid
+///
+/// Performs an explicit lookup against `CODEX_LATEST` first; this ensures the roundtrip
+/// invariant `codex_tier(tier_to_codex(t)) == Some(t)` holds for all three tiers.
+/// For model names not in `CODEX_LATEST` (e.g. a user's custom config), falls back to
+/// a name-based heuristic: names containing `"mini"` map to `Low`, all others to `Mid`.
 pub fn codex_tier(m: &str) -> Option<Tier> {
-    if m.ends_with("-high") || m.ends_with("-xhigh") {
-        Some(Tier::High)
-    } else if m.ends_with("-mini") {
+    // Explicit lookup first — covers all canonical names and preserves the roundtrip invariant.
+    if let Some(&(tier, _)) = CODEX_LATEST.iter().find(|(_, name)| *name == m) {
+        return Some(tier);
+    }
+    // Heuristic fallback for user-supplied or future model names not in the table.
+    if m.contains("mini") {
         Some(Tier::Low)
     } else {
         Some(Tier::Mid)
     }
 }
 
-// Roundtrip invariant: tier_to_codex(t) must satisfy codex_tier(result) == Some(t),
-// and tier_to_claude(t) must satisfy claude_tier(result) == Some(t).
+/// Canonical Codex model names per tier, tracking the current Codex frontier defaults.
+/// Update these when OpenAI releases new Codex model versions.
+/// High = most capable, Mid = balanced, Low = fast/lightweight.
 const CODEX_LATEST: &[(Tier, &str)] = &[
-    (Tier::High, "gpt-5-codex-high"), // ends_with("-high") → High ✓
-    (Tier::Mid, "gpt-5-codex"),       // neither -high/-xhigh nor -mini → Mid ✓
-    (Tier::Low, "gpt-5-codex-mini"),  // ends_with("-mini") → Low ✓
+    (Tier::High, "gpt-5.5"),     // current frontier flagship
+    (Tier::Mid, "gpt-5.4"),      // balanced default
+    (Tier::Low, "gpt-5.4-mini"), // fast/lightweight
 ];
 
 const CLAUDE_LATEST: &[(Tier, &str)] = &[
