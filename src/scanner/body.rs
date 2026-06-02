@@ -182,7 +182,9 @@ fn scan_c2x_line(
     let mut processed_positions: Vec<(usize, usize)> = Vec::new();
 
     for cap in RE_ARG_INDEXED_BRACKET.captures_iter(line) {
-        let full_match = cap.get(0).unwrap();
+        let Some(full_match) = cap.get(0) else {
+            continue;
+        };
         let idx_str = &cap[1];
         let idx: usize = idx_str.parse().unwrap_or(0);
 
@@ -238,7 +240,9 @@ fn scan_c2x_line(
     }
 
     for cap in RE_ARG_NAMED.captures_iter(line) {
-        let full_match = cap.get(0).unwrap();
+        let Some(full_match) = cap.get(0) else {
+            continue;
+        };
         let name = &cap[1];
         // RE_ARG_NAMED targets lowercase; guard against false-positive on "arguments".
         if name.starts_with("arguments") {

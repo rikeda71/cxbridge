@@ -253,6 +253,7 @@ impl MemoryHandler {
         // Skip dropped files
         if ir.fields.contains_key("memory.local-file")
             || ir.fields.contains_key("memory.managed-policy")
+            || ir.fields.contains_key("memory.override-file")
         {
             return Ok(EmitPlan {
                 files: vec![],

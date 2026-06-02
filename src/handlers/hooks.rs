@@ -272,15 +272,19 @@ impl HooksHandler {
         let mut diagnostics = Vec::new();
         let out_root = opts.out.as_deref().unwrap_or(".");
 
-        // #16430 warn: plugin-bundled hooks are not loaded by Codex
-        diagnostics.push(Diagnostic {
-            level: DiagLevel::Warn,
-            id: Some("hooks.plugin_bundled".to_string()),
-            message: "Warning (#16430): Plugin-bundled hooks are not loaded by Codex. \
-                      Use --hooks-target=user|project to write hooks to ~/.codex/hooks.json \
-                      or .codex/config.toml [hooks] instead."
-                .to_string(),
-        });
+        // #16430 only affects plugin-bundled hooks (Codex does not load them).
+        // A standalone hooks.json / settings.json conversion is unaffected, so the
+        // warning must not fire there.
+        if ir.source_path.contains(".claude-plugin") {
+            diagnostics.push(Diagnostic {
+                level: DiagLevel::Warn,
+                id: Some("hooks.plugin_bundled".to_string()),
+                message: "Warning (#16430): Plugin-bundled hooks are not loaded by Codex. \
+                          Use --hooks-target=user|project to write hooks to ~/.codex/hooks.json \
+                          or .codex/config.toml [hooks] instead."
+                    .to_string(),
+            });
+        }
 
         // Collect common event hooks
         let mut hooks_entries: Vec<(String, Value)> = Vec::new();
@@ -1454,7 +1458,7 @@ mod tests {
     }
 
     #[test]
-    fn test_hooks_lift_c2x_16430_warn() {
+    fn test_hooks_c2x_16430_warn_only_for_plugin_bundled() {
         let hooks_json = serde_json::json!({
             "hooks": {
                 "Stop": [{
@@ -1465,17 +1469,31 @@ mod tests {
         });
 
         let h = make_handler();
-        let ir = h.lift_c2x(&hooks_json).unwrap();
         let dir = TempDir::new().unwrap();
         let opts = default_opts(dir.path().to_str().unwrap());
-        let plan = h.lower_c2x(&ir, &opts).unwrap();
 
-        // #16430 warning should be present
-        let has_16430_warn = plan
-            .diagnostics
-            .iter()
-            .any(|d| d.message.contains("#16430"));
-        assert!(has_16430_warn, "Expected #16430 warning in diagnostics");
+        // Standalone hooks conversion: #16430 does not apply, so no warning.
+        let ir = h.lift_c2x(&hooks_json).unwrap();
+        let plan = h.lower_c2x(&ir, &opts).unwrap();
+        assert!(
+            !plan
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("#16430")),
+            "standalone hooks must not emit the #16430 warning"
+        );
+
+        // Plugin-bundled hooks (source under .claude-plugin/): the warning applies.
+        let mut plugin_ir = h.lift_c2x(&hooks_json).unwrap();
+        plugin_ir.source_path = "myplugin/.claude-plugin/hooks/hooks.json".to_string();
+        let plugin_plan = h.lower_c2x(&plugin_ir, &opts).unwrap();
+        assert!(
+            plugin_plan
+                .diagnostics
+                .iter()
+                .any(|d| d.message.contains("#16430")),
+            "plugin-bundled hooks must emit the #16430 warning"
+        );
     }
 
     /// gap 41/42: when all hook items within an event entry are dropped (e.g. only
