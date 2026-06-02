@@ -1138,8 +1138,7 @@ fn parse_toml_mcp_config(path: &Path) -> anyhow::Result<Value> {
     let abs_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
 
     // Convert TOML to serde_json::Value using the toml crate
-    let toml_val: toml::Value = content
-        .parse()
+    let toml_val: toml::Value = toml::from_str(&content)
         .with_context(|| format!("Failed to parse TOML: {}", path.display()))?;
 
     // Convert TOML Value → JSON Value

@@ -523,8 +523,7 @@ fn parse_codex_agent_toml(path: &Path) -> anyhow::Result<Value> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read agent TOML: {}", path.display()))?;
 
-    let toml_val: toml::Value = content
-        .parse()
+    let toml_val: toml::Value = toml::from_str(&content)
         .with_context(|| format!("Failed to parse agent TOML: {}", path.display()))?;
 
     let abs_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());

@@ -50,8 +50,7 @@ impl Handler for SettingsHandler {
             // Codex config.toml
             let content = std::fs::read_to_string(path)
                 .with_context(|| format!("Failed to read config.toml: {}", path.display()))?;
-            let toml_val: toml::Value = content
-                .parse()
+            let toml_val: toml::Value = toml::from_str(&content)
                 .with_context(|| format!("Failed to parse config.toml: {}", path.display()))?;
             let json_val = crate::core::serialize::toml_to_json(&toml_val)?;
 

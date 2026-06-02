@@ -15,15 +15,15 @@ pub fn parse_frontmatter_file(path: &Path) -> anyhow::Result<Value> {
     let abs_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
 
     let matter = Matter::<YAML>::new();
-    let result = matter.parse(&content);
+    let parsed = matter
+        .parse::<Value>(&content)
+        .with_context(|| format!("Failed to parse frontmatter in {}", path.display()))?;
 
-    let frontmatter: Value = if let Some(pod) = result.data {
-        pod.into()
-    } else {
-        Value::Object(serde_json::Map::new())
-    };
+    let frontmatter = parsed
+        .data
+        .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
-    let body = result.content;
+    let body = parsed.content;
 
     Ok(serde_json::json!({
         "frontmatter": frontmatter,
