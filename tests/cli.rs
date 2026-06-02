@@ -61,6 +61,90 @@ fn test_cli_c2x_directory_exits_zero_and_produces_skill_output() {
     );
 }
 
+/// `--strict` exits 2 when a field is dropped; the same input without `--strict`
+/// exits 0. `user-invocable` has no Codex equivalent and is always dropped.
+#[test]
+fn test_cli_strict_exits_2_on_dropped_field() {
+    let input_dir = tempfile::TempDir::new().unwrap();
+    let skill_dir = input_dir.path().join(".claude").join("skills").join("s");
+    std::fs::create_dir_all(&skill_dir).unwrap();
+    std::fs::write(
+        skill_dir.join("SKILL.md"),
+        "---\nname: s\ndescription: d\nuser-invocable: false\n---\nBody.\n",
+    )
+    .unwrap();
+
+    // Without --strict: dropped fields are allowed, exit 0.
+    let lenient = tempfile::TempDir::new().unwrap();
+    let ok = Command::new(cxbridge_bin())
+        .args([
+            "c2x",
+            input_dir.path().to_str().unwrap(),
+            "--out",
+            lenient.path().to_str().unwrap(),
+        ])
+        .status()
+        .expect("failed to run cxbridge binary");
+    assert_eq!(ok.code(), Some(0), "without --strict must exit 0");
+
+    // With --strict: a dropped field forces exit code 2.
+    let strict = tempfile::TempDir::new().unwrap();
+    let strict_status = Command::new(cxbridge_bin())
+        .args([
+            "c2x",
+            input_dir.path().to_str().unwrap(),
+            "--out",
+            strict.path().to_str().unwrap(),
+            "--strict",
+        ])
+        .status()
+        .expect("failed to run cxbridge binary");
+    assert_eq!(
+        strict_status.code(),
+        Some(2),
+        "--strict with a dropped field must exit 2, got: {strict_status}"
+    );
+}
+
+/// `--rewrite-body` applies body substitutions: in c2x, `$ARGUMENTS[1]` → `$2`.
+/// Without the flag, the body is emitted unchanged.
+#[test]
+fn test_cli_rewrite_body_substitutes_arguments() {
+    let input_dir = tempfile::TempDir::new().unwrap();
+    let skill_dir = input_dir.path().join(".claude").join("skills").join("s");
+    std::fs::create_dir_all(&skill_dir).unwrap();
+    std::fs::write(
+        skill_dir.join("SKILL.md"),
+        "---\nname: s\ndescription: d\n---\nUse $ARGUMENTS[1] here.\n",
+    )
+    .unwrap();
+
+    let out_dir = tempfile::TempDir::new().unwrap();
+    let status = Command::new(cxbridge_bin())
+        .args([
+            "c2x",
+            input_dir.path().to_str().unwrap(),
+            "--out",
+            out_dir.path().to_str().unwrap(),
+            "--rewrite-body",
+        ])
+        .status()
+        .expect("failed to run cxbridge binary");
+    assert!(status.success(), "c2x --rewrite-body must exit 0");
+
+    let out_skill = out_dir
+        .path()
+        .join(".agents")
+        .join("skills")
+        .join("s")
+        .join("SKILL.md");
+    let body = std::fs::read_to_string(&out_skill).expect("output SKILL.md");
+    assert!(
+        body.contains("$2") && !body.contains("$ARGUMENTS[1]"),
+        "--rewrite-body must rewrite $ARGUMENTS[1] to $2, got:\n{body}"
+    );
+}
+
 /// `check <dir>` exits 0 for a directory containing only a skill file.
 #[test]
 fn test_cli_check_directory_exits_zero() {

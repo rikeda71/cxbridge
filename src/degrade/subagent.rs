@@ -188,3 +188,83 @@ pub fn degrade_to_subagent(skill_name: &str, ir: &IRNode) -> (Vec<SideArtifact>,
 
     (artifacts, diagnostics)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::ir::{new_node, IRField, Kind, Loss, Tool};
+    use crate::handlers::Scope;
+
+    fn opts(mode: SkillTargetMode, interactive: bool) -> LowerOpts {
+        LowerOpts {
+            out: None,
+            only: vec![],
+            scope: Scope::Project,
+            dual_manifest: false,
+            hooks_target: Scope::User,
+            skill_target: mode,
+            interactive,
+            rewrite_body: false,
+            keep_claude_frontmatter: false,
+        }
+    }
+
+    fn node_with(id: &str, value: serde_json::Value) -> IRNode {
+        let mut n = new_node(Kind::Skill, Tool::Claude, "demo");
+        n.fields.insert(
+            id.to_string(),
+            IRField {
+                id: id.to_string(),
+                value,
+                loss: Loss::Lossy,
+                transforms_applied: vec![],
+                degrade: None,
+                warning: None,
+                dropped: None,
+            },
+        );
+        n
+    }
+
+    #[test]
+    fn test_decide_skill_target_perms_only_auto_is_subagent() {
+        // Branch (c): permissions present, no model/effort/fork, non-interactive.
+        let n = node_with("skills.allowed-tools", serde_json::json!(["Bash(git*)"]));
+        assert_eq!(
+            decide_skill_target(&n, &opts(SkillTargetMode::Auto, false)),
+            SkillTarget::Subagent
+        );
+    }
+
+    #[test]
+    fn test_decide_skill_target_pure_instruction_is_skill() {
+        let n = new_node(Kind::Skill, Tool::Claude, "demo");
+        assert_eq!(
+            decide_skill_target(&n, &opts(SkillTargetMode::Auto, false)),
+            SkillTarget::Skill
+        );
+    }
+
+    #[test]
+    fn test_decide_skill_target_explicit_mode_overrides_heuristic() {
+        let n = node_with("skills.model", serde_json::json!("opus"));
+        assert_eq!(
+            decide_skill_target(&n, &opts(SkillTargetMode::Skill, false)),
+            SkillTarget::Skill
+        );
+    }
+
+    #[test]
+    fn test_degrade_to_subagent_unknown_model_passthrough_warns() {
+        let n = node_with("skills.model", serde_json::json!("gpt-5-custom"));
+        let (artifacts, diags) = degrade_to_subagent("demo", &n);
+        assert!(diags.iter().any(
+            |d| d.id.as_deref() == Some("skills.model") && d.message.contains("Unknown model")
+        ));
+        let agent_toml = artifacts
+            .iter()
+            .find(|a| a.path.ends_with("demo.toml"))
+            .unwrap();
+        assert!(agent_toml.content.contains("gpt-5-custom"));
+    }
+}

@@ -52,3 +52,29 @@ pub fn degrade_skill_hooks(
 
     (artifacts, diagnostics)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_degrade_skill_hooks_user_scope() {
+        let hooks = serde_json::json!({ "PreToolUse": [] });
+        let (artifacts, diags) = degrade_skill_hooks("deploy", &hooks, &Scope::User);
+        assert_eq!(artifacts.len(), 1);
+        assert!(artifacts[0].path.ends_with("hooks.json"));
+        assert!(artifacts[0].note.contains("deploy"));
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].level, DiagLevel::Warn);
+        assert_eq!(diags[0].id.as_deref(), Some("skills.hooks"));
+    }
+
+    #[test]
+    fn test_degrade_skill_hooks_project_scope() {
+        let hooks = serde_json::json!({ "PreToolUse": [] });
+        let (artifacts, diags) = degrade_skill_hooks("deploy", &hooks, &Scope::Project);
+        assert_eq!(artifacts.len(), 1);
+        assert!(artifacts[0].path.ends_with("config.toml"));
+        assert_eq!(diags.len(), 1);
+    }
+}
