@@ -6,8 +6,8 @@ use serde_json::Value;
 use crate::core::ir::{
     new_node, DegradeInfo, DiagLevel, Diagnostic, DroppedInfo, IRField, IRNode, Kind, Loss, Tool,
 };
-use crate::core::mappings::{applies_direction, DomainMap};
-use crate::core::transforms::{apply_transforms, ConvDir, TransformCtx};
+use crate::core::mappings::DomainMap;
+use crate::core::transforms::ConvDir;
 use crate::degrade::rules::degrade_allowed_tools;
 use crate::handlers::{EmitFile, EmitPlan, Handler, LowerOpts};
 
@@ -401,12 +401,17 @@ impl SettingsHandler {
             }
         }
 
+        // otel is lossy (approximated via env OTEL_* vars), not dropped — route it
+        // through the mapping so it lands in the degraded bucket, not dropped.
+        if let Some(otel) = settings.get("otel") {
+            self.add_field(node, "settings.codex.otel", otel.clone(), ConvDir::X2c);
+        }
+
         // Codex-specific dropped fields
         for dropped_key in &[
             "profiles",
             "approval_policy",
             "agents",
-            "otel",
             "web_search",
             "project_doc_max_bytes",
             "model_verbosity",
@@ -460,48 +465,7 @@ impl SettingsHandler {
     ) {
         if let Some(v) = settings.get(settings_key) {
             if let Some(entry) = self.map.entries.iter().find(|e| e.id == entry_id) {
-                if !applies_direction(entry, dir) {
-                    return;
-                }
-                let ctx = TransformCtx {
-                    direction: dir,
-                    args: None,
-                    field: entry,
-                };
-                let (transformed, applied) = apply_transforms(v, entry.transform.as_deref(), &ctx);
-
-                let loss = Loss::from(&entry.loss);
-
-                let warning = if entry.warn == Some(true) {
-                    Some(format!(
-                        "{}: {}",
-                        entry.id,
-                        entry.notes.as_deref().unwrap_or("warn")
-                    ))
-                } else {
-                    None
-                };
-
-                node.fields.insert(
-                    entry.id.clone(),
-                    IRField {
-                        id: entry.id.clone(),
-                        value: transformed,
-                        loss,
-                        transforms_applied: applied,
-                        degrade: None,
-                        warning: warning.clone(),
-                        dropped: None,
-                    },
-                );
-
-                if let Some(msg) = warning {
-                    node.diagnostics.push(Diagnostic {
-                        level: DiagLevel::Warn,
-                        id: Some(entry.id.clone()),
-                        message: msg,
-                    });
-                }
+                crate::handlers::lift_mapped_field(entry, settings_key, v, dir, node);
             }
         }
     }
@@ -509,46 +473,10 @@ impl SettingsHandler {
     /// Add a field directly with default IR semantics.
     fn add_field(&self, node: &mut IRNode, id: &str, value: Value, dir: ConvDir) {
         if let Some(entry) = self.map.entries.iter().find(|e| e.id == id) {
-            if !applies_direction(entry, dir) {
-                return;
-            }
-            let ctx = TransformCtx {
-                direction: dir,
-                args: None,
-                field: entry,
-            };
-            let (transformed, applied) = apply_transforms(&value, entry.transform.as_deref(), &ctx);
-            let loss = Loss::from(&entry.loss);
-            let warning = if entry.warn == Some(true) {
-                Some(format!(
-                    "{}: {}",
-                    entry.id,
-                    entry.notes.as_deref().unwrap_or("warn")
-                ))
-            } else {
-                None
-            };
-            node.fields.insert(
-                id.to_string(),
-                IRField {
-                    id: id.to_string(),
-                    value: transformed,
-                    loss,
-                    transforms_applied: applied,
-                    degrade: None,
-                    warning: warning.clone(),
-                    dropped: None,
-                },
-            );
-            if let Some(msg) = warning {
-                node.diagnostics.push(Diagnostic {
-                    level: DiagLevel::Warn,
-                    id: Some(id.to_string()),
-                    message: msg,
-                });
-            }
+            crate::handlers::lift_mapped_field(entry, id, &value, dir, node);
         } else {
-            // Unknown id (internal placeholder like __permissions.allow): store raw
+            // Unknown id (internal placeholder like __permissions.allow): store raw.
+            // build_report skips `__`-prefixed ids so these never reach the report.
             node.fields.insert(
                 id.to_string(),
                 IRField {
@@ -833,8 +761,20 @@ impl SettingsHandler {
         // permissions.allow/deny/ask → split by tool type
         if let Some(f) = ir.fields.get("__permissions.allow") {
             let tools = crate::handlers::json_to_string_list(&f.value);
+            let split = split_permissions_by_type(&tools);
             let (bash_tools, fs_allow_read, fs_allow_write, web_domains) =
-                split_permissions_by_type(&tools);
+                (split.bash, split.read, split.write, split.web);
+
+            if !split.dropped.is_empty() {
+                diagnostics.push(Diagnostic {
+                    level: DiagLevel::Drop,
+                    id: Some("settings.permissions.allow.dropped".to_string()),
+                    message: format!(
+                        "permissions.allow entries with no Codex equivalent dropped: {}",
+                        split.dropped.join(", ")
+                    ),
+                });
+            }
 
             // Bash → .rules
             if !bash_tools.is_empty() {
@@ -866,8 +806,20 @@ impl SettingsHandler {
 
         if let Some(f) = ir.fields.get("__permissions.deny") {
             let tools = crate::handlers::json_to_string_list(&f.value);
+            let split = split_permissions_by_type(&tools);
             let (bash_tools, fs_deny_read, fs_deny_write, web_deny_domains) =
-                split_permissions_by_type(&tools);
+                (split.bash, split.read, split.write, split.web);
+
+            if !split.dropped.is_empty() {
+                diagnostics.push(Diagnostic {
+                    level: DiagLevel::Drop,
+                    id: Some("settings.permissions.deny.dropped".to_string()),
+                    message: format!(
+                        "permissions.deny entries with no Codex equivalent dropped: {}",
+                        split.dropped.join(", ")
+                    ),
+                });
+            }
 
             if !bash_tools.is_empty() {
                 let (arts, diags) =
@@ -906,7 +858,7 @@ impl SettingsHandler {
 
         if let Some(f) = ir.fields.get("__permissions.ask") {
             let tools = crate::handlers::json_to_string_list(&f.value);
-            let (bash_tools, _, _, _) = split_permissions_by_type(&tools);
+            let bash_tools = split_permissions_by_type(&tools).bash;
             if !bash_tools.is_empty() {
                 // ask → prompt decision in .rules
                 // We reuse degrade_allowed_tools with allow=true and note it as prompt
@@ -1150,15 +1102,26 @@ impl SettingsHandler {
     }
 }
 
-/// Split a Claude permissions list into typed buckets:
-/// (bash_tools, read_paths, write_paths, web_domains)
-fn split_permissions_by_type(
-    tools: &[String],
-) -> (Vec<String>, Vec<String>, Vec<String>, Vec<String>) {
-    let mut bash = Vec::new();
-    let mut read = Vec::new();
-    let mut write = Vec::new();
-    let mut web = Vec::new();
+/// A Claude permissions list split into typed buckets.
+#[derive(Default)]
+struct SplitTools {
+    bash: Vec<String>,
+    read: Vec<String>,
+    write: Vec<String>,
+    web: Vec<String>,
+    /// Tools with no Codex equivalent (bare WebFetch/WebSearch, AskUserQuestion, …).
+    dropped: Vec<String>,
+}
+
+fn split_permissions_by_type(tools: &[String]) -> SplitTools {
+    let mut out = SplitTools::default();
+    let (bash, read, write, web, dropped) = (
+        &mut out.bash,
+        &mut out.read,
+        &mut out.write,
+        &mut out.web,
+        &mut out.dropped,
+    );
 
     for tool in tools {
         let t = tool.trim();
@@ -1177,13 +1140,17 @@ fn split_permissions_by_type(
                 .to_string();
             web.push(domain);
         } else if t == "WebFetch" || t == "WebSearch" {
-            // Coarse allow: no specific domain
-            // We can't map this to a specific domain, record as dropped
+            // Coarse allow with no specific domain: Codex network rules are
+            // domain-scoped, so a blanket allow has no equivalent. Record it so
+            // the caller can surface a Drop diagnostic (no silent loss).
+            dropped.push(t.to_string());
+        } else {
+            // Other tools (AskUserQuestion, etc.) → dropped (no bucket)
+            dropped.push(t.to_string());
         }
-        // Other tools (AskUserQuestion, etc.) → dropped (no bucket)
     }
 
-    (bash, read, write, web)
+    out
 }
 
 /// Extract the argument from a tool pattern like `Bash(git add)` → `git add`.
@@ -1338,6 +1305,49 @@ mod tests {
             rules_file.is_some(),
             "Expected .rules file for Bash permission, got: {:?}",
             plan.files.iter().map(|f| &f.path).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_settings_x2c_otel_is_lossy_not_dropped() {
+        use crate::core::report::build_report;
+        use crate::handlers::EmitPlan;
+
+        let dir = TempDir::new().unwrap();
+        let config_path = dir.path().join("config.toml");
+        fs::write(
+            &config_path,
+            "model = \"gpt-5-codex\"\n\n[otel]\nlog_user_prompt = true\n",
+        )
+        .unwrap();
+
+        let h = make_handler();
+        let parsed = h.parse(&config_path).unwrap();
+        let ir = h.lift(&parsed, ConvDir::X2c).unwrap();
+        let report = build_report(
+            &ir,
+            &EmitPlan {
+                files: vec![],
+                diagnostics: vec![],
+            },
+        );
+
+        // otel is lossy + degrade, so it must NOT appear as dropped.
+        assert!(
+            !report
+                .dropped
+                .iter()
+                .any(|d| d.id.as_deref() == Some("settings.codex.otel")),
+            "otel must not be in dropped: {:?}",
+            report.dropped
+        );
+        assert!(
+            report
+                .degraded
+                .iter()
+                .any(|d| d.id.as_deref() == Some("settings.codex.otel")),
+            "otel must be in degraded: {:?}",
+            report.degraded
         );
     }
 

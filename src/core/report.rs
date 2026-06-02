@@ -36,6 +36,11 @@ pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
     let mut body_warnings = Vec::new();
 
     for (id, field) in &ir.fields {
+        // `__`-prefixed ids are internal bookkeeping (e.g. `__permissions.allow`,
+        // `__body`) consumed by lower(); they are not user-facing fields.
+        if id.starts_with("__") {
+            continue;
+        }
         match field.loss {
             Loss::Lossless => {
                 lossless.push(id.clone());
