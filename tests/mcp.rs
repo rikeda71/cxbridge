@@ -18,7 +18,7 @@ fn test_mcp_c2x_basic() {
         mcp_path
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(mcp_path).expect("detect should succeed");
     assert_eq!(kind, cxbridge::core::ir::Kind::Mcp);
 
@@ -63,7 +63,7 @@ fn test_mcp_c2x_basic() {
 fn test_mcp_c2x_report_dropped() {
     let mcp_path = "tests/fixtures/claude/.mcp.json";
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(mcp_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -91,7 +91,7 @@ fn test_mcp_c2x_lower_generates_files() {
     let mcp_path = "tests/fixtures/claude/.mcp.json";
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(mcp_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -129,7 +129,7 @@ fn test_mcp_x2c_from_codex_config() {
         config_path
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(config_path).expect("detect should succeed");
     assert_eq!(
         kind,
@@ -184,7 +184,7 @@ fn test_mcp_x2c_lower_generates_claude_mcp_json() {
     let config_path = "tests/fixtures/codex/config.toml";
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(config_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -237,7 +237,7 @@ fn test_mcp_x2c_lower_generates_claude_mcp_json() {
 fn test_mcp_c2x_oauth_fields_in_ir() {
     let mcp_path = "tests/fixtures/claude/.mcp.json";
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(mcp_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler.parse(Path::new(mcp_path)).expect("parse ok");
@@ -307,7 +307,7 @@ fn test_mcp_c2x_oauth_lower_output() {
     let mcp_path = "tests/fixtures/claude/.mcp.json";
     let out_dir = tempfile::TempDir::new().unwrap();
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(mcp_path).expect("detect ok");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler.parse(Path::new(mcp_path)).expect("parse ok");
@@ -355,7 +355,7 @@ fn test_mcp_c2x_oauth_lower_output() {
 fn test_mcp_x2c_oauth_fields_in_ir() {
     let config_path = "tests/fixtures/codex/config.toml";
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(config_path).expect("detect ok");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler.parse(Path::new(config_path)).expect("parse ok");
@@ -407,7 +407,7 @@ fn test_mcp_x2c_oauth_lower_output() {
     let config_path = "tests/fixtures/codex/config.toml";
     let out_dir = tempfile::TempDir::new().unwrap();
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(config_path).expect("detect ok");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler.parse(Path::new(config_path)).expect("parse ok");
@@ -478,7 +478,7 @@ fn test_mcp_c2x_env_http_headers_bare_var_name_in_ir() {
         "body": ""
     });
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = cxbridge::handlers::mcp::McpHandler {
         map: maps["mcp"].clone(),
     };
@@ -523,7 +523,7 @@ fn test_mcp_c2x_env_http_headers_bare_var_name_in_output() {
     );
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(mcp_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler.parse(Path::new(mcp_path)).expect("parse ok");
@@ -571,7 +571,7 @@ fn test_mcp_c2x_env_to_env_http_headers_bare_var_name() {
         "body": ""
     });
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = cxbridge::handlers::mcp::McpHandler {
         map: maps["mcp"].clone(),
     };
@@ -624,7 +624,7 @@ fn test_mcp_x2c_env_http_headers_becomes_dollar_brace_in_headers() {
     });
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = cxbridge::handlers::mcp::McpHandler {
         map: maps["mcp"].clone(),
     };
@@ -705,7 +705,7 @@ fn test_mcp_x2c_env_http_headers_e2e_dollar_brace_wrapping() {
     );
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(config_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -778,7 +778,7 @@ fn test_mcp_c2x_env_http_headers_merged_when_both_headers_and_env() {
         "body": ""
     });
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = cxbridge::handlers::mcp::McpHandler {
         map: maps["mcp"].clone(),
     };
@@ -837,7 +837,7 @@ fn test_mcp_c2x_env_http_headers_merged_in_output() {
     });
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = cxbridge::handlers::mcp::McpHandler {
         map: maps["mcp"].clone(),
     };
@@ -918,7 +918,7 @@ fn test_mcp_c2x_bearer_auth_remaining_var_headers_routed_to_env_http_headers() {
         "body": ""
     });
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = cxbridge::handlers::mcp::McpHandler {
         map: maps["mcp"].clone(),
     };
@@ -1015,7 +1015,7 @@ fn test_mcp_c2x_bearer_auth_remaining_var_headers_in_output() {
     });
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = cxbridge::handlers::mcp::McpHandler {
         map: maps["mcp"].clone(),
     };
@@ -1084,7 +1084,7 @@ const DISABLED_FIXTURE: &str = "tests/fixtures/codex/mcp_disabled_server/config.
 /// a Drop diagnostic with id "mcp.enabled".
 #[test]
 fn test_disabled_server_ir_has_no_disabled_sentinel_field() {
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&Kind::Mcp, &maps);
 
     let parsed = handler
@@ -1126,7 +1126,7 @@ fn test_disabled_server_ir_has_no_disabled_sentinel_field() {
 /// one dropped entry with id "mcp.enabled" and zero entries with id "__disabled".
 #[test]
 fn test_disabled_server_report_shows_mcp_enabled_not_disabled_sentinel() {
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&Kind::Mcp, &maps);
 
     let parsed = handler
@@ -1188,7 +1188,7 @@ fn test_disabled_server_report_shows_mcp_enabled_not_disabled_sentinel() {
 /// one from plan.diagnostics.
 #[test]
 fn test_disabled_server_total_dropped_exactly_one() {
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&Kind::Mcp, &maps);
 
     let parsed = handler
@@ -1234,7 +1234,7 @@ fn test_mcp_c2x_always_load_dropped_once_not_in_lossy() {
     let fixture = Path::new(DROPPED_WARN_FIXTURE);
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&Kind::Mcp, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
@@ -1292,7 +1292,7 @@ fn test_mcp_c2x_headers_helper_dropped_once_not_in_lossy() {
     let fixture = Path::new(DROPPED_WARN_FIXTURE);
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&Kind::Mcp, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
@@ -1351,7 +1351,7 @@ fn test_mcp_c2x_summary_counts_two_dropped_not_six() {
     let fixture = Path::new(DROPPED_WARN_FIXTURE);
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&Kind::Mcp, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
@@ -1404,7 +1404,7 @@ fn test_mcp_x2c_enabled_false_dropped_once() {
     let fixture = Path::new(X2C_DISABLED_FIXTURE);
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&Kind::Mcp, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
@@ -1463,7 +1463,7 @@ fn test_mcp_x2c_enabled_false_total_dropped_is_one() {
     let fixture = Path::new(X2C_DISABLED_FIXTURE);
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&Kind::Mcp, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");

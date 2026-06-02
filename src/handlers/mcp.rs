@@ -1189,7 +1189,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn make_handler() -> McpHandler {
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         McpHandler {
             map: maps["mcp"].clone(),
         }

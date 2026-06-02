@@ -125,6 +125,8 @@ pub struct Diagnostic {
 pub enum DiagLevel {
     Info,
     Warn,
+    /// A warning produced by the body scanner, routed to `body_warnings` in the report.
+    BodyWarn,
     Drop,
 }
 

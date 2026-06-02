@@ -322,7 +322,14 @@ impl SkillsHandler {
         let has_fork = ir.fields.contains_key("skills.context-fork");
 
         if matches!(target, SkillTarget::Subagent) && (has_model || has_effort || has_fork) {
-            let (arts, diags) = degrade_to_subagent(&skill_name, ir);
+            let trigger_id = if has_model {
+                "skills.model"
+            } else if has_effort {
+                "skills.effort"
+            } else {
+                "skills.context-fork"
+            };
+            let (arts, diags) = degrade_to_subagent(&skill_name, ir, trigger_id);
             side_artifacts.extend(arts);
             diagnostics.extend(diags);
         }
@@ -667,7 +674,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn make_handler() -> SkillsHandler {
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         SkillsHandler {
             map: maps["skills"].clone(),
         }
@@ -1523,7 +1530,7 @@ mod tests {
         use crate::core::report::build_report;
         use crate::handlers::EmitPlan;
 
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         let h = SkillsHandler {
             map: maps["skills"].clone(),
         };

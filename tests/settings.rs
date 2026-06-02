@@ -23,7 +23,7 @@ fn test_settings_c2x_generates_config_toml() {
         settings_path
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(settings_path).expect("detect should succeed");
     assert_eq!(kind, cxbridge::core::ir::Kind::Settings);
 
@@ -133,7 +133,7 @@ fn test_settings_c2x_generates_config_toml() {
 fn test_settings_c2x_report_enumerates_remainder() {
     let settings_path = "tests/fixtures/claude/settings.json";
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(settings_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -195,7 +195,7 @@ fn test_settings_x2c_generates_claude_settings() {
         settings_path
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
 
     // Test SettingsHandler directly (detect targets config.toml, so call it directly)
     use cxbridge::handlers::settings::SettingsHandler;
@@ -270,7 +270,7 @@ fn test_developer_instructions_produces_claude_md() {
         fixture_path
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = cxbridge::core::detect::detect(fixture_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -316,7 +316,7 @@ fn test_developer_instructions_produces_claude_md() {
 fn test_developer_instructions_degrade_diagnostic_present() {
     let fixture_path = "tests/fixtures/codex/developer_instructions/config.toml";
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = cxbridge::core::detect::detect(fixture_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -368,7 +368,7 @@ fn test_developer_instructions_degrade_diagnostic_present() {
 fn test_no_developer_instructions_no_claude_md_from_settings() {
     let fixture_path = "tests/fixtures/codex/config.toml";
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = cxbridge::core::detect::detect(fixture_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -405,7 +405,7 @@ fn test_webfetch_deny_domains_appear_in_config_toml() {
     let fixture = Path::new("tests/fixtures/claude/webfetch_deny/settings.json");
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&Kind::Settings, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
@@ -458,7 +458,7 @@ fn test_webfetch_deny_domains_emit_warn_diagnostic() {
     let fixture = Path::new("tests/fixtures/claude/webfetch_deny/settings.json");
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&Kind::Settings, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
@@ -506,7 +506,7 @@ fn test_webfetch_deny_domains_visible_in_report() {
     let fixture = Path::new("tests/fixtures/claude/webfetch_deny/settings.json");
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&Kind::Settings, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");

@@ -309,7 +309,7 @@ fn test_c2x_skill_without_out_uses_converted_dir() {
     let skill_path_str = skill_path.to_str().unwrap();
 
     // Compute the default out dir (as run_convert would)
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let pairs = detect_files(skill_path_str).expect("detect_files should succeed");
     assert_eq!(pairs.len(), 1);
     let (kind, file_path) = &pairs[0];
@@ -384,7 +384,7 @@ fn test_c2x_mcp_without_out_uses_converted_dir() {
     .unwrap();
 
     let mcp_path_str = mcp_path.to_str().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let pairs = detect_files(mcp_path_str).expect("detect_files should succeed");
     assert_eq!(pairs.len(), 1);
     let (kind, file_path) = &pairs[0];
@@ -525,7 +525,7 @@ fn lower_opts_with_out(out_dir: &str) -> LowerOpts {
 /// the CLI handler, so a break in the actual `--only` wiring causes these tests
 /// to fail.
 fn run_convert_only(path: &str, only: &[&str], out_dir: &str) -> EmitPlan {
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let opts = LowerOpts {
         only: only.iter().map(|s| s.to_string()).collect(),
         ..lower_opts_with_out(out_dir)
@@ -1052,7 +1052,7 @@ fn test_c2x_directory_converts_all_files() {
     std::fs::write(base.join(".mcp.json"), r#"{"mcpServers":{}}"#).unwrap();
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let opts = default_lower_opts(out_dir.path().to_str().unwrap());
 
     let pairs = detect_files(base.to_str().unwrap()).expect("detect_files should succeed");
@@ -1110,7 +1110,7 @@ fn test_check_directory_processes_all_files() {
     // Create CLAUDE.md (memory file)
     std::fs::write(base.join("CLAUDE.md"), "# Project Instructions\nHello.").unwrap();
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let pairs = detect_files(base.to_str().unwrap()).expect("detect_files should succeed");
 
     assert!(
@@ -1181,7 +1181,7 @@ fn test_c2x_plugin_directory_input() {
         plugin_path.display()
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let out_dir = tempfile::TempDir::new().unwrap();
     let opts = default_lower_opts(out_dir.path().to_str().unwrap());
 
@@ -1229,7 +1229,7 @@ fn test_x2c_plugin_directory_input() {
     let (_, plugin_path) = plugin_pair.unwrap();
     assert!(plugin_path.is_file(), "Plugin path must be a file");
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let out_dir = tempfile::TempDir::new().unwrap();
     let opts = default_lower_opts(out_dir.path().to_str().unwrap());
 
@@ -1282,7 +1282,7 @@ fn test_c2x_hooks_directory_input() {
     let (_, hooks_path) = hooks_pair.unwrap();
     assert!(hooks_path.is_file(), "Hooks path must point to a file");
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let out_dir = tempfile::TempDir::new().unwrap();
     let opts = default_lower_opts(out_dir.path().to_str().unwrap());
 
@@ -1339,7 +1339,7 @@ fn test_c2x_settings_directory_input() {
         "Settings path must point to a file"
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let out_dir = tempfile::TempDir::new().unwrap();
     let opts = default_lower_opts(out_dir.path().to_str().unwrap());
 
@@ -1388,7 +1388,7 @@ fn test_c2x_subagent_directory_input() {
         subagent_path.display()
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let out_dir = tempfile::TempDir::new().unwrap();
     let opts = default_lower_opts(out_dir.path().to_str().unwrap());
 
@@ -1443,7 +1443,7 @@ fn test_c2x_memory_directory_input() {
         memory_path.display()
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let out_dir = tempfile::TempDir::new().unwrap();
     let opts = default_lower_opts(out_dir.path().to_str().unwrap());
 
@@ -1473,7 +1473,7 @@ fn test_check_plugin_directory_input() {
     )
     .unwrap();
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let pairs = detect_files(base.to_str().unwrap())
         .expect("detect_files should succeed on plugin directory");
 

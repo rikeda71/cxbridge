@@ -488,7 +488,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn make_handler() -> MemoryHandler {
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         MemoryHandler {
             map: maps["memory"].clone(),
         }

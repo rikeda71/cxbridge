@@ -433,12 +433,11 @@ pub fn apply_transforms(
 mod tests {
     use super::*;
     use crate::core::mappings::load_mappings;
-    use std::path::Path;
 
     fn dummy_entry() -> MapEntry {
         // Minimal MapEntry for tests (ideally loaded via load_mappings, but transform tests
         // rarely inspect the field contents, so a dummy entry is used here)
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         maps["mcp"].entries[0].clone()
     }
 
@@ -614,7 +613,7 @@ mod tests {
 
     #[test]
     fn test_apply_transforms_ms_to_sec() {
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         // use mcp.timeout entry which has transform: "unit:ms_to_sec"
         let entry = maps["mcp"]
             .entries
@@ -637,7 +636,7 @@ mod tests {
 
     #[test]
     fn test_apply_transforms_enum_map() {
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         // use skills.effort entry which has transform: "enum_map:{max:xhigh}"
         let entry = maps["skills"]
             .entries
