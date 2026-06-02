@@ -8,6 +8,8 @@ use serde_json::Value;
 /// Parses a Markdown file with frontmatter.
 ///
 /// Returns a JSON Value `{frontmatter, body, path}` conforming to the handler parse() contract.
+/// Tries strict YAML first; falls back to lenient line-by-line parsing when strict fails
+/// (e.g. unquoted colons in values common in real skill files).
 pub fn parse_frontmatter_file(path: &Path) -> anyhow::Result<Value> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read file: {}", path.display()))?;
@@ -15,21 +17,143 @@ pub fn parse_frontmatter_file(path: &Path) -> anyhow::Result<Value> {
     let abs_path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
 
     let matter = Matter::<YAML>::new();
-    let parsed = matter
-        .parse::<Value>(&content)
-        .with_context(|| format!("Failed to parse frontmatter in {}", path.display()))?;
-
-    let frontmatter = parsed
-        .data
-        .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
-
-    let body = parsed.content;
+    let (frontmatter, body) = match matter.parse::<Value>(&content) {
+        Ok(parsed) => {
+            let fm = parsed
+                .data
+                .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+            (fm, parsed.content)
+        }
+        Err(_) => {
+            // Strict YAML failed — try the lenient path before surfacing an error.
+            match parse_frontmatter_lenient(&content) {
+                Some((map, body)) => (Value::Object(map), body),
+                None => {
+                    // No valid fence found; re-run strict parse to get the original error.
+                    let parsed = matter.parse::<Value>(&content).with_context(|| {
+                        format!("Failed to parse frontmatter in {}", path.display())
+                    })?;
+                    let fm = parsed
+                        .data
+                        .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+                    (fm, parsed.content)
+                }
+            }
+        }
+    };
 
     Ok(serde_json::json!({
         "frontmatter": frontmatter,
         "body": body,
         "path": abs_path.to_str().unwrap_or("")
     }))
+}
+
+/// Lenient line-by-line frontmatter parser for files that fail strict YAML.
+///
+/// Requires a `---` fence at the start and a closing `---` fence. Top-level
+/// `key: value` lines are stored as strings (preserving unquoted colons in values).
+/// A `key:` with no value followed by indented `- item` lines produces a string array.
+/// Returns `None` when no valid `---…---` fence is found.
+fn parse_frontmatter_lenient(content: &str) -> Option<(serde_json::Map<String, Value>, String)> {
+    let mut lines = content.lines();
+
+    // First non-empty line must be `---`.
+    let first = lines.next()?;
+    if first.trim() != "---" {
+        return None;
+    }
+
+    // Collect frontmatter lines until the closing `---`.
+    let mut fm_lines: Vec<&str> = Vec::new();
+    let mut closed = false;
+    for line in lines.by_ref() {
+        if line.trim() == "---" {
+            closed = true;
+            break;
+        }
+        fm_lines.push(line);
+    }
+    if !closed {
+        return None;
+    }
+
+    // Everything after the closing fence is the body.
+    let body: String = lines.collect::<Vec<_>>().join("\n");
+    // Restore a leading newline that gray_matter normally includes in body.
+    let body = if body.is_empty() {
+        String::new()
+    } else {
+        format!("\n{}", body)
+    };
+
+    let mut map = serde_json::Map::new();
+    let mut i = 0;
+    while i < fm_lines.len() {
+        let line = fm_lines[i];
+        // Skip blank lines and indented lines (handled as list items below).
+        if line.trim().is_empty() || line.starts_with(' ') || line.starts_with('\t') {
+            i += 1;
+            continue;
+        }
+        // Top-level `key: value` or `key:`.
+        if let Some(colon_pos) = line.find(':') {
+            let key = line[..colon_pos].trim();
+            if key.is_empty() {
+                i += 1;
+                continue;
+            }
+            let raw_value = line[colon_pos + 1..].trim();
+
+            // Look ahead for indented list items (`- item`).
+            let mut list_items: Vec<Value> = Vec::new();
+            let mut j = i + 1;
+            while j < fm_lines.len() {
+                let next = fm_lines[j];
+                if next.trim().is_empty() {
+                    j += 1;
+                    continue;
+                }
+                // An indented line starting with `- ` is a list item.
+                let trimmed = next.trim();
+                if (next.starts_with(' ') || next.starts_with('\t')) && trimmed.starts_with("- ") {
+                    let item = strip_surrounding_quotes(trimmed[2..].trim());
+                    list_items.push(Value::String(item.to_string()));
+                    j += 1;
+                } else {
+                    break;
+                }
+            }
+
+            if !list_items.is_empty() {
+                map.insert(key.to_string(), Value::Array(list_items));
+                i = j;
+            } else if raw_value.is_empty() {
+                // `key:` with no value and no list items → empty string.
+                map.insert(key.to_string(), Value::String(String::new()));
+                i += 1;
+            } else {
+                let value = strip_surrounding_quotes(raw_value);
+                map.insert(key.to_string(), Value::String(value.to_string()));
+                i += 1;
+            }
+        } else {
+            i += 1;
+        }
+    }
+
+    Some((map, body))
+}
+
+/// Strips a single layer of surrounding `"…"` or `'…'` quotes, if present.
+fn strip_surrounding_quotes(s: &str) -> &str {
+    if s.len() >= 2
+        && ((s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')))
+    {
+        &s[1..s.len() - 1]
+    } else {
+        s
+    }
 }
 
 /// Writes frontmatter and body text to a Markdown file.
@@ -194,5 +318,89 @@ mod tests {
         assert!(body.contains("Line one."));
         assert!(body.contains("Line two."));
         assert!(body.contains("Line three."));
+    }
+
+    // --- Lenient parsing tests ---
+
+    #[test]
+    fn lenient_unquoted_colon_in_description_parses_full_value() {
+        // Strict YAML would parse `コンテキスト: ...` as a nested mapping and fail.
+        let content = "---\nname: casino-poker-expert\ndescription: カジノポーカーのルール。コンテキスト: ユーザーが実装中。例: \"...\"\nmodel: opus\n---\n\nBody text.\n";
+        let result = parse_frontmatter_lenient(content).unwrap();
+        let (map, body) = result;
+        assert_eq!(map["name"].as_str().unwrap(), "casino-poker-expert");
+        assert_eq!(
+            map["description"].as_str().unwrap(),
+            "カジノポーカーのルール。コンテキスト: ユーザーが実装中。例: \"...\""
+        );
+        assert_eq!(map["model"].as_str().unwrap(), "opus");
+        assert!(body.contains("Body text."));
+    }
+
+    #[test]
+    fn lenient_tools_list_yields_string_array() {
+        let content =
+            "---\nname: my-skill\ntools:\n  - Bash\n  - Read\n  - Edit\n---\n\nDo things.\n";
+        let result = parse_frontmatter_lenient(content).unwrap();
+        let (map, _body) = result;
+        let tools = map["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), 3);
+        assert_eq!(tools[0].as_str().unwrap(), "Bash");
+        assert_eq!(tools[1].as_str().unwrap(), "Read");
+        assert_eq!(tools[2].as_str().unwrap(), "Edit");
+    }
+
+    #[test]
+    fn strict_yaml_list_stays_array_not_string() {
+        // A well-formed YAML list must parse via strict path and produce an array Value,
+        // not be flattened to a string by the lenient path.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("strict_list.md");
+        fs::write(
+            &path,
+            "---\nname: test\nallowed-tools:\n  - Bash\n  - Read\n---\n\nBody.\n",
+        )
+        .unwrap();
+
+        let result = parse_frontmatter_file(&path).unwrap();
+        let tools = result["frontmatter"]["allowed-tools"].as_array().unwrap();
+        assert_eq!(tools.len(), 2, "strict path must preserve YAML arrays");
+        assert_eq!(tools[0].as_str().unwrap(), "Bash");
+    }
+
+    #[test]
+    fn no_frontmatter_file_still_returns_empty_map() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("plain.md");
+        fs::write(&path, "Just plain text with no frontmatter.\n").unwrap();
+
+        let result = parse_frontmatter_file(&path).unwrap();
+        assert!(
+            result["frontmatter"].as_object().unwrap().is_empty(),
+            "frontmatter must be empty for a file without frontmatter"
+        );
+        assert!(result["body"].as_str().unwrap().contains("plain text"));
+    }
+
+    #[test]
+    fn lenient_via_parse_frontmatter_file_round_trip() {
+        // parse_frontmatter_file must activate the lenient path for a file that
+        // strict YAML cannot parse and return the full description string.
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("skill.md");
+        fs::write(
+            &path,
+            "---\nname: poker\ndescription: ルール説明。コンテキスト: 実装中。\nmodel: opus\n---\n\nSkill body.\n",
+        )
+        .unwrap();
+
+        let result = parse_frontmatter_file(&path).unwrap();
+        assert_eq!(result["frontmatter"]["name"].as_str().unwrap(), "poker");
+        assert_eq!(
+            result["frontmatter"]["description"].as_str().unwrap(),
+            "ルール説明。コンテキスト: 実装中。"
+        );
+        assert_eq!(result["frontmatter"]["model"].as_str().unwrap(), "opus");
+        assert!(result["body"].as_str().unwrap().contains("Skill body."));
     }
 }

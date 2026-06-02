@@ -216,37 +216,123 @@ pub fn print_report(report: &Report, fmt: Option<&str>) {
 }
 
 fn print_report_text(report: &Report) {
+    print!("{}", format_report_text(report));
+}
+
+/// Returns the human-readable text report as a `String`.
+///
+/// Grouped and truncated for readability while preserving full accounting of
+/// every dropped/degraded/lossy field.
+#[must_use]
+pub fn format_report_text(report: &Report) -> String {
+    let mut out = String::new();
+
+    // Lossless: inline ids when few, count when many.
     if !report.lossless.is_empty() {
-        println!("  \u{25ce} {}  lossless", report.lossless.join(", "));
+        if report.lossless.len() <= 6 {
+            out.push_str(&format!(
+                "  \u{25ce} {}  lossless\n",
+                report.lossless.join(", ")
+            ));
+        } else {
+            out.push_str(&format!(
+                "  \u{25ce} {} fields lossless\n",
+                report.lossless.len()
+            ));
+        }
     }
 
-    for entry in &report.lossy {
-        let id = entry.id.as_deref().unwrap_or("?");
-        println!("  \u{25cb} {}  lossy  {}", id, entry.message);
+    // Lossy: group by id, one line each with count and truncated message.
+    let lossy_groups = group_by_id(&report.lossy);
+    for (id, count, first_msg) in &lossy_groups {
+        let short = truncate_msg(first_msg, 100);
+        if *count > 1 {
+            out.push_str(&format!(
+                "  \u{25cb} {} (\u{d7}{})  lossy  {}\n",
+                id, count, short
+            ));
+        } else {
+            out.push_str(&format!("  \u{25cb} {}  lossy  {}\n", id, short));
+        }
     }
 
-    for entry in &report.degraded {
-        let id = entry.id.as_deref().unwrap_or("?");
-        println!("  \u{25b3} {}  lossy (degrade)  {}", id, entry.message);
+    // Degraded: same grouping pattern.
+    let degraded_groups = group_by_id(&report.degraded);
+    for (id, count, first_msg) in &degraded_groups {
+        let short = truncate_msg(first_msg, 100);
+        if *count > 1 {
+            out.push_str(&format!(
+                "  \u{25b3} {} (\u{d7}{})  degrade  {}\n",
+                id, count, short
+            ));
+        } else {
+            out.push_str(&format!("  \u{25b3} {}  degrade  {}\n", id, short));
+        }
     }
 
-    for entry in &report.dropped {
-        let id = entry.id.as_deref().unwrap_or("?");
-        println!("  \u{2715} {}  dropped  {}", id, entry.message);
+    // Dropped: grouped but every distinct id is represented — no silent omission.
+    let dropped_groups = group_by_id(&report.dropped);
+    for (id, count, first_msg) in &dropped_groups {
+        let short = truncate_msg(first_msg, 100);
+        if *count > 1 {
+            out.push_str(&format!(
+                "  \u{2715} {} (\u{d7}{})  dropped  {}\n",
+                id, count, short
+            ));
+        } else {
+            out.push_str(&format!("  \u{2715} {}  dropped  {}\n", id, short));
+        }
     }
 
-    for entry in &report.body_warnings {
-        println!("  \u{26a0} {}", entry.message);
+    // Body warnings: single summary line instead of one line per warning.
+    let bw = report.body_warnings.len();
+    if bw > 0 {
+        out.push_str(&format!(
+            "  \u{26a0} {} body warning{} — run with --report=json for line-by-line\n",
+            bw,
+            if bw == 1 { "" } else { "s" }
+        ));
     }
 
-    println!(
-        "Summary: {} lossless, {} lossy({} degraded), {} dropped, {} body-warning",
+    out.push_str(&format!(
+        "Summary: {} lossless, {} lossy({} degraded), {} dropped, {} body-warning\n",
         report.lossless.len(),
         report.lossy.len() + report.degraded.len(),
         report.degraded.len(),
         report.dropped.len(),
         report.body_warnings.len(),
-    );
+    ));
+
+    out
+}
+
+/// Groups `DiagEntry` slices by id, returning `(id, count, first_message)` tuples
+/// in first-occurrence order.
+fn group_by_id(entries: &[DiagEntry]) -> Vec<(String, usize, String)> {
+    let mut index: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut result: Vec<(String, usize, String)> = Vec::new();
+
+    for entry in entries {
+        let id = entry.id.as_deref().unwrap_or("?").to_string();
+        if let Some(pos) = index.get(&id) {
+            result[*pos].1 += 1;
+        } else {
+            index.insert(id.clone(), result.len());
+            result.push((id, 1, entry.message.clone()));
+        }
+    }
+    result
+}
+
+/// Truncates `s` to at most `max_chars` Unicode scalar values, appending `…` if truncated.
+fn truncate_msg(s: &str, max_chars: usize) -> String {
+    let chars: Vec<char> = s.chars().collect();
+    if chars.len() <= max_chars {
+        s.to_string()
+    } else {
+        let truncated: String = chars[..max_chars].iter().collect();
+        format!("{}…", truncated)
+    }
 }
 
 fn print_report_json(report: &Report) {
@@ -626,6 +712,156 @@ mod tests {
                 .iter()
                 .any(|e| e.message.contains("$ARGUMENTS[0]")),
             "body_warnings must contain the BodyWarn message"
+        );
+    }
+
+    // --- format_report_text tests ---
+
+    fn make_lossy_entry(id: &str, msg: &str) -> DiagEntry {
+        DiagEntry {
+            id: Some(id.to_string()),
+            message: msg.to_string(),
+        }
+    }
+
+    fn make_dropped_entry(id: &str, msg: &str) -> DiagEntry {
+        DiagEntry {
+            id: Some(id.to_string()),
+            message: msg.to_string(),
+        }
+    }
+
+    fn make_body_warn(msg: &str) -> DiagEntry {
+        DiagEntry {
+            id: None,
+            message: msg.to_string(),
+        }
+    }
+
+    #[test]
+    fn format_report_text_repeated_lossy_id_grouped() {
+        let report = Report {
+            lossless: vec![],
+            lossy: vec![
+                make_lossy_entry("skills.model", "model mapped via tier"),
+                make_lossy_entry("skills.model", "model mapped via tier"),
+                make_lossy_entry("skills.model", "model mapped via tier"),
+            ],
+            dropped: vec![],
+            degraded: vec![],
+            body_warnings: vec![],
+        };
+
+        let text = format_report_text(&report);
+
+        // Must appear exactly once.
+        let occurrences = text.matches("skills.model").count();
+        assert_eq!(occurrences, 1, "grouped lossy id must appear exactly once");
+
+        // Must carry the ×3 count suffix.
+        assert!(text.contains("(×3)"), "must show (×3) count; got: {text}");
+
+        // Summary counts must be correct.
+        assert!(
+            text.contains("Summary: 0 lossless, 3 lossy(0 degraded), 0 dropped, 0 body-warning"),
+            "summary line must reflect raw counts; got: {text}"
+        );
+    }
+
+    #[test]
+    fn format_report_text_many_body_warnings_single_summary_line() {
+        let warnings: Vec<DiagEntry> = (0..50)
+            .map(|i| make_body_warn(&format!("body L{}: something bad", i)))
+            .collect();
+
+        let report = Report {
+            lossless: vec![],
+            lossy: vec![],
+            dropped: vec![],
+            degraded: vec![],
+            body_warnings: warnings,
+        };
+
+        let text = format_report_text(&report);
+
+        // Must contain exactly one body-warning summary line.
+        let warn_lines: Vec<&str> = text
+            .lines()
+            .filter(|l| l.contains("body warning"))
+            .collect();
+        assert_eq!(
+            warn_lines.len(),
+            1,
+            "50 body warnings must produce one summary line, not 50 lines; got: {text}"
+        );
+        assert!(
+            warn_lines[0].contains("50 body warnings"),
+            "summary must say '50 body warnings'; got: {}",
+            warn_lines[0]
+        );
+
+        // Summary line must still reflect correct count.
+        assert!(
+            text.contains("50 body-warning"),
+            "summary line must list 50 body-warning; got: {text}"
+        );
+    }
+
+    #[test]
+    fn format_report_text_dropped_all_grouped_none_omitted() {
+        // Three distinct dropped ids — each must appear in the output.
+        let report = Report {
+            lossless: vec![],
+            lossy: vec![],
+            dropped: vec![
+                make_dropped_entry("skill.foo", "no Codex equivalent"),
+                make_dropped_entry("skill.bar", "no Codex equivalent"),
+                make_dropped_entry("skill.baz", "no Codex equivalent"),
+                // One duplicate to verify grouping.
+                make_dropped_entry("skill.foo", "no Codex equivalent"),
+            ],
+            degraded: vec![],
+            body_warnings: vec![],
+        };
+
+        let text = format_report_text(&report);
+
+        assert!(text.contains("skill.foo"), "skill.foo must appear");
+        assert!(text.contains("skill.bar"), "skill.bar must appear");
+        assert!(text.contains("skill.baz"), "skill.baz must appear");
+
+        // skill.foo appears twice in the raw report, so must carry (×2).
+        assert!(
+            text.contains("skill.foo") && text.contains("(×2)"),
+            "duplicated dropped id must carry count; got: {text}"
+        );
+
+        // Summary must reflect actual total.
+        assert!(
+            text.contains("4 dropped"),
+            "summary must report 4 dropped; got: {text}"
+        );
+    }
+
+    #[test]
+    fn format_report_text_summary_line_unchanged() {
+        let report = Report {
+            lossless: vec!["a".to_string(), "b".to_string()],
+            lossy: vec![make_lossy_entry("x.y", "lossy reason")],
+            dropped: vec![make_dropped_entry("x.z", "dropped reason")],
+            degraded: vec![],
+            body_warnings: vec![make_body_warn("body L1: something")],
+        };
+
+        let text = format_report_text(&report);
+        let summary_line = text
+            .lines()
+            .find(|l| l.starts_with("Summary:"))
+            .expect("must have a Summary: line");
+
+        assert_eq!(
+            summary_line,
+            "Summary: 2 lossless, 1 lossy(0 degraded), 1 dropped, 1 body-warning"
         );
     }
 }
