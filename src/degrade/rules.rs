@@ -21,12 +21,60 @@ pub fn degrade_allowed_tools(
     let mut artifacts: Vec<SideArtifact> = Vec::new();
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
 
-    let decision = if is_allow { "allow" } else { "forbidden" };
     let tool_kind_id = if is_allow {
         "allowed-tools"
     } else {
         "disallowed-tools"
     };
+
+    degrade_bash_tools(
+        skill_name,
+        tools,
+        is_allow,
+        scope,
+        tool_kind_id,
+        &mut artifacts,
+        &mut diagnostics,
+    );
+    degrade_filesystem_tools(
+        skill_name,
+        tools,
+        is_allow,
+        tool_kind_id,
+        &mut artifacts,
+        &mut diagnostics,
+    );
+    degrade_web_fetch(
+        skill_name,
+        tools,
+        is_allow,
+        tool_kind_id,
+        &mut artifacts,
+        &mut diagnostics,
+    );
+    degrade_web_search(
+        tools,
+        is_allow,
+        tool_kind_id,
+        &mut artifacts,
+        &mut diagnostics,
+    );
+    degrade_mcp_tools(tools, is_allow, tool_kind_id, &mut diagnostics);
+    collect_builtin_drops(tools, tool_kind_id, &mut diagnostics);
+
+    (artifacts, diagnostics)
+}
+
+fn degrade_bash_tools(
+    skill_name: &str,
+    tools: &[String],
+    is_allow: bool,
+    scope: Scope,
+    tool_kind_id: &str,
+    artifacts: &mut Vec<SideArtifact>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let decision = if is_allow { "allow" } else { "forbidden" };
 
     // A bare "Bash" (no parens) means allow all bash commands; treat it as a
     // catch-all by generating a prefix_rule with an empty pattern.
@@ -43,65 +91,76 @@ pub fn degrade_allowed_tools(
         })
         .collect();
 
-    if !bash_tools.is_empty() || has_bare_bash {
-        let mut rules_lines = vec![
-            format!("# Generated from skill '{}' allowed-tools", skill_name),
-            String::new(),
-        ];
-
-        // Bare "Bash" (catch-all) is emitted first as an empty-pattern rule.
-        if has_bare_bash {
-            rules_lines.push(format!(
-                r#"prefix_rule(pattern=[], decision="{}", justification="from skill {}")"#,
-                decision, skill_name
-            ));
-        }
-
-        for cmd in &bash_tools {
-            let parts: Vec<String> = cmd
-                .split_whitespace()
-                .map(|p| format!(r#""{}""#, p))
-                .collect();
-            let pattern = parts.join(", ");
-            rules_lines.push(format!(
-                r#"prefix_rule(pattern=[{}], decision="{}", justification="from skill {}")"#,
-                pattern, decision, skill_name
-            ));
-        }
-
-        let (rules_path, scope_label) = match scope {
-            Scope::User => {
-                let home = std::env::var("HOME").unwrap_or_else(|_| {
-                    #[allow(deprecated)]
-                    std::env::home_dir()
-                        .map(|p| p.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "~".to_string())
-                });
-                (format!("{}/.codex/rules/default.rules", home), "skill→user")
-            }
-            Scope::Project => (
-                format!(".codex/rules/{}.rules", skill_name),
-                "skill→project",
-            ),
-        };
-        artifacts.push(SideArtifact {
-            path: rules_path.clone(),
-            content: rules_lines.join("\n") + "\n",
-            note: format!(
-                "Bash tool permissions degraded to execpolicy ({})",
-                decision
-            ),
-        });
-        diagnostics.push(Diagnostic {
-            level: DiagLevel::Warn,
-            id: Some(format!("skills.{}", tool_kind_id)),
-            message: format!(
-                "Bash tools in {} degraded to {} (scope: {}). Generated: {}",
-                tool_kind_id, rules_path, scope_label, decision
-            ),
-        });
+    if bash_tools.is_empty() && !has_bare_bash {
+        return;
     }
 
+    let mut rules_lines = vec![
+        format!("# Generated from skill '{}' allowed-tools", skill_name),
+        String::new(),
+    ];
+
+    // Bare "Bash" (catch-all) is emitted first as an empty-pattern rule.
+    if has_bare_bash {
+        rules_lines.push(format!(
+            r#"prefix_rule(pattern=[], decision="{}", justification="from skill {}")"#,
+            decision, skill_name
+        ));
+    }
+
+    for cmd in &bash_tools {
+        let parts: Vec<String> = cmd
+            .split_whitespace()
+            .map(|p| format!(r#""{}""#, p))
+            .collect();
+        let pattern = parts.join(", ");
+        rules_lines.push(format!(
+            r#"prefix_rule(pattern=[{}], decision="{}", justification="from skill {}")"#,
+            pattern, decision, skill_name
+        ));
+    }
+
+    let (rules_path, scope_label) = match scope {
+        Scope::User => {
+            let home = std::env::var("HOME").unwrap_or_else(|_| {
+                #[allow(deprecated)]
+                std::env::home_dir()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "~".to_string())
+            });
+            (format!("{}/.codex/rules/default.rules", home), "skill→user")
+        }
+        Scope::Project => (
+            format!(".codex/rules/{}.rules", skill_name),
+            "skill→project",
+        ),
+    };
+    artifacts.push(SideArtifact {
+        path: rules_path.clone(),
+        content: rules_lines.join("\n") + "\n",
+        note: format!(
+            "Bash tool permissions degraded to execpolicy ({})",
+            decision
+        ),
+    });
+    diagnostics.push(Diagnostic {
+        level: DiagLevel::Warn,
+        id: Some(format!("skills.{}", tool_kind_id)),
+        message: format!(
+            "Bash tools in {} degraded to {} (scope: {}). Generated: {}",
+            tool_kind_id, rules_path, scope_label, decision
+        ),
+    });
+}
+
+fn degrade_filesystem_tools(
+    skill_name: &str,
+    tools: &[String],
+    is_allow: bool,
+    tool_kind_id: &str,
+    artifacts: &mut Vec<SideArtifact>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     let write_tools: Vec<&str> = tools
         .iter()
         .filter_map(|t| {
@@ -129,148 +188,177 @@ pub fn degrade_allowed_tools(
         .collect();
 
     // Build config.toml SideArtifact when Write/Edit or Read globs are present.
-    if !write_tools.is_empty() || !read_tools.is_empty() {
-        let perm_value = if is_allow { "write" } else { "deny" };
-        let read_perm_value = if is_allow { "read" } else { "deny" };
+    if write_tools.is_empty() && read_tools.is_empty() {
+        return;
+    }
 
-        let mut doc = DocumentMut::new();
+    let perm_value = if is_allow { "write" } else { "deny" };
+    let read_perm_value = if is_allow { "read" } else { "deny" };
+
+    let mut doc = DocumentMut::new();
+    {
+        if let Some(permissions) = doc
+            .entry("permissions")
+            .or_insert(Item::Table(Table::new()))
+            .as_table_mut()
         {
-            if let Some(permissions) = doc
-                .entry("permissions")
+            if let Some(skill_table) = permissions
+                .entry(skill_name)
                 .or_insert(Item::Table(Table::new()))
                 .as_table_mut()
             {
-                if let Some(skill_table) = permissions
-                    .entry(skill_name)
+                if let Some(fs_table) = skill_table
+                    .entry("filesystem")
                     .or_insert(Item::Table(Table::new()))
                     .as_table_mut()
                 {
-                    if let Some(fs_table) = skill_table
-                        .entry("filesystem")
-                        .or_insert(Item::Table(Table::new()))
-                        .as_table_mut()
-                    {
-                        for glob in &write_tools {
-                            fs_table[glob] = Item::Value(TomlValue::from(perm_value));
-                        }
-                        for glob in &read_tools {
-                            fs_table[glob] = Item::Value(TomlValue::from(read_perm_value));
-                        }
+                    for glob in &write_tools {
+                        fs_table[glob] = Item::Value(TomlValue::from(perm_value));
+                    }
+                    for glob in &read_tools {
+                        fs_table[glob] = Item::Value(TomlValue::from(read_perm_value));
                     }
                 }
             }
         }
-
-        let toml_string = doc.to_string();
-        artifacts.push(SideArtifact {
-            path: "config.toml".to_string(),
-            content: toml_string,
-            note: format!(
-                "Write/Edit/Read tool permissions degraded to [permissions.{}].filesystem (scope: skill→project)",
-                skill_name
-            ),
-        });
-
-        for glob in &write_tools {
-            diagnostics.push(Diagnostic {
-                level: DiagLevel::Warn,
-                id: Some(format!("skill.{}", tool_kind_id)),
-                message: format!(
-                    "Write/Edit tool permission for '{}' degraded to [permissions.{}].filesystem.\"{}\" = \"{}\" (scope: skill→project)",
-                    glob, skill_name, glob, perm_value
-                ),
-            });
-        }
-        for glob in &read_tools {
-            diagnostics.push(Diagnostic {
-                level: DiagLevel::Warn,
-                id: Some(format!("skill.{}", tool_kind_id)),
-                message: format!(
-                    "Read tool permission for '{}' degraded to [permissions.{}].filesystem.\"{}\" = \"{}\" (scope: skill→project)",
-                    glob, skill_name, glob, read_perm_value
-                ),
-            });
-        }
     }
 
-    let has_web_fetch = tools.iter().any(|t| t == "WebFetch");
-    if has_web_fetch {
-        // allow → grant network; disallow → deny it. Never grant on a deny.
-        let net_value = if is_allow { "true" } else { "false" };
-        let content = format!("[permissions.{}]\nnetwork = {}\n", skill_name, net_value);
-        artifacts.push(SideArtifact {
-            path: "config.toml".to_string(),
-            content,
-            note: format!(
-                "WebFetch degraded to [permissions.{}].network = {} (scope: skill→project)",
-                skill_name, net_value
-            ),
-        });
+    let toml_string = doc.to_string();
+    artifacts.push(SideArtifact {
+        path: "config.toml".to_string(),
+        content: toml_string,
+        note: format!(
+            "Write/Edit/Read tool permissions degraded to [permissions.{}].filesystem (scope: skill→project)",
+            skill_name
+        ),
+    });
+
+    for glob in &write_tools {
         diagnostics.push(Diagnostic {
             level: DiagLevel::Warn,
-            id: Some(format!("skills.{}", tool_kind_id)),
+            id: Some(format!("skill.{}", tool_kind_id)),
             message: format!(
-                "WebFetch in {} degraded to [permissions.{}].network = {} in config.toml",
-                tool_kind_id, skill_name, net_value
+                "Write/Edit tool permission for '{}' degraded to [permissions.{}].filesystem.\"{}\" = \"{}\" (scope: skill→project)",
+                glob, skill_name, glob, perm_value
             ),
         });
     }
-
-    let has_web_search = tools.iter().any(|t| t == "WebSearch");
-    if has_web_search {
-        // allow → enable web search; disallow → disable it. Never enable on a deny.
-        let ws_value = if is_allow { "true" } else { "false" };
-        artifacts.push(SideArtifact {
-            path: "config.toml".to_string(),
-            content: format!("[features]\nweb_search = {}\n", ws_value),
-            note: format!(
-                "WebSearch degraded to [features].web_search = {} (scope: skill→project)",
-                ws_value
-            ),
-        });
+    for glob in &read_tools {
         diagnostics.push(Diagnostic {
             level: DiagLevel::Warn,
-            id: Some(format!("skills.{}", tool_kind_id)),
+            id: Some(format!("skill.{}", tool_kind_id)),
             message: format!(
-                "WebSearch in {} degraded to [features].web_search = {} in config.toml",
-                tool_kind_id, ws_value
+                "Read tool permission for '{}' degraded to [permissions.{}].filesystem.\"{}\" = \"{}\" (scope: skill→project)",
+                glob, skill_name, glob, read_perm_value
             ),
         });
     }
+}
 
+fn degrade_web_fetch(
+    skill_name: &str,
+    tools: &[String],
+    is_allow: bool,
+    tool_kind_id: &str,
+    artifacts: &mut Vec<SideArtifact>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if !tools.iter().any(|t| t == "WebFetch") {
+        return;
+    }
+    // allow → grant network; disallow → deny it. Never grant on a deny.
+    let net_value = if is_allow { "true" } else { "false" };
+    let content = format!("[permissions.{}]\nnetwork = {}\n", skill_name, net_value);
+    artifacts.push(SideArtifact {
+        path: "config.toml".to_string(),
+        content,
+        note: format!(
+            "WebFetch degraded to [permissions.{}].network = {} (scope: skill→project)",
+            skill_name, net_value
+        ),
+    });
+    diagnostics.push(Diagnostic {
+        level: DiagLevel::Warn,
+        id: Some(format!("skills.{}", tool_kind_id)),
+        message: format!(
+            "WebFetch in {} degraded to [permissions.{}].network = {} in config.toml",
+            tool_kind_id, skill_name, net_value
+        ),
+    });
+}
+
+fn degrade_web_search(
+    tools: &[String],
+    is_allow: bool,
+    tool_kind_id: &str,
+    artifacts: &mut Vec<SideArtifact>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if !tools.iter().any(|t| t == "WebSearch") {
+        return;
+    }
+    // allow → enable web search; disallow → disable it. Never enable on a deny.
+    let ws_value = if is_allow { "true" } else { "false" };
+    artifacts.push(SideArtifact {
+        path: "config.toml".to_string(),
+        content: format!("[features]\nweb_search = {}\n", ws_value),
+        note: format!(
+            "WebSearch degraded to [features].web_search = {} (scope: skill→project)",
+            ws_value
+        ),
+    });
+    diagnostics.push(Diagnostic {
+        level: DiagLevel::Warn,
+        id: Some(format!("skills.{}", tool_kind_id)),
+        message: format!(
+            "WebSearch in {} degraded to [features].web_search = {} in config.toml",
+            tool_kind_id, ws_value
+        ),
+    });
+}
+
+fn degrade_mcp_tools(
+    tools: &[String],
+    is_allow: bool,
+    tool_kind_id: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
     for t in tools {
-        if t.starts_with("mcp__") {
-            let parts: Vec<&str> = t.splitn(3, "__").collect();
-            if parts.len() == 3 {
-                let server = parts[1];
-                let tool = parts[2];
-                let list_name = if is_allow {
-                    "enabled_tools"
-                } else {
-                    "disabled_tools"
-                };
-                diagnostics.push(Diagnostic {
-                    level: DiagLevel::Warn,
-                    id: Some(format!("skills.{}", tool_kind_id)),
-                    message: format!(
-                        "mcp tool '{}' degraded to [mcp_servers.{}].{} = ['{}'] (manual: add to config.toml)",
-                        t, server, list_name, tool
-                    ),
-                });
+        if !t.starts_with("mcp__") {
+            continue;
+        }
+        let parts: Vec<&str> = t.splitn(3, "__").collect();
+        if parts.len() == 3 {
+            let server = parts[1];
+            let tool = parts[2];
+            let list_name = if is_allow {
+                "enabled_tools"
             } else {
-                // Pattern does not match mcp__<server>__<tool>; flag for manual review.
-                diagnostics.push(Diagnostic {
-                    level: DiagLevel::Warn,
-                    id: Some(format!("skills.{}", tool_kind_id)),
-                    message: format!(
-                        "mcp tool '{}' does not match mcp__<server>__<tool> pattern; manual review required",
-                        t
-                    ),
-                });
-            }
+                "disabled_tools"
+            };
+            diagnostics.push(Diagnostic {
+                level: DiagLevel::Warn,
+                id: Some(format!("skills.{}", tool_kind_id)),
+                message: format!(
+                    "mcp tool '{}' degraded to [mcp_servers.{}].{} = ['{}'] (manual: add to config.toml)",
+                    t, server, list_name, tool
+                ),
+            });
+        } else {
+            // Pattern does not match mcp__<server>__<tool>; flag for manual review.
+            diagnostics.push(Diagnostic {
+                level: DiagLevel::Warn,
+                id: Some(format!("skills.{}", tool_kind_id)),
+                message: format!(
+                    "mcp tool '{}' does not match mcp__<server>__<tool> pattern; manual review required",
+                    t
+                ),
+            });
         }
     }
+}
 
+fn collect_builtin_drops(tools: &[String], tool_kind_id: &str, diagnostics: &mut Vec<Diagnostic>) {
     // Built-ins have no Codex equivalent; collect them separately so each gets an explicit Drop diagnostic.
     let builtin_tools: Vec<&str> = tools
         .iter()
@@ -301,8 +389,6 @@ pub fn degrade_allowed_tools(
             ),
         });
     }
-
-    (artifacts, diagnostics)
 }
 
 #[cfg(test)]

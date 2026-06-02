@@ -1,7 +1,7 @@
 use serde_json::Value;
 
 use crate::core::ir::{DiagLevel, Diagnostic, IRNode};
-use crate::core::transforms::{claude_tier, tier_to_codex};
+use crate::core::model_tiers::{claude_tier, tier_to_codex};
 use crate::handlers::{EmitFile, EmitPlan, LowerOpts};
 
 use super::parse::extract_agent_name_from_path;

@@ -9,7 +9,7 @@ use crate::core::transforms::ConvDir;
 use crate::degrade::rules::degrade_allowed_tools;
 use crate::degrade::subagent::{decide_skill_target, degrade_to_subagent, SkillTarget};
 use crate::handlers::{EmitFile, EmitPlan, LowerOpts};
-use crate::scanner::body::rewrite_body;
+use crate::scanner::body_rewrite::rewrite_body;
 
 use super::aux_files::{collect_aux_files, extract_skill_name};
 use super::SkillsHandler;

@@ -1,5 +1,5 @@
 use crate::core::ir::{DiagLevel, Diagnostic, IRNode, SideArtifact};
-use crate::core::transforms::{claude_tier, tier_to_codex};
+use crate::core::model_tiers::{claude_tier, tier_to_codex};
 use crate::handlers::{LowerOpts, SkillTargetMode};
 
 /// Whether a skill is emitted as a Codex skill file or as a subagent.
@@ -110,7 +110,7 @@ pub fn degrade_to_subagent(
         .and_then(|f| f.value.as_str())
         .unwrap_or("");
     let codex_model = if model_str.is_empty() {
-        tier_to_codex(crate::core::transforms::Tier::Mid).to_string()
+        tier_to_codex(crate::core::model_tiers::Tier::Mid).to_string()
     } else if let Some(tier) = claude_tier(model_str) {
         tier_to_codex(tier).to_string()
     } else {

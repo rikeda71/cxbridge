@@ -37,8 +37,8 @@ pub(crate) fn lower_x2c(ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPla
         if let Some(model_str) = f.value.as_str() {
             if !model_str.is_empty() {
                 let claude_model =
-                    if let Some(tier) = crate::core::transforms::codex_tier(model_str) {
-                        crate::core::transforms::tier_to_claude(tier).to_string()
+                    if let Some(tier) = crate::core::model_tiers::codex_tier(model_str) {
+                        crate::core::model_tiers::tier_to_claude(tier).to_string()
                     } else {
                         diagnostics.push(Diagnostic {
                             level: DiagLevel::Warn,
