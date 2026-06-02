@@ -6,28 +6,32 @@ use crate::core::ir::{
 
 use super::{HooksHandler, CLAUDE_ONLY_EVENTS, COMMON_EVENTS};
 
+/// Resolves the event-keyed hooks object from whatever parse() produced.
+///
+/// Resolution order: top-level `"hooks"` key → frontmatter `"hooks"` key →
+/// entire frontmatter → entire parsed object → `None`.
+fn resolve_hooks_obj(parsed: &Value) -> Option<serde_json::Map<String, Value>> {
+    if let Some(h) = parsed.get("hooks").and_then(|v| v.as_object()) {
+        return Some(h.clone());
+    }
+    if let Some(fm) = parsed.get("frontmatter").and_then(|v| v.as_object()) {
+        if let Some(h) = fm.get("hooks").and_then(|v| v.as_object()) {
+            return Some(h.clone());
+        }
+        return Some(fm.clone());
+    }
+    parsed.as_object().cloned()
+}
+
 impl HooksHandler {
     /// Lift Claude JSON hooks → IR (c2x).
     pub(super) fn lift_c2x(&self, parsed: &Value) -> anyhow::Result<IRNode> {
         let source_path = parsed["path"].as_str().unwrap_or("").to_string();
         let mut node = new_node(Kind::Hooks, Tool::Claude, &source_path);
 
-        // `parsed` is the raw JSON of hooks.json, or the "hooks" key of settings.json.
-        // Format: {"hooks": {"EventName": [{matcher, hooks:[{type,...}]}]}}
-        // or directly: {"EventName": [...]}
-        let hooks_obj = if let Some(h) = parsed.get("hooks").and_then(|v| v.as_object()) {
-            h.clone()
-        } else if let Some(fm) = parsed.get("frontmatter").and_then(|v| v.as_object()) {
-            if let Some(h) = fm.get("hooks").and_then(|v| v.as_object()) {
-                h.clone()
-            } else {
-                // Treat the entire frontmatter as hooks
-                fm.clone()
-            }
-        } else if let Some(obj) = parsed.as_object() {
-            obj.clone()
-        } else {
-            return Ok(node);
+        let hooks_obj = match resolve_hooks_obj(parsed) {
+            Some(obj) => obj,
+            None => return Ok(node),
         };
 
         for (event_name, event_entries) in &hooks_obj {
@@ -121,24 +125,9 @@ impl HooksHandler {
         let source_path = parsed["path"].as_str().unwrap_or("").to_string();
         let mut node = new_node(Kind::Hooks, Tool::Codex, &source_path);
 
-        // Resolve the event-keyed object from whatever parse() produced.
-        // parse_json_file wraps file content under "frontmatter"; flat Codex hooks.json
-        // ({"EventName":[...]}) therefore arrives as frontmatter rather than a "hooks" key.
-        let hooks_obj = if let Some(h) = parsed.get("hooks").and_then(|v| v.as_object()) {
-            // TOML parser path: {"path":..., "hooks":{"EventName":[...]}}
-            h.clone()
-        } else if let Some(fm) = parsed.get("frontmatter").and_then(|v| v.as_object()) {
-            // JSON parser path: frontmatter may have a nested "hooks" key (settings.json-style)
-            // or may itself be the flat event map (standalone hooks.json).
-            if let Some(h) = fm.get("hooks").and_then(|v| v.as_object()) {
-                h.clone()
-            } else {
-                fm.clone()
-            }
-        } else if let Some(obj) = parsed.as_object() {
-            obj.clone()
-        } else {
-            return Ok(node);
+        let hooks_obj = match resolve_hooks_obj(parsed) {
+            Some(obj) => obj,
+            None => return Ok(node),
         };
 
         for (event_name, event_entries) in &hooks_obj {

@@ -143,19 +143,7 @@ impl PluginsHandler {
                 continue;
             };
 
-            // Handle nested fields (e.g. interface.displayName)
-            if let Some(dot_pos) = cf.find('.') {
-                let parent = &cf[..dot_pos];
-                let child_key = &cf[dot_pos + 1..];
-                let parent_obj = manifest
-                    .entry(parent.to_string())
-                    .or_insert_with(|| Value::Object(Map::new()));
-                if let Some(obj) = parent_obj.as_object_mut() {
-                    obj.insert(child_key.to_string(), field.value.clone());
-                }
-            } else {
-                manifest.insert(cf.to_string(), field.value.clone());
-            }
+            insert_possibly_nested(&mut manifest, cf, field.value.clone());
         }
 
         // Fill in semver "0.0.0" if version is missing
@@ -229,22 +217,27 @@ impl PluginsHandler {
                 continue;
             };
 
-            // Handle nested fields (e.g. experimental.themes)
-            if let Some(dot_pos) = cf.find('.') {
-                let parent = &cf[..dot_pos];
-                let child_key = &cf[dot_pos + 1..];
-                let parent_obj = manifest
-                    .entry(parent.to_string())
-                    .or_insert_with(|| Value::Object(Map::new()));
-                if let Some(obj) = parent_obj.as_object_mut() {
-                    obj.insert(child_key.to_string(), field.value.clone());
-                }
-            } else {
-                manifest.insert(cf.to_string(), field.value.clone());
-            }
+            insert_possibly_nested(&mut manifest, cf, field.value.clone());
         }
 
         Value::Object(manifest)
+    }
+}
+
+/// Inserts `value` at `field_name` in `manifest`, expanding a single dot into a
+/// nested object (e.g. `"interface.displayName"` → `manifest["interface"]["displayName"]`).
+fn insert_possibly_nested(manifest: &mut Map<String, Value>, field_name: &str, value: Value) {
+    if let Some(dot_pos) = field_name.find('.') {
+        let parent = &field_name[..dot_pos];
+        let child_key = &field_name[dot_pos + 1..];
+        let parent_obj = manifest
+            .entry(parent.to_string())
+            .or_insert_with(|| Value::Object(Map::new()));
+        if let Some(obj) = parent_obj.as_object_mut() {
+            obj.insert(child_key.to_string(), value);
+        }
+    } else {
+        manifest.insert(field_name.to_string(), value);
     }
 }
 

@@ -10,6 +10,63 @@ use crate::handlers::lift_mapped_field;
 use super::parse::{extract_bearer_env_var, extract_env_var_ref};
 use super::McpHandler;
 
+/// Splits `headers` into env-var-backed (`${VAR}`) and static entries, then inserts
+/// `mcp.env_http_headers` and/or `mcp.headers` IRFields into `child`.
+/// Literal string values that cannot be auto-converted produce a `Warn` diagnostic.
+fn split_and_insert_headers(headers: &Map<String, Value>, child: &mut IRNode) {
+    let mut env_http_headers: Map<String, Value> = Map::new();
+    let mut static_headers: Map<String, Value> = Map::new();
+
+    for (k, v) in headers {
+        if let Some(val_str) = v.as_str() {
+            if let Some(var_name) = extract_env_var_ref(val_str) {
+                env_http_headers.insert(k.clone(), Value::String(var_name.to_string()));
+            } else {
+                child.diagnostics.push(Diagnostic {
+                    level: DiagLevel::Warn,
+                    id: Some("mcp.env_http_headers".to_string()),
+                    message: format!(
+                        "Header '{}' has literal value '{}': cannot auto-convert to env_http_headers (manual action required)",
+                        k, val_str
+                    ),
+                });
+                static_headers.insert(k.clone(), v.clone());
+            }
+        } else {
+            static_headers.insert(k.clone(), v.clone());
+        }
+    }
+
+    if !static_headers.is_empty() {
+        child.fields.insert(
+            "mcp.headers".to_string(),
+            IRField {
+                id: "mcp.headers".to_string(),
+                value: Value::Object(static_headers),
+                loss: Loss::Lossless,
+                transforms_applied: vec!["rename".to_string()],
+                degrade: None,
+                warning: None,
+                dropped: None,
+            },
+        );
+    }
+    if !env_http_headers.is_empty() {
+        child.fields.insert(
+            "mcp.env_http_headers".to_string(),
+            IRField {
+                id: "mcp.env_http_headers".to_string(),
+                value: Value::Object(env_http_headers),
+                loss: Loss::Lossy,
+                transforms_applied: vec![],
+                degrade: None,
+                warning: Some("${VAR} headers converted to env_http_headers".to_string()),
+                dropped: None,
+            },
+        );
+    }
+}
+
 impl McpHandler {
     /// Lift Claude .mcp.json → IR (c2x direction).
     pub(super) fn lift_c2x(&self, parsed: &Value, node: &mut IRNode) -> anyhow::Result<()> {
@@ -213,120 +270,20 @@ impl McpHandler {
                             dropped: None,
                         },
                     );
-                    // Apply the same ${VAR} split logic for remaining headers as the
-                    // non-Bearer path: route ${VAR} values to env_http_headers and
-                    // literal values to http_headers with a Warn diagnostic.
-                    let mut env_http_headers: Map<String, Value> = Map::new();
-                    let mut static_headers: Map<String, Value> = Map::new();
-                    for (k, v) in headers.iter().filter(|(k, _)| *k != "Authorization") {
-                        if let Some(val_str) = v.as_str() {
-                            if let Some(bare) = extract_env_var_ref(val_str) {
-                                env_http_headers.insert(k.clone(), Value::String(bare.to_string()));
-                            } else {
-                                child.diagnostics.push(Diagnostic {
-                                    level: DiagLevel::Warn,
-                                    id: Some("mcp.env_http_headers".to_string()),
-                                    message: format!(
-                                        "Header '{}' has literal value '{}': cannot auto-convert to env_http_headers (manual action required)",
-                                        k, val_str
-                                    ),
-                                });
-                                static_headers.insert(k.clone(), v.clone());
-                            }
-                        } else {
-                            static_headers.insert(k.clone(), v.clone());
-                        }
-                    }
-                    if !static_headers.is_empty() {
-                        child.fields.insert(
-                            "mcp.headers".to_string(),
-                            IRField {
-                                id: "mcp.headers".to_string(),
-                                value: Value::Object(static_headers),
-                                loss: Loss::Lossless,
-                                transforms_applied: vec!["rename".to_string()],
-                                degrade: None,
-                                warning: None,
-                                dropped: None,
-                            },
-                        );
-                    }
-                    if !env_http_headers.is_empty() {
-                        child.fields.insert(
-                            "mcp.env_http_headers".to_string(),
-                            IRField {
-                                id: "mcp.env_http_headers".to_string(),
-                                value: Value::Object(env_http_headers),
-                                loss: Loss::Lossy,
-                                transforms_applied: vec![],
-                                degrade: None,
-                                warning: Some(
-                                    "${VAR} headers converted to env_http_headers".to_string(),
-                                ),
-                                dropped: None,
-                            },
-                        );
-                    }
+                    // Apply the ${VAR} split logic for remaining headers (exclude Authorization).
+                    let remaining: Map<String, Value> = headers
+                        .iter()
+                        .filter(|(k, _)| *k != "Authorization")
+                        .map(|(k, v)| (k.clone(), v.clone()))
+                        .collect();
+                    split_and_insert_headers(&remaining, child);
                     return;
                 }
             }
         }
 
-        // When Authorization does not contain Bearer, convert all headers to http_headers.
-        // Headers with ${VAR} patterns are converted to env_http_headers.
-        let mut env_http_headers: Map<String, Value> = Map::new();
-        let mut static_headers: Map<String, Value> = Map::new();
-
-        for (k, v) in headers {
-            if let Some(val_str) = v.as_str() {
-                if let Some(var_name) = extract_env_var_ref(val_str) {
-                    env_http_headers.insert(k.clone(), Value::String(var_name.to_string()));
-                } else {
-                    // Literal value — warn
-                    child.diagnostics.push(Diagnostic {
-                        level: DiagLevel::Warn,
-                        id: Some("mcp.env_http_headers".to_string()),
-                        message: format!(
-                            "Header '{}' has literal value '{}': cannot auto-convert to env_http_headers (manual action required)",
-                            k, val_str
-                        ),
-                    });
-                    static_headers.insert(k.clone(), v.clone());
-                }
-            } else {
-                static_headers.insert(k.clone(), v.clone());
-            }
-        }
-
-        if !static_headers.is_empty() {
-            child.fields.insert(
-                "mcp.headers".to_string(),
-                IRField {
-                    id: "mcp.headers".to_string(),
-                    value: Value::Object(static_headers),
-                    loss: Loss::Lossless,
-                    transforms_applied: vec!["rename".to_string()],
-                    degrade: None,
-                    warning: None,
-                    dropped: None,
-                },
-            );
-        }
-
-        if !env_http_headers.is_empty() {
-            child.fields.insert(
-                "mcp.env_http_headers".to_string(),
-                IRField {
-                    id: "mcp.env_http_headers".to_string(),
-                    value: Value::Object(env_http_headers),
-                    loss: Loss::Lossy,
-                    transforms_applied: vec![],
-                    degrade: None,
-                    warning: Some("${VAR} headers converted to env_http_headers".to_string()),
-                    dropped: None,
-                },
-            );
-        }
+        // When Authorization does not contain Bearer, convert all headers.
+        split_and_insert_headers(headers, child);
     }
 
     /// Converts the oauth sub-object from Claude .mcp.json into IR fields.

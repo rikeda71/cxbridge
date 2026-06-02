@@ -8,57 +8,19 @@ use super::SettingsHandler;
 impl SettingsHandler {
     /// Lift Claude settings.json fields into IR (c2x direction).
     pub(super) fn lift_c2x(&self, settings: &serde_json::Map<String, Value>, node: &mut IRNode) {
-        // Flat key scan: model, effortLevel, editorMode, etc.
-        self.lift_flat_key(settings, node, ConvDir::C2x, "model", "settings.model");
-        self.lift_flat_key(
-            settings,
-            node,
-            ConvDir::C2x,
-            "effortLevel",
-            "settings.effortLevel",
-        );
-        self.lift_flat_key(
-            settings,
-            node,
-            ConvDir::C2x,
-            "editorMode",
-            "settings.editorMode",
-        );
-        self.lift_flat_key(
-            settings,
-            node,
-            ConvDir::C2x,
-            "autoMemoryEnabled",
-            "settings.autoMemoryEnabled",
-        );
-        self.lift_flat_key(
-            settings,
-            node,
-            ConvDir::C2x,
-            "cleanupPeriodDays",
-            "settings.cleanupPeriodDays",
-        );
-        self.lift_flat_key(
-            settings,
-            node,
-            ConvDir::C2x,
-            "language",
-            "settings.language",
-        );
-        self.lift_flat_key(
-            settings,
-            node,
-            ConvDir::C2x,
-            "defaultShell",
-            "settings.defaultShell",
-        );
-        self.lift_flat_key(
-            settings,
-            node,
-            ConvDir::C2x,
-            "outputStyle",
-            "settings.outputStyle",
-        );
+        const FLAT_KEYS: &[(&str, &str)] = &[
+            ("model", "settings.model"),
+            ("effortLevel", "settings.effortLevel"),
+            ("editorMode", "settings.editorMode"),
+            ("autoMemoryEnabled", "settings.autoMemoryEnabled"),
+            ("cleanupPeriodDays", "settings.cleanupPeriodDays"),
+            ("language", "settings.language"),
+            ("defaultShell", "settings.defaultShell"),
+            ("outputStyle", "settings.outputStyle"),
+        ];
+        for (settings_key, entry_id) in FLAT_KEYS {
+            self.lift_flat_key(settings, node, ConvDir::C2x, settings_key, entry_id);
+        }
 
         // env object
         if let Some(env_val) = settings.get("env") {

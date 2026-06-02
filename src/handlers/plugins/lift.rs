@@ -342,32 +342,11 @@ impl PluginsHandler {
 
     /// Processes marketplace.json and stores it in side_artifacts.
     /// plugin_root is the directory containing plugin.json (e.g. `.claude-plugin/`).
-    pub(super) fn lift_marketplace(&self, plugin_root: &str, dir: ConvDir, node: &mut IRNode) {
-        // marketplace.json lives in the same directory as plugin.json:
-        // Claude: .claude-plugin/marketplace.json (= {plugin_root}/marketplace.json)
-        // Codex:  .agents/plugins/marketplace.json (= {plugin_root}/marketplace.json)
+    pub(super) fn lift_marketplace(&self, plugin_root: &str, _dir: ConvDir, node: &mut IRNode) {
         let local_marketplace = format!("{}/marketplace.json", plugin_root);
+        let p = Path::new(&local_marketplace);
 
-        let marketplace_path = match dir {
-            ConvDir::C2x => {
-                let p = Path::new(&local_marketplace);
-                if p.exists() {
-                    Some(p.to_path_buf())
-                } else {
-                    None
-                }
-            }
-            ConvDir::X2c => {
-                let p = Path::new(&local_marketplace);
-                if p.exists() {
-                    Some(p.to_path_buf())
-                } else {
-                    None
-                }
-            }
-        };
-
-        let Some(mp_path) = marketplace_path else {
+        let Some(mp_path) = p.exists().then(|| p.to_path_buf()) else {
             return;
         };
 

@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use anyhow::Context;
 use serde_json::Value;
 
 use crate::core::ir::{
@@ -8,6 +9,22 @@ use crate::core::ir::{
 };
 use crate::core::mappings::{applies_direction, DomainMap, MapEntry};
 use crate::core::transforms::{apply_transforms, ConvDir, TransformCtx};
+
+/// Serializes `fm` as YAML frontmatter and wraps it with `body` as `---\n{fm}---\n{body}`.
+///
+/// Returns just `body` when `fm` is empty (no frontmatter block).
+pub(crate) fn render_frontmatter_md(
+    fm: &serde_json::Map<String, Value>,
+    body: &str,
+) -> anyhow::Result<String> {
+    if fm.is_empty() {
+        return Ok(body.to_string());
+    }
+    let yaml_val = Value::Object(fm.clone());
+    let fm_yaml = serde_saphyr::to_string(&yaml_val)
+        .with_context(|| "Failed to serialize frontmatter as YAML")?;
+    Ok(format!("---\n{}---\n{}", fm_yaml, body))
+}
 
 /// Renders `s` as a TOML multi-line basic string (`"""..."""`), escaping `\` and
 /// `"` so content containing quotes (including `'''`) cannot terminate the literal.

@@ -1,4 +1,4 @@
-use crate::core::ir::{DiagLevel, IRNode, Loss};
+use crate::core::ir::{DiagLevel, Diagnostic, IRNode, Loss};
 use crate::handlers::EmitPlan;
 
 /// Common representation of a diagnostic entry.
@@ -22,6 +22,38 @@ pub struct Report {
     pub degraded: Vec<DiagEntry>,
     /// Warnings detected by the body scanner
     pub body_warnings: Vec<DiagEntry>,
+}
+
+/// Routes a slice of diagnostics into the appropriate report buckets.
+fn push_diagnostics(
+    diags: &[Diagnostic],
+    dropped: &mut Vec<DiagEntry>,
+    lossy: &mut Vec<DiagEntry>,
+    body_warnings: &mut Vec<DiagEntry>,
+) {
+    for diag in diags {
+        match diag.level {
+            DiagLevel::Drop => {
+                dropped.push(DiagEntry {
+                    id: diag.id.clone(),
+                    message: diag.message.clone(),
+                });
+            }
+            DiagLevel::Warn => {
+                lossy.push(DiagEntry {
+                    id: diag.id.clone(),
+                    message: diag.message.clone(),
+                });
+            }
+            DiagLevel::BodyWarn => {
+                body_warnings.push(DiagEntry {
+                    id: diag.id.clone(),
+                    message: diag.message.clone(),
+                });
+            }
+            DiagLevel::Info => {}
+        }
+    }
 }
 
 /// Builds a Report from an IR node and an EmitPlan.
@@ -78,29 +110,12 @@ pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
         }
     }
 
-    for diag in &ir.diagnostics {
-        match diag.level {
-            DiagLevel::Drop => {
-                dropped.push(DiagEntry {
-                    id: diag.id.clone(),
-                    message: diag.message.clone(),
-                });
-            }
-            DiagLevel::Warn => {
-                lossy.push(DiagEntry {
-                    id: diag.id.clone(),
-                    message: diag.message.clone(),
-                });
-            }
-            DiagLevel::BodyWarn => {
-                body_warnings.push(DiagEntry {
-                    id: diag.id.clone(),
-                    message: diag.message.clone(),
-                });
-            }
-            DiagLevel::Info => {}
-        }
-    }
+    push_diagnostics(
+        &ir.diagnostics,
+        &mut dropped,
+        &mut lossy,
+        &mut body_warnings,
+    );
 
     for artifact in &ir.side_artifacts {
         degraded.push(DiagEntry {
@@ -126,29 +141,12 @@ pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
         }
     }
 
-    for diag in &plan.diagnostics {
-        match diag.level {
-            DiagLevel::Drop => {
-                dropped.push(DiagEntry {
-                    id: diag.id.clone(),
-                    message: diag.message.clone(),
-                });
-            }
-            DiagLevel::Warn => {
-                lossy.push(DiagEntry {
-                    id: diag.id.clone(),
-                    message: diag.message.clone(),
-                });
-            }
-            DiagLevel::BodyWarn => {
-                body_warnings.push(DiagEntry {
-                    id: diag.id.clone(),
-                    message: diag.message.clone(),
-                });
-            }
-            DiagLevel::Info => {}
-        }
-    }
+    push_diagnostics(
+        &plan.diagnostics,
+        &mut dropped,
+        &mut lossy,
+        &mut body_warnings,
+    );
 
     for child in &ir.children {
         let child_report = build_report(
