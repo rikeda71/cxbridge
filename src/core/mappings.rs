@@ -9,13 +9,13 @@ use crate::core::transforms::ConvDir;
 #[derive(Debug, Clone, Deserialize)]
 pub struct MapEntry {
     pub id: String,
-    pub claude: Option<FieldSpec>,
-    pub codex: Option<FieldSpec>,
+    pub(crate) claude: Option<FieldSpec>,
+    pub(crate) codex: Option<FieldSpec>,
     /// Effective direction declared in mappings YAML (Both/ClaudeToCodex/CodexToClaude).
     /// A separate type from the pipeline direction (ConvDir).
-    pub direction: MappingDirection,
-    pub loss: LossSpec,
-    pub degrade: Option<DegradeSpec>,
+    pub(crate) direction: MappingDirection,
+    pub(crate) loss: LossSpec,
+    pub(crate) degrade: Option<DegradeSpec>,
     /// Transform specification string (e.g. "unit:ms_to_sec; rename", semicolon-separated)
     pub transform: Option<String>,
     pub warn: Option<bool>,
@@ -24,18 +24,20 @@ pub struct MapEntry {
 
 /// Schema information for a field (claude side / codex side respectively).
 #[derive(Debug, Clone, Deserialize)]
-pub struct FieldSpec {
-    pub field: Option<String>,
+pub(crate) struct FieldSpec {
+    pub(crate) field: Option<String>,
+    /// Type annotation from the mappings YAML; parsed for schema completeness, used in tests.
     #[serde(rename = "type")]
-    pub r#type: Option<String>,
-    pub scope: Option<String>,
+    #[allow(dead_code)]
+    pub(crate) r#type: Option<String>,
+    pub(crate) scope: Option<String>,
 }
 
 /// Effective conversion direction for an entry in the mappings YAML.
 /// A separate type from the pipeline direction (ConvDir).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum MappingDirection {
+pub(crate) enum MappingDirection {
     Both,
     ClaudeToCodex,
     CodexToClaude,
@@ -44,7 +46,7 @@ pub enum MappingDirection {
 /// Loss level declaration (value in mappings YAML).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum LossSpec {
+pub(crate) enum LossSpec {
     Lossless,
     Lossy,
     Dropped,
@@ -62,21 +64,22 @@ impl From<&LossSpec> for Loss {
 
 /// Degrade specification.
 #[derive(Debug, Clone, Deserialize)]
-pub struct DegradeSpec {
+pub(crate) struct DegradeSpec {
     /// Kind of degrade destination
-    pub to: String,
+    pub(crate) to: String,
     /// Degrade destination target
-    pub target: String,
+    pub(crate) target: String,
 }
 
 /// File formats handled by a domain. Both `claude` and `codex` may support multiple formats
 /// (e.g. Codex hooks accept either TOML or JSON). Accepts both scalar strings and lists.
 #[derive(Debug, Clone, Default, Deserialize)]
-pub struct FormatSpec {
+#[allow(dead_code)]
+pub(crate) struct FormatSpec {
     #[serde(default, deserialize_with = "string_or_seq")]
-    pub claude: Vec<String>,
+    pub(crate) claude: Vec<String>,
     #[serde(default, deserialize_with = "string_or_seq")]
-    pub codex: Vec<String>,
+    pub(crate) codex: Vec<String>,
 }
 
 /// Accepts either a single string or a list of strings as `Vec<String>`.
@@ -119,8 +122,10 @@ where
 #[derive(Debug, Clone, Deserialize)]
 pub struct DomainMap {
     pub domain: String,
+    /// Format spec deserialized from YAML; validated in tests but not consumed in production code.
     #[serde(default)]
-    pub format: Option<FormatSpec>,
+    #[allow(dead_code)]
+    pub(crate) format: Option<FormatSpec>,
     pub entries: Vec<MapEntry>,
 }
 
@@ -203,7 +208,7 @@ fn is_pseudo_field(field: &str) -> bool {
 ///
 /// Entries whose direction excludes C2x are skipped so they cannot shadow
 /// direction-compatible entries that share the same claude field name.
-pub fn index_by_claude_field(dm: &DomainMap) -> HashMap<String, &MapEntry> {
+pub(crate) fn index_by_claude_field(dm: &DomainMap) -> HashMap<String, &MapEntry> {
     let mut idx = HashMap::new();
     for entry in &dm.entries {
         if !applies_direction(entry, ConvDir::C2x) {
@@ -224,7 +229,7 @@ pub fn index_by_claude_field(dm: &DomainMap) -> HashMap<String, &MapEntry> {
 ///
 /// Entries whose direction excludes X2c are skipped so they cannot shadow
 /// direction-compatible entries that share the same codex field name.
-pub fn index_by_codex_field(dm: &DomainMap) -> HashMap<String, &MapEntry> {
+pub(crate) fn index_by_codex_field(dm: &DomainMap) -> HashMap<String, &MapEntry> {
     let mut idx = HashMap::new();
     for entry in &dm.entries {
         if !applies_direction(entry, ConvDir::X2c) {
@@ -242,7 +247,7 @@ pub fn index_by_codex_field(dm: &DomainMap) -> HashMap<String, &MapEntry> {
 }
 
 /// Checks whether an entry should be applied for the given pipeline direction.
-pub fn applies_direction(entry: &MapEntry, dir: ConvDir) -> bool {
+pub(crate) fn applies_direction(entry: &MapEntry, dir: ConvDir) -> bool {
     matches!(
         (&entry.direction, dir),
         (MappingDirection::Both, _)

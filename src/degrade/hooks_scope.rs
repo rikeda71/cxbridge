@@ -8,7 +8,7 @@ use crate::handlers::Scope;
 ///
 /// Codex does not read plugin-bundled hooks (openai/codex#16430), so the target
 /// must be an explicit `--hooks-target=user|project` location.
-pub fn degrade_skill_hooks(
+pub(crate) fn degrade_skill_hooks(
     skill_name: &str,
     hooks_value: &serde_json::Value,
     hooks_target: &Scope,

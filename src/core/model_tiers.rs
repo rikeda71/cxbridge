@@ -1,6 +1,6 @@
 /// Model capability tier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Tier {
+pub(crate) enum Tier {
     High,
     Mid,
     Low,
@@ -8,7 +8,7 @@ pub enum Tier {
 
 /// Maps a Claude model name to a Tier.
 /// Returns None for unknown model names; the caller is responsible for emitting a warning.
-pub fn claude_tier(m: &str) -> Option<Tier> {
+pub(crate) fn claude_tier(m: &str) -> Option<Tier> {
     if m.contains("opus") {
         Some(Tier::High)
     } else if m.contains("sonnet") {
@@ -26,7 +26,7 @@ pub fn claude_tier(m: &str) -> Option<Tier> {
 /// invariant `codex_tier(tier_to_codex(t)) == Some(t)` holds for all three tiers.
 /// For model names not in `CODEX_LATEST` (e.g. a user's custom config), falls back to
 /// a name-based heuristic: names containing `"mini"` map to `Low`, all others to `Mid`.
-pub fn codex_tier(m: &str) -> Option<Tier> {
+pub(crate) fn codex_tier(m: &str) -> Option<Tier> {
     // Explicit lookup first — covers all canonical names and preserves the roundtrip invariant.
     if let Some(&(tier, _)) = CODEX_LATEST.iter().find(|(_, name)| *name == m) {
         return Some(tier);
@@ -55,7 +55,7 @@ pub(crate) const CLAUDE_LATEST: &[(Tier, &str)] = &[
 ];
 
 /// Returns the Codex model name for a given Tier, looked up from CODEX_LATEST.
-pub fn tier_to_codex(t: Tier) -> &'static str {
+pub(crate) fn tier_to_codex(t: Tier) -> &'static str {
     CODEX_LATEST
         .iter()
         .find(|(tier, _)| *tier == t)
@@ -64,7 +64,7 @@ pub fn tier_to_codex(t: Tier) -> &'static str {
 }
 
 /// Returns the Claude model name for a given Tier, looked up from CLAUDE_LATEST.
-pub fn tier_to_claude(t: Tier) -> &'static str {
+pub(crate) fn tier_to_claude(t: Tier) -> &'static str {
     CLAUDE_LATEST
         .iter()
         .find(|(tier, _)| *tier == t)

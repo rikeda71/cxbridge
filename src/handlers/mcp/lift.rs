@@ -1,10 +1,11 @@
 use serde_json::{Map, Value};
 
 use crate::core::ir::{
-    new_node, DegradeInfo, DiagLevel, Diagnostic, DroppedInfo, IRField, IRNode, Kind, Loss, Tool,
+    new_node, DiagLevel, Diagnostic, DroppedInfo, IRField, IRNode, Kind, Loss, Tool,
 };
 use crate::core::mappings::{applies_direction, index_by_claude_field, index_by_codex_field};
 use crate::core::transforms::{apply_transforms, ConvDir, TransformCtx};
+use crate::handlers::lift_mapped_field;
 
 use super::parse::{extract_bearer_env_var, extract_env_var_ref};
 use super::McpHandler;
@@ -151,54 +152,7 @@ impl McpHandler {
                 // All other fields
                 _ => {
                     if let Some(entry) = idx.get(key.as_str()) {
-                        if !applies_direction(entry, ConvDir::C2x) {
-                            continue;
-                        }
-                        let ctx = TransformCtx {
-                            direction: ConvDir::C2x,
-                            args: None,
-                            field: entry,
-                        };
-                        let (v, applied) =
-                            apply_transforms(value, entry.transform.as_deref(), &ctx);
-
-                        let loss = Loss::from(&entry.loss);
-                        let degrade_info = entry.degrade.as_ref().map(|d| DegradeInfo {
-                            to: d.to.clone(),
-                            target: d.target.clone(),
-                        });
-                        let dropped_info = if matches!(loss, Loss::Dropped) {
-                            Some(DroppedInfo {
-                                reason: entry
-                                    .notes
-                                    .clone()
-                                    .unwrap_or_else(|| format!("{} dropped in Codex", key)),
-                            })
-                        } else {
-                            None
-                        };
-                        // Dropped fields are recorded via IRField.dropped; no additional
-                        // diagnostic is needed.  For genuinely lossy warn:true fields,
-                        // emit one Warn diagnostic so build_report routes them correctly.
-                        if entry.warn == Some(true) && !matches!(loss, Loss::Dropped) {
-                            child.diagnostics.push(Diagnostic {
-                                level: DiagLevel::Warn,
-                                id: Some(entry.id.clone()),
-                                message: entry.notes.clone().unwrap_or_else(|| entry.id.clone()),
-                            });
-                        }
-                        child.fields.insert(
-                            entry.id.clone(),
-                            IRField {
-                                id: entry.id.clone(),
-                                value: v,
-                                loss,
-                                transforms_applied: applied,
-                                degrade: degrade_info,
-                                warning: None,
-                                dropped: dropped_info,
-                            },
-                        );
+                        lift_mapped_field(entry, key, value, ConvDir::C2x, &mut child);
                     } else {
                         // unknown field → drop
                         child.diagnostics.push(Diagnostic {
@@ -388,53 +342,7 @@ impl McpHandler {
         for (sub_key, value) in oauth_obj {
             let dot_key = format!("oauth.{}", sub_key);
             if let Some(entry) = idx.get(dot_key.as_str()) {
-                if !applies_direction(entry, ConvDir::C2x) {
-                    continue;
-                }
-                let ctx = TransformCtx {
-                    direction: ConvDir::C2x,
-                    args: None,
-                    field: entry,
-                };
-                let (v, applied) = apply_transforms(value, entry.transform.as_deref(), &ctx);
-
-                let loss = Loss::from(&entry.loss);
-                let degrade_info = entry.degrade.as_ref().map(|d| DegradeInfo {
-                    to: d.to.clone(),
-                    target: d.target.clone(),
-                });
-                let dropped_info = if matches!(loss, Loss::Dropped) {
-                    Some(DroppedInfo {
-                        reason: entry
-                            .notes
-                            .clone()
-                            .unwrap_or_else(|| format!("{} dropped in Codex", dot_key)),
-                    })
-                } else {
-                    None
-                };
-                // Dropped fields are recorded via IRField.dropped; no additional
-                // diagnostic is needed.  For genuinely lossy warn:true fields,
-                // emit one Warn diagnostic so build_report routes them correctly.
-                if entry.warn == Some(true) && !matches!(loss, Loss::Dropped) {
-                    child.diagnostics.push(Diagnostic {
-                        level: DiagLevel::Warn,
-                        id: Some(entry.id.clone()),
-                        message: entry.notes.clone().unwrap_or_else(|| entry.id.clone()),
-                    });
-                }
-                child.fields.insert(
-                    entry.id.clone(),
-                    IRField {
-                        id: entry.id.clone(),
-                        value: v,
-                        loss,
-                        transforms_applied: applied,
-                        degrade: degrade_info,
-                        warning: None,
-                        dropped: dropped_info,
-                    },
-                );
+                lift_mapped_field(entry, &dot_key, value, ConvDir::C2x, child);
             } else {
                 child.diagnostics.push(Diagnostic {
                     level: DiagLevel::Drop,
@@ -458,53 +366,12 @@ impl McpHandler {
     ) {
         for (sub_key, value) in oauth_obj {
             let dot_key = format!("oauth.{}", sub_key);
+            // Try "oauth.<sub_key>" first (most entries), then bare sub_key (Codex flat fields).
             let entry = idx
                 .get(dot_key.as_str())
                 .or_else(|| idx.get(sub_key.as_str()));
             if let Some(entry) = entry {
-                if !applies_direction(entry, ConvDir::X2c) {
-                    continue;
-                }
-                let ctx = TransformCtx {
-                    direction: ConvDir::X2c,
-                    args: None,
-                    field: entry,
-                };
-                let (v, applied) = apply_transforms(value, entry.transform.as_deref(), &ctx);
-
-                let loss = Loss::from(&entry.loss);
-                let dropped_info = if matches!(loss, Loss::Dropped) {
-                    Some(DroppedInfo {
-                        reason: entry
-                            .notes
-                            .clone()
-                            .unwrap_or_else(|| format!("{} Codex-only field", sub_key)),
-                    })
-                } else {
-                    None
-                };
-                // Dropped fields are recorded via IRField.dropped; no additional
-                // diagnostic is needed.  For genuinely lossy warn:true fields,
-                // emit one Warn diagnostic so build_report routes them correctly.
-                if entry.warn == Some(true) && !matches!(loss, Loss::Dropped) {
-                    child.diagnostics.push(Diagnostic {
-                        level: DiagLevel::Warn,
-                        id: Some(entry.id.clone()),
-                        message: entry.notes.clone().unwrap_or_else(|| entry.id.clone()),
-                    });
-                }
-                child.fields.insert(
-                    entry.id.clone(),
-                    IRField {
-                        id: entry.id.clone(),
-                        value: v,
-                        loss,
-                        transforms_applied: applied,
-                        degrade: None,
-                        warning: None,
-                        dropped: dropped_info,
-                    },
-                );
+                lift_mapped_field(entry, &dot_key, value, ConvDir::X2c, child);
             } else {
                 child.diagnostics.push(Diagnostic {
                     level: DiagLevel::Warn,
@@ -748,50 +615,7 @@ impl McpHandler {
                 }
                 _ => {
                     if let Some(entry) = idx.get(key.as_str()) {
-                        if !applies_direction(entry, ConvDir::X2c) {
-                            continue;
-                        }
-                        let ctx = TransformCtx {
-                            direction: ConvDir::X2c,
-                            args: None,
-                            field: entry,
-                        };
-                        let (v, applied) =
-                            apply_transforms(value, entry.transform.as_deref(), &ctx);
-
-                        let loss = Loss::from(&entry.loss);
-                        let dropped_info = if matches!(loss, Loss::Dropped) {
-                            Some(DroppedInfo {
-                                reason: entry
-                                    .notes
-                                    .clone()
-                                    .unwrap_or_else(|| format!("{} Codex-only field", key)),
-                            })
-                        } else {
-                            None
-                        };
-                        // Dropped fields are recorded via IRField.dropped; no additional
-                        // diagnostic is needed.  For genuinely lossy warn:true fields,
-                        // emit one Warn diagnostic so build_report routes them correctly.
-                        if entry.warn == Some(true) && !matches!(loss, Loss::Dropped) {
-                            child.diagnostics.push(Diagnostic {
-                                level: DiagLevel::Warn,
-                                id: Some(entry.id.clone()),
-                                message: entry.notes.clone().unwrap_or_else(|| entry.id.clone()),
-                            });
-                        }
-                        child.fields.insert(
-                            entry.id.clone(),
-                            IRField {
-                                id: entry.id.clone(),
-                                value: v,
-                                loss,
-                                transforms_applied: applied,
-                                degrade: None,
-                                warning: None,
-                                dropped: dropped_info,
-                            },
-                        );
+                        lift_mapped_field(entry, key, value, ConvDir::X2c, &mut child);
                     } else {
                         // Record unknown Codex-specific fields with a warning
                         child.diagnostics.push(Diagnostic {
