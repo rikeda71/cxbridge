@@ -654,6 +654,78 @@ impl SettingsHandler {
             }
         }
 
+        // language / outputStyle → developer_instructions (Codex has no dedicated
+        // field; approximate by appending natural-language instructions). Lossy.
+        let mut dev_instructions: Vec<String> = Vec::new();
+        if let Some(s) = ir
+            .fields
+            .get("settings.language")
+            .and_then(|f| f.value.as_str())
+        {
+            dev_instructions.push(format!("Always respond in {}.", s));
+            diagnostics.push(Diagnostic {
+                level: DiagLevel::Warn,
+                id: Some("settings.language".to_string()),
+                message:
+                    "language approximated as a developer_instructions sentence (no dedicated Codex field)"
+                        .to_string(),
+            });
+        }
+        if let Some(s) = ir
+            .fields
+            .get("settings.outputStyle")
+            .and_then(|f| f.value.as_str())
+        {
+            dev_instructions.push(format!("Output style: {}.", s));
+            diagnostics.push(Diagnostic {
+                level: DiagLevel::Warn,
+                id: Some("settings.outputStyle".to_string()),
+                message:
+                    "outputStyle approximated as a developer_instructions sentence (no dedicated Codex field)"
+                        .to_string(),
+            });
+        }
+        if !dev_instructions.is_empty() {
+            doc.insert(
+                "developer_instructions",
+                toml_edit::value(dev_instructions.join(" ")),
+            );
+        }
+
+        // defaultShell → shell_environment_policy.experimental_use_profile.
+        // Semantics differ (Claude selects the shell; Codex toggles profile sourcing).
+        if let Some(s) = ir
+            .fields
+            .get("settings.defaultShell")
+            .and_then(|f| f.value.as_str())
+        {
+            match s {
+                "bash" => {
+                    let policy_item = doc
+                        .entry("shell_environment_policy")
+                        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+                    if let Some(policy_tbl) = policy_item.as_table_mut() {
+                        policy_tbl.insert("experimental_use_profile", toml_edit::value(false));
+                    }
+                    diagnostics.push(Diagnostic {
+                        level: DiagLevel::Warn,
+                        id: Some("settings.defaultShell".to_string()),
+                        message: "defaultShell=bash mapped to shell_environment_policy.experimental_use_profile=false (semantics differ)".to_string(),
+                    });
+                }
+                other => {
+                    diagnostics.push(Diagnostic {
+                        level: DiagLevel::Warn,
+                        id: Some("settings.defaultShell".to_string()),
+                        message: format!(
+                            "defaultShell={} has no Codex shell-selection equivalent (Codex only toggles profile sourcing); not converted",
+                            other
+                        ),
+                    });
+                }
+            }
+        }
+
         // sandbox.network.allowAllUnixSockets →
         // features.network_proxy.dangerously_allow_all_unix_sockets (nested, per mapping)
         if let Some(f) = ir
@@ -1267,6 +1339,46 @@ mod tests {
             "Expected .rules file for Bash permission, got: {:?}",
             plan.files.iter().map(|f| &f.path).collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn test_settings_c2x_language_shell_output_style_lowered() {
+        let dir = TempDir::new().unwrap();
+        let settings_path = dir.path().join("settings.json");
+        fs::write(
+            &settings_path,
+            r#"{"language": "Japanese", "outputStyle": "concise", "defaultShell": "bash"}"#,
+        )
+        .unwrap();
+
+        let out_dir = TempDir::new().unwrap();
+        let h = make_handler();
+        let parsed = h.parse(&settings_path).unwrap();
+        let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
+        let opts = default_opts(out_dir.path().to_str().unwrap());
+        let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
+
+        let config = plan
+            .files
+            .iter()
+            .find(|f| f.path.ends_with("config.toml"))
+            .expect("Expected config.toml output");
+        // language + outputStyle land in developer_instructions; defaultShell in the
+        // shell policy — none are silently dropped.
+        assert!(config.content.contains("developer_instructions"));
+        assert!(config.content.contains("Japanese"));
+        assert!(config.content.contains("concise"));
+        assert!(config.content.contains("experimental_use_profile"));
+        for id in [
+            "settings.language",
+            "settings.outputStyle",
+            "settings.defaultShell",
+        ] {
+            assert!(
+                plan.diagnostics.iter().any(|d| d.id.as_deref() == Some(id)),
+                "Expected a diagnostic for {id}"
+            );
+        }
     }
 
     #[test]
