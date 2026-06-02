@@ -5,6 +5,21 @@ use crate::core::ir::{
 };
 use crate::core::transforms::ConvDir;
 
+/// Returns true if `body` contains an `@import` line outside a code fence.
+fn body_has_imports(body: &str) -> bool {
+    let mut in_fence = false;
+    for line in body.lines() {
+        if line.trim_start().starts_with("```") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if !in_fence && line.trim_start().starts_with('@') {
+            return true;
+        }
+    }
+    false
+}
+
 /// Lifts a parsed memory file value into an IRNode.
 pub(crate) fn lift(parsed: &Value, dir: ConvDir) -> anyhow::Result<IRNode> {
     let source_path = parsed["path"].as_str().unwrap_or("").to_string();
@@ -134,23 +149,8 @@ pub(crate) fn lift(parsed: &Value, dir: ConvDir) -> anyhow::Result<IRNode> {
     }
 
     // c2x: detect @import syntax (@ inside code fences is excluded)
-    if dir == ConvDir::C2x {
-        let has_imports = {
-            let mut in_fence = false;
-            let mut found = false;
-            for line in body.lines() {
-                if line.trim_start().starts_with("```") {
-                    in_fence = !in_fence;
-                    continue;
-                }
-                if !in_fence && line.trim_start().starts_with('@') {
-                    found = true;
-                    break;
-                }
-            }
-            found
-        };
-        if has_imports {
+    if dir == ConvDir::C2x && body_has_imports(&body) {
+        {
             node.fields.insert(
                 "memory.import-syntax".to_string(),
                 IRField {

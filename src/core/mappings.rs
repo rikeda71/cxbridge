@@ -200,7 +200,7 @@ pub fn load_mappings() -> HashMap<String, DomainMap> {
 
 /// Field names that start with an ASCII "(" or a fullwidth left parenthesis (U+FF08) are
 /// placeholders, not real field keys, and must be skipped when building lookup indexes.
-fn is_pseudo_field(field: &str) -> bool {
+pub(crate) fn is_pseudo_field(field: &str) -> bool {
     field.starts_with('(') || field.starts_with('\u{FF08}')
 }
 

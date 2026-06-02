@@ -1,4 +1,3 @@
-use anyhow::Context;
 use serde_json::Value;
 
 use crate::core::ir::{DiagLevel, Diagnostic, IRNode};
@@ -98,20 +97,7 @@ pub(crate) fn lower_x2c(ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPla
         body.to_string()
     };
 
-    // Serialize frontmatter as YAML
-    let fm_yaml = if fm.is_empty() {
-        String::new()
-    } else {
-        let yaml_val = Value::Object(fm);
-        serde_saphyr::to_string(&yaml_val)
-            .with_context(|| "Failed to serialize frontmatter as YAML")?
-    };
-
-    let agent_md_content = if fm_yaml.is_empty() {
-        effective_body.clone()
-    } else {
-        format!("---\n{}---\n{}", fm_yaml, effective_body)
-    };
+    let agent_md_content = crate::handlers::render_frontmatter_md(&fm, &effective_body)?;
 
     let agent_md_path = format!("{}/.claude/agents/{}.md", out_root, agent_name);
 

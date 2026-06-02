@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::core::mappings::{DomainMap, MapEntry};
+use crate::core::mappings::{is_pseudo_field, DomainMap, MapEntry};
 use crate::core::transforms::ConvDir;
 
 /// Indexes only scope:"plugin" entries to avoid collisions with same-named fields in marketplace etc.
@@ -20,8 +20,7 @@ pub(super) fn build_plugin_scope_index(map: &DomainMap, dir: ConvDir) -> HashMap
         let Some(field) = spec.field.as_ref() else {
             continue;
         };
-        // Skip placeholder fields starting with a fullwidth left parenthesis (U+FF08)
-        if field.starts_with('\u{FF08}') {
+        if is_pseudo_field(field) {
             continue;
         }
         // First-registered entry wins; later duplicates for the same field are ignored

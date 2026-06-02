@@ -4,7 +4,7 @@ use anyhow::Context;
 use serde_json::Value;
 
 use crate::core::ir::{DiagLevel, Diagnostic, IRNode, SideArtifact};
-use crate::core::mappings::applies_direction;
+use crate::core::mappings::{applies_direction, is_pseudo_field};
 use crate::core::transforms::ConvDir;
 use crate::degrade::rules::degrade_allowed_tools;
 use crate::degrade::subagent::{decide_skill_target, degrade_to_subagent, SkillTarget};
@@ -157,7 +157,7 @@ impl SkillsHandler {
                     .claude
                     .as_ref()
                     .and_then(|c| c.field.as_deref())
-                    .filter(|f| !f.starts_with('\u{FF08}'))
+                    .filter(|f| !is_pseudo_field(f))
                 {
                     Some(f) => f,
                     None => continue,
@@ -187,21 +187,7 @@ impl SkillsHandler {
 
         // Output SKILL.md
         let skill_md_path = format!("{}/.agents/skills/{}/SKILL.md", out_root, skill_name);
-
-        // frontmatter → YAML string
-        let fm_yaml = if fm.is_empty() {
-            String::new()
-        } else {
-            let yaml_val = Value::Object(fm);
-            serde_saphyr::to_string(&yaml_val)
-                .with_context(|| "Failed to serialize frontmatter as YAML")?
-        };
-
-        let skill_md_content = if fm_yaml.is_empty() {
-            body_out.clone()
-        } else {
-            format!("---\n{}---\n{}", fm_yaml, body_out)
-        };
+        let skill_md_content = crate::handlers::render_frontmatter_md(&fm, &body_out)?;
 
         files.push(EmitFile {
             path: skill_md_path,
@@ -265,8 +251,7 @@ impl SkillsHandler {
             let Some(cf) = claude_field else {
                 continue;
             };
-            // pseudo field skips
-            if cf.starts_with('\u{FF08}') {
+            if is_pseudo_field(cf) {
                 continue;
             }
             fm.insert(cf.to_string(), value.value.clone());
@@ -276,35 +261,16 @@ impl SkillsHandler {
         let body_out = compute_body_out(ir, opts);
 
         // interface.default_prompt → prepend to body (lossy approximate)
-        let body_out = if let Some(dp_field) = ir.fields.get("skills.openai-yaml.default_prompt") {
-            if let Some(prompt) = dp_field.value.as_str() {
-                if !prompt.is_empty() {
-                    format!("{}\n\n{}", prompt, body_out)
-                } else {
-                    body_out
-                }
-            } else {
-                body_out
-            }
-        } else {
-            body_out
-        };
+        let body_out = ir
+            .fields
+            .get("skills.openai-yaml.default_prompt")
+            .and_then(|f| f.value.as_str())
+            .filter(|p| !p.is_empty())
+            .map(|prompt| format!("{}\n\n{}", prompt, body_out))
+            .unwrap_or(body_out);
 
         let skill_md_path = format!("{}/.claude/skills/{}/SKILL.md", out_root, skill_name);
-
-        let fm_yaml = if fm.is_empty() {
-            String::new()
-        } else {
-            let yaml_val = Value::Object(fm);
-            serde_saphyr::to_string(&yaml_val)
-                .with_context(|| "Failed to serialize frontmatter as YAML")?
-        };
-
-        let skill_md_content = if fm_yaml.is_empty() {
-            body_out
-        } else {
-            format!("---\n{}---\n{}", fm_yaml, body_out)
-        };
+        let skill_md_content = crate::handlers::render_frontmatter_md(&fm, &body_out)?;
 
         files.push(EmitFile {
             path: skill_md_path,
