@@ -127,12 +127,15 @@ fn test_hooks_c2x_lower_user_scope() {
         "Setup event should not be in output"
     );
 
-    // #16430 warning should be in diagnostics
+    // A standalone hooks.json is not plugin-bundled, so #16430 does not apply.
     let has_16430 = plan
         .diagnostics
         .iter()
         .any(|d| d.message.contains("#16430"));
-    assert!(has_16430, "Expected #16430 warning in diagnostics");
+    assert!(
+        !has_16430,
+        "standalone hooks.json must not emit the #16430 warning"
+    );
 }
 
 /// hooks.json c2x lower (project scope): .codex/config.toml is generated.

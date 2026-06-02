@@ -142,7 +142,10 @@ pub fn degrade_to_subagent(skill_name: &str, ir: &IRNode) -> (Vec<SideArtifact>,
     ];
 
     if !body.is_empty() {
-        toml_lines.push(format!("developer_instructions = '''\n{}\n'''", body));
+        toml_lines.push(format!(
+            "developer_instructions = {}",
+            crate::handlers::toml_multiline_basic(body)
+        ));
     }
 
     if !codex_model.is_empty() {

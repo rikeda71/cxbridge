@@ -182,10 +182,9 @@ impl SubagentHandler {
         };
 
         if !instructions.trim().is_empty() {
-            // Use TOML multi-line basic string (triple-quoted)
             toml_lines.push(format!(
-                "developer_instructions = '''\n{}\n'''",
-                instructions.trim()
+                "developer_instructions = {}",
+                crate::handlers::toml_multiline_basic(instructions.trim())
             ));
         }
 

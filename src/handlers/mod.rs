@@ -9,6 +9,33 @@ use crate::core::ir::{
 use crate::core::mappings::{applies_direction, DomainMap, MapEntry};
 use crate::core::transforms::{apply_transforms, ConvDir, TransformCtx};
 
+/// Renders `s` as a TOML multi-line basic string (`"""..."""`), escaping `\` and
+/// `"` so content containing quotes (including `'''`) cannot terminate the literal.
+/// The leading newline after the opening delimiter is trimmed by TOML, so the
+/// content is emitted unchanged.
+pub(crate) fn toml_multiline_basic(s: &str) -> String {
+    let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+    format!("\"\"\"\n{escaped}\n\"\"\"")
+}
+
+#[cfg(test)]
+mod multiline_basic_tests {
+    use super::toml_multiline_basic;
+
+    #[test]
+    fn handles_triple_quotes_and_backslashes() {
+        // Content with ''' (which would terminate a literal string), a double
+        // quote, and a backslash must still produce a parseable TOML document.
+        let content = "uses ''' and \" and a \\ backslash";
+        let toml_str = format!("v = {}", toml_multiline_basic(content));
+        let parsed: toml::Value = toml::from_str(&toml_str).expect("must be valid TOML");
+        assert_eq!(
+            parsed["v"].as_str().unwrap().trim_end_matches('\n'),
+            content
+        );
+    }
+}
+
 /// Lifts a single mapped frontmatter/manifest field into `node` following the
 /// canonical sequence shared by the skills, subagents, and plugins handlers:
 /// direction filter → transforms → loss/degrade/dropped classification → field
