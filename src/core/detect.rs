@@ -111,7 +111,7 @@ fn detect_file(p: &Path) -> anyhow::Result<Kind> {
 
     if file_name.ends_with(".toml") && file_name != "config.toml" {
         let path_str = p.to_str().unwrap_or("");
-        if path_str.contains(".codex/agents/") || path_str.contains("/agents/") {
+        if path_str.contains("codex/agents/") {
             return Ok(Kind::Subagent);
         }
     }
@@ -128,7 +128,7 @@ fn detect_file(p: &Path) -> anyhow::Result<Kind> {
         )
     {
         let path_str = p.to_str().unwrap_or("");
-        if path_str.contains(".claude/agents/") || path_str.contains("/agents/") {
+        if path_str.contains("claude/agents/") {
             return Ok(Kind::Subagent);
         }
     }
@@ -203,7 +203,7 @@ fn detect_dir(p: &Path) -> anyhow::Result<Kind> {
                 Some(Kind::Skill)
             } else if (file_name.ends_with(".toml")
                 && file_name != "config.toml"
-                && (path_str.contains(".codex/agents/") || path_str.contains("/agents/")))
+                && path_str.contains("codex/agents/"))
                 || (file_name.ends_with(".md")
                     && !matches!(
                         file_name,
@@ -214,7 +214,7 @@ fn detect_dir(p: &Path) -> anyhow::Result<Kind> {
                             | "AGENTS.override.md"
                             | "README.md"
                     )
-                    && (path_str.contains(".claude/agents/") || path_str.contains("/agents/")))
+                    && path_str.contains("claude/agents/"))
             {
                 Some(Kind::Subagent)
             } else if file_name == "config.toml" {
@@ -357,6 +357,24 @@ mod tests {
     fn test_detect_nonexistent() {
         let result = detect("/nonexistent/path/that/does/not/exist");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_detect_subagent_only_under_codex_claude_agents() {
+        let dir = tmp();
+        // A .toml under a Codex agents dir is a subagent.
+        let codex_agent = dir.path().join(".codex").join("agents");
+        fs::create_dir_all(&codex_agent).unwrap();
+        let coder = codex_agent.join("coder.toml");
+        fs::write(&coder, "name = \"coder\"\n").unwrap();
+        assert_eq!(detect(coder.to_str().unwrap()).unwrap(), Kind::Subagent);
+
+        // A .toml under an unrelated `docs/agents/` dir must NOT be a subagent.
+        let unrelated = dir.path().join("docs").join("agents");
+        fs::create_dir_all(&unrelated).unwrap();
+        let note = unrelated.join("note.toml");
+        fs::write(&note, "name = \"note\"\n").unwrap();
+        assert_ne!(detect(note.to_str().unwrap()).ok(), Some(Kind::Subagent));
     }
 
     #[test]

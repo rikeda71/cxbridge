@@ -848,6 +848,15 @@ impl SettingsHandler {
                         message: "defaultMode=plan dropped: Codex has no plan mode equivalent"
                             .to_string(),
                     });
+                } else if mode == "dontAsk" {
+                    diagnostics.push(Diagnostic {
+                        level: DiagLevel::Warn,
+                        id: Some("settings.permissions.defaultMode.dontAsk".to_string()),
+                        message: "defaultMode=dontAsk approximated by approval_policy=never + \
+                                  sandbox_mode=danger-full-access; this grants broader access than \
+                                  dontAsk intends — review the security implication"
+                            .to_string(),
+                    });
                 }
             }
         }
@@ -1101,6 +1110,9 @@ fn extract_tool_arg(tool: &str) -> String {
 fn map_default_mode(mode: &str) -> (Option<&'static str>, Option<&'static str>) {
     match mode {
         "bypassPermissions" => (Some("never"), Some("danger-full-access")),
+        // dontAsk suppresses prompts; approximated by the same full-access combo
+        // as bypassPermissions (a broader relaxation than dontAsk intends — warned).
+        "dontAsk" => (Some("never"), Some("danger-full-access")),
         "acceptEdits" => (Some("untrusted"), None),
         "auto" => (Some("on-request"), None),
         "plan" => (None, None), // dropped; handled separately
@@ -1236,6 +1248,43 @@ mod tests {
             rules_file.is_some(),
             "Expected .rules file for Bash permission, got: {:?}",
             plan.files.iter().map(|f| &f.path).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_settings_c2x_default_mode_dont_ask_warns_and_converts() {
+        let dir = TempDir::new().unwrap();
+        let settings_path = dir.path().join("settings.json");
+        fs::write(
+            &settings_path,
+            r#"{"permissions": {"defaultMode": "dontAsk"}}"#,
+        )
+        .unwrap();
+
+        let out_dir = TempDir::new().unwrap();
+        let h = make_handler();
+        let parsed = h.parse(&settings_path).unwrap();
+        let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
+        let opts = default_opts(out_dir.path().to_str().unwrap());
+        let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
+
+        // dontAsk converts to approval_policy=never + sandbox_mode=danger-full-access.
+        let config = plan
+            .files
+            .iter()
+            .find(|f| f.path.ends_with("config.toml"))
+            .expect("Expected config.toml output");
+        assert!(config.content.contains("approval_policy = \"never\""));
+        assert!(config
+            .content
+            .contains("sandbox_mode = \"danger-full-access\""));
+
+        // The lossy approximation must be surfaced, not silent (warn:true contract).
+        assert!(
+            plan.diagnostics.iter().any(|d| d.level == DiagLevel::Warn
+                && d.id.as_deref() == Some("settings.permissions.defaultMode.dontAsk")),
+            "Expected a Warn diagnostic for defaultMode=dontAsk, got: {:?}",
+            plan.diagnostics
         );
     }
 

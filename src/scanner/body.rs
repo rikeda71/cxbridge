@@ -315,7 +315,12 @@ fn scan_c2x_line(
 }
 
 fn scan_x2c_line(line: &str, line_no: usize, findings: &mut Vec<BodyFinding>) {
+    // `$$` escapes rewrite to a single `$`. Record their byte ranges so the
+    // positional `$N` scan below does not also match the digit that follows a
+    // `$$` pair (e.g. the `$1` inside `$$1`), which would double-rewrite it.
+    let mut escape_ranges: Vec<std::ops::Range<usize>> = Vec::new();
     for cap in RE_DOLLAR_DOLLAR.find_iter(line) {
+        escape_ranges.push(cap.start()..cap.end());
         findings.push(BodyFinding {
             kind: FindingKind::ArgIndexed,
             matched: cap.as_str().to_string(),
@@ -327,7 +332,17 @@ fn scan_x2c_line(line: &str, line_no: usize, findings: &mut Vec<BodyFinding>) {
     }
 
     for cap in RE_ARG_POSITIONAL.captures_iter(line) {
-        let full_match = cap.get(0).unwrap();
+        let Some(full_match) = cap.get(0) else {
+            continue;
+        };
+        // A positional `$N` whose `$` starts inside a `$$` escape is already
+        // owned by the escape rewrite; skip it to avoid an overlapping rewrite.
+        if escape_ranges
+            .iter()
+            .any(|r| r.contains(&full_match.start()))
+        {
+            continue;
+        }
         let idx_str = &cap[1];
         let idx: usize = idx_str.parse().unwrap_or(1);
         findings.push(BodyFinding {
@@ -487,6 +502,21 @@ mod tests {
         assert_eq!(f1.rewrite, Some("$ARGUMENTS[0]".to_string()));
         let f2 = pos.iter().find(|f| f.matched == "$2").unwrap();
         assert_eq!(f2.rewrite, Some("$ARGUMENTS[1]".to_string()));
+    }
+
+    #[test]
+    fn test_scan_body_dollar_dollar_does_not_overlap_positional_x2c() {
+        // `$$1` is a literal `$1` escape, not a positional argument. Only the
+        // `$$` → `$` rewrite must apply; the `$1` inside must not be rewritten.
+        let body = "Escaped $$1 here";
+        let findings = scan_body(body, ConvDir::X2c, BodyContext::SkillBody);
+        let dd: Vec<_> = findings.iter().filter(|f| f.matched == "$$").collect();
+        assert_eq!(dd.len(), 1);
+        assert!(
+            findings.iter().all(|f| f.matched != "$1"),
+            "the $1 inside $$1 must not produce a positional finding"
+        );
+        assert_eq!(rewrite_body(body, &findings), "Escaped $1 here");
     }
 
     #[test]
