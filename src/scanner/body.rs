@@ -117,6 +117,7 @@ static RE_INVOKE_SLASH: Lazy<Regex> = Lazy::new(|| Regex::new(r"/[\w-]+").unwrap
 ///
 /// In the `x2c` direction: `$$` → `$` (Rewrite); `$N` → `$ARGUMENTS[N-1]` (Rewrite).
 /// The `context` parameter is unused in the `x2c` direction.
+#[must_use]
 pub fn scan_body(body: &str, dir: ConvDir, context: BodyContext) -> Vec<BodyFinding> {
     let mut findings = Vec::new();
 

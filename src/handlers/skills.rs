@@ -296,18 +296,24 @@ impl SkillsHandler {
         }
 
         // disable-model-invocation → SideArtifact: agents/openai.yaml
-        // polarity:invert was applied in lift: disable-model-invocation=true (Claude) → IR holds false
-        // because invert(true)==false means allow_implicit_invocation=false in openai.yaml
+        // polarity:invert was applied in lift:
+        //   disable-model-invocation=true  (Claude) → IR holds false → allow_implicit_invocation: false
+        //   disable-model-invocation=false (Claude) → IR holds true  → allow_implicit_invocation: true
         if let Some(f) = ir.fields.get("skills.disable-model-invocation") {
-            if f.value == Value::Bool(false) {
-                let content = "policy:\n  allow_implicit_invocation: false\n".to_string();
-                side_artifacts.push(SideArtifact {
-                    path: format!(".agents/skills/{}/agents/openai.yaml", skill_name),
-                    content,
-                    note: "disable-model-invocation=true → policy.allow_implicit_invocation: false"
-                        .to_string(),
-                });
-            }
+            let (allow_val, source_val) = if f.value == Value::Bool(false) {
+                ("false", "true")
+            } else {
+                ("true", "false")
+            };
+            let content = format!("policy:\n  allow_implicit_invocation: {}\n", allow_val);
+            side_artifacts.push(SideArtifact {
+                path: format!(".agents/skills/{}/agents/openai.yaml", skill_name),
+                content,
+                note: format!(
+                    "disable-model-invocation={} → policy.allow_implicit_invocation: {}",
+                    source_val, allow_val
+                ),
+            });
         }
 
         // model/effort/context:fork → subagent degrade
@@ -1220,6 +1226,46 @@ mod tests {
                 field_id, ir.diagnostics
             );
         }
+    }
+
+    // ── fix: disable-model-invocation=false (explicit allow) was silently dropped ─
+
+    /// lower (c2x): disable-model-invocation=false must produce agents/openai.yaml
+    /// containing `allow_implicit_invocation: true` (symmetric with the =true case).
+    #[test]
+    fn test_skills_lower_c2x_disable_model_invocation_false_emits_allow_true() {
+        let dir = TempDir::new().unwrap();
+        let skill_dir = dir.path().join(".claude").join("skills").join("s");
+        fs::create_dir_all(&skill_dir).unwrap();
+        let path = skill_dir.join("SKILL.md");
+        fs::write(
+            &path,
+            "---\nname: s\ndescription: d\ndisable-model-invocation: false\n---\nBody.\n",
+        )
+        .unwrap();
+
+        let out_dir = dir.path().join("out");
+        let mut opts = default_opts();
+        opts.out = Some(out_dir.to_str().unwrap().to_string());
+
+        let h = make_handler();
+        let parsed = h.parse(&path).unwrap();
+        let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
+        let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
+
+        let openai_yaml = plan
+            .files
+            .iter()
+            .find(|f| f.path.ends_with("agents/openai.yaml"))
+            .expect("Expected .agents/skills/s/agents/openai.yaml in emit plan");
+
+        assert!(
+            openai_yaml
+                .content
+                .contains("allow_implicit_invocation: true"),
+            "openai.yaml must contain 'allow_implicit_invocation: true' for disable-model-invocation=false, got:\n{}",
+            openai_yaml.content
+        );
     }
 
     // ── gap 4/42: disable-model-invocation silently dropped in c2x ──────────

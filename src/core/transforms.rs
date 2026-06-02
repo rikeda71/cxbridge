@@ -411,7 +411,9 @@ pub fn apply_transforms(
             current = tf_fn(&current, &ctx_with_args);
             applied.push(effective_name.to_string());
         } else if let Some(tf_fn) = get_transform(&ts.name) {
-            // Fallback: try the original name
+            // The direction-inverted name was not registered; retry with the original
+            // (un-inverted) name so direction-neutral transforms work in both directions
+            // without requiring a separate inverted alias.
             let ctx_with_args = TransformCtx {
                 direction: ctx.direction,
                 args: ts.args.clone(),
@@ -420,7 +422,8 @@ pub fn apply_transforms(
             current = tf_fn(&current, &ctx_with_args);
             applied.push(ts.name.clone());
         }
-        // Unknown transforms are skipped (the caller is responsible for emitting a warning)
+        // If neither the inverted nor the original name is registered, the transform
+        // is silently skipped.
     }
 
     (current, applied)

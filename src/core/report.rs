@@ -28,6 +28,7 @@ pub struct Report {
 ///
 /// Aggregates the IR diagnostics and each IRField.
 /// dropped and degraded fields must always be enumerated — silent truncation is forbidden.
+#[must_use]
 pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
     let mut lossless = Vec::new();
     let mut lossy = Vec::new();

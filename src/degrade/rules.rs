@@ -28,6 +28,10 @@ pub fn degrade_allowed_tools(
         "disallowed-tools"
     };
 
+    // A bare "Bash" (no parens) means allow all bash commands; treat it as a
+    // catch-all by generating a prefix_rule with an empty pattern.
+    let has_bare_bash = tools.iter().any(|t| t == "Bash");
+
     let bash_tools: Vec<&str> = tools
         .iter()
         .filter_map(|t| {
@@ -39,11 +43,19 @@ pub fn degrade_allowed_tools(
         })
         .collect();
 
-    if !bash_tools.is_empty() {
+    if !bash_tools.is_empty() || has_bare_bash {
         let mut rules_lines = vec![
             format!("# Generated from skill '{}' allowed-tools", skill_name),
             String::new(),
         ];
+
+        // Bare "Bash" (catch-all) is emitted first as an empty-pattern rule.
+        if has_bare_bash {
+            rules_lines.push(format!(
+                r#"prefix_rule(pattern=[], decision="{}", justification="from skill {}")"#,
+                decision, skill_name
+            ));
+        }
 
         for cmd in &bash_tools {
             let parts: Vec<String> = cmd
@@ -123,27 +135,29 @@ pub fn degrade_allowed_tools(
 
         let mut doc = DocumentMut::new();
         {
-            let permissions = doc
+            if let Some(permissions) = doc
                 .entry("permissions")
                 .or_insert(Item::Table(Table::new()))
                 .as_table_mut()
-                .expect("permissions is always a table");
-            let skill_table = permissions
-                .entry(skill_name)
-                .or_insert(Item::Table(Table::new()))
-                .as_table_mut()
-                .expect("skill permissions table");
-            let fs_table = skill_table
-                .entry("filesystem")
-                .or_insert(Item::Table(Table::new()))
-                .as_table_mut()
-                .expect("filesystem table");
-
-            for glob in &write_tools {
-                fs_table[glob] = Item::Value(TomlValue::from(perm_value));
-            }
-            for glob in &read_tools {
-                fs_table[glob] = Item::Value(TomlValue::from(read_perm_value));
+            {
+                if let Some(skill_table) = permissions
+                    .entry(skill_name)
+                    .or_insert(Item::Table(Table::new()))
+                    .as_table_mut()
+                {
+                    if let Some(fs_table) = skill_table
+                        .entry("filesystem")
+                        .or_insert(Item::Table(Table::new()))
+                        .as_table_mut()
+                    {
+                        for glob in &write_tools {
+                            fs_table[glob] = Item::Value(TomlValue::from(perm_value));
+                        }
+                        for glob in &read_tools {
+                            fs_table[glob] = Item::Value(TomlValue::from(read_perm_value));
+                        }
+                    }
+                }
             }
         }
 
@@ -262,6 +276,7 @@ pub fn degrade_allowed_tools(
         .iter()
         .filter_map(|t| {
             if !t.starts_with("Bash(")
+                && t != "Bash"
                 && !t.starts_with("Write(")
                 && !t.starts_with("Edit(")
                 && !t.starts_with("Read(")
@@ -439,6 +454,40 @@ mod tests {
             config_artifact.content.contains("network = true"),
             "Expected 'network = true' in config.toml, got:\n{}",
             config_artifact.content
+        );
+    }
+
+    /// A bare "Bash" (no parentheses) must produce a .rules SideArtifact (catch-all
+    /// bash rule), NOT a Drop diagnostic via the builtin-tool path.
+    #[test]
+    fn test_degrade_bare_bash_produces_rules_artifact() {
+        let tools = vec!["Bash".to_string()];
+        let (artifacts, diagnostics) =
+            degrade_allowed_tools("my-skill", &tools, true, Scope::Project);
+
+        // Must produce a .rules artifact
+        let rules_art = artifacts
+            .iter()
+            .find(|a| a.path.ends_with(".rules"))
+            .expect("bare 'Bash' must produce a .rules SideArtifact");
+
+        assert_eq!(rules_art.path, ".codex/rules/my-skill.rules");
+
+        // The rules content must contain a prefix_rule with an empty pattern
+        assert!(
+            rules_art.content.contains("prefix_rule"),
+            "rules content must contain prefix_rule, got:\n{}",
+            rules_art.content
+        );
+
+        // Must NOT produce a Drop diagnostic (i.e. must not be treated as unrecognized builtin)
+        let has_drop = diagnostics
+            .iter()
+            .any(|d| d.level == crate::core::ir::DiagLevel::Drop);
+        assert!(
+            !has_drop,
+            "bare 'Bash' must NOT produce a Drop diagnostic; diagnostics: {:?}",
+            diagnostics.iter().map(|d| &d.message).collect::<Vec<_>>()
         );
     }
 

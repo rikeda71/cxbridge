@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use anyhow::Context;
 use serde_json::Value;
 use toml_edit::{Array, DocumentMut, Item, Table};
 
@@ -307,7 +308,7 @@ impl HooksHandler {
                     hooks_json.insert(event_name.clone(), entries.clone());
                 }
                 let content = serde_json::to_string_pretty(&Value::Object(hooks_json))
-                    .unwrap_or_else(|_| "{}".to_string());
+                    .with_context(|| "failed to serialize hooks")?;
                 vec![EmitFile {
                     path: format!("{}/hooks.json", out_root),
                     content,
@@ -344,8 +345,8 @@ impl HooksHandler {
         }
 
         let hooks_wrapper = serde_json::json!({ "hooks": hooks_obj });
-        let content =
-            serde_json::to_string_pretty(&hooks_wrapper).unwrap_or_else(|_| "{}".to_string());
+        let content = serde_json::to_string_pretty(&hooks_wrapper)
+            .with_context(|| "failed to serialize hooks")?;
 
         let files = vec![EmitFile {
             path: format!("{}/hooks.json", out_root),
