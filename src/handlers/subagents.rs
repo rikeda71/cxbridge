@@ -579,7 +579,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn make_handler() -> SubagentHandler {
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         SubagentHandler {
             map: maps["subagents"].clone(),
         }

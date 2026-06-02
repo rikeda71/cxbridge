@@ -55,7 +55,7 @@ fn test_skill_c2x_basic_roundtrip() {
         skill_path
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(skill_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -105,7 +105,7 @@ fn test_skill_c2x_basic_roundtrip() {
 fn test_skill_c2x_check_reports_dropped() {
     let skill_path = "tests/fixtures/claude/skills/deploy/SKILL.md";
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(skill_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -128,7 +128,7 @@ fn test_skill_c2x_check_reports_dropped() {
 fn test_check_skill_reports_dropped_count() {
     let skill_path = "tests/fixtures/claude/skills/deploy/SKILL.md";
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(skill_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -176,7 +176,7 @@ fn test_skill_c2x_lower_generates_skill_md() {
     let skill_path = "tests/fixtures/claude/skills/deploy/SKILL.md";
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(skill_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -228,7 +228,7 @@ fn test_skill_c2x_lower_generates_skill_md() {
 fn test_skill_c2x_report_snapshot() {
     let skill_path = "tests/fixtures/claude/skills/deploy/SKILL.md";
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(skill_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -263,7 +263,7 @@ fn test_skill_c2x_write_read_tools_produce_config_toml() {
     );
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(skill_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -315,7 +315,7 @@ fn test_skill_c2x_disable_model_invocation_in_report() {
         skill_path
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(skill_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -346,7 +346,7 @@ fn test_skill_c2x_disable_model_invocation_lower_emits_openai_yaml() {
     let skill_path = "tests/fixtures/claude/skills/s/SKILL.md";
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(skill_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -384,7 +384,7 @@ fn test_skill_c2x_keep_claude_frontmatter_retains_claude_keys() {
     let skill_path = "tests/fixtures/claude/skills/deploy/SKILL.md";
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(skill_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -447,7 +447,7 @@ fn test_skill_c2x_keep_claude_frontmatter_model_effort_allowed_tools() {
     let skill_path = "tests/fixtures/claude/skills/deploy/SKILL.md";
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(skill_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -518,7 +518,7 @@ fn test_skill_c2x_dropped_warn_fields_not_in_lossy() {
         skill_path
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(skill_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -591,7 +591,7 @@ fn test_skill_c2x_aux_files_are_path_remapped() {
     );
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(skill_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -665,7 +665,7 @@ fn test_skill_x2c_aux_files_are_path_remapped() {
     );
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(skill_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -737,7 +737,7 @@ fn test_scope_project_rules_path_is_project_relative() {
     let out_dir = tempfile::TempDir::new().unwrap();
     let opts = opts_with_scope(out_dir.path().to_str().unwrap(), Scope::Project);
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&cxbridge::core::ir::Kind::Skill, &maps);
     let parsed = handler.parse(&skill_path).unwrap();
     let ir = handler.lift(&parsed, ConvDir::C2x).unwrap();
@@ -795,7 +795,7 @@ fn test_scope_user_rules_path_is_user_home() {
     let out_dir = tempfile::TempDir::new().unwrap();
     let opts = opts_with_scope(out_dir.path().to_str().unwrap(), Scope::User);
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&cxbridge::core::ir::Kind::Skill, &maps);
     let parsed = handler.parse(&skill_path).unwrap();
     let ir = handler.lift(&parsed, ConvDir::C2x).unwrap();

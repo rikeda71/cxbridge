@@ -21,6 +21,8 @@ struct PluginDirFile {
 /// and stores the results as children.
 pub struct PluginsHandler {
     pub map: DomainMap,
+    /// All domain maps, held to avoid re-parsing YAML on each nested conversion.
+    pub(crate) maps: std::collections::HashMap<String, DomainMap>,
 }
 
 impl Handler for PluginsHandler {
@@ -231,9 +233,8 @@ impl PluginsHandler {
             _ => vec!["./skills/".to_string()],
         };
 
-        let maps = crate::core::mappings::load_mappings(Path::new("mappings"));
         let skills_handler = crate::handlers::skills::SkillsHandler {
-            map: maps["skills"].clone(),
+            map: self.maps["skills"].clone(),
         };
 
         for skills_dir in &skills_dirs {
@@ -292,9 +293,8 @@ impl PluginsHandler {
         dir: ConvDir,
         node: &mut IRNode,
     ) {
-        let maps = crate::core::mappings::load_mappings(Path::new("mappings"));
         let hooks_handler = crate::handlers::hooks::HooksHandler {
-            map: maps["hooks"].clone(),
+            map: self.maps["hooks"].clone(),
         };
 
         let hooks_value = frontmatter.get("hooks");
@@ -382,9 +382,8 @@ impl PluginsHandler {
         dir: ConvDir,
         node: &mut IRNode,
     ) {
-        let maps = crate::core::mappings::load_mappings(Path::new("mappings"));
         let mcp_handler = crate::handlers::mcp::McpHandler {
-            map: maps["mcp"].clone(),
+            map: self.maps["mcp"].clone(),
         };
 
         let mcp_value = frontmatter.get("mcpServers");
@@ -588,13 +587,11 @@ impl PluginsHandler {
         });
 
         // Merge EmitPlans from child nodes
-        // skills children
-        let maps = crate::core::mappings::load_mappings(Path::new("mappings"));
         for child_ir in &ir.children {
             match child_ir.kind {
                 Kind::Skill => {
                     let skill_handler = crate::handlers::skills::SkillsHandler {
-                        map: maps["skills"].clone(),
+                        map: self.maps["skills"].clone(),
                     };
                     match skill_handler.lower(child_ir, ConvDir::C2x, opts) {
                         Ok(plan) => {
@@ -612,7 +609,7 @@ impl PluginsHandler {
                 }
                 Kind::Hooks => {
                     let hooks_handler = crate::handlers::hooks::HooksHandler {
-                        map: maps["hooks"].clone(),
+                        map: self.maps["hooks"].clone(),
                     };
                     match hooks_handler.lower(child_ir, ConvDir::C2x, opts) {
                         Ok(plan) => {
@@ -630,7 +627,7 @@ impl PluginsHandler {
                 }
                 Kind::Mcp => {
                     let mcp_handler = crate::handlers::mcp::McpHandler {
-                        map: maps["mcp"].clone(),
+                        map: self.maps["mcp"].clone(),
                     };
                     match mcp_handler.lower(child_ir, ConvDir::C2x, opts) {
                         Ok(plan) => {
@@ -694,12 +691,11 @@ impl PluginsHandler {
         });
 
         // Merge EmitPlans from child nodes
-        let maps = crate::core::mappings::load_mappings(Path::new("mappings"));
         for child_ir in &ir.children {
             match child_ir.kind {
                 Kind::Skill => {
                     let skill_handler = crate::handlers::skills::SkillsHandler {
-                        map: maps["skills"].clone(),
+                        map: self.maps["skills"].clone(),
                     };
                     match skill_handler.lower(child_ir, ConvDir::X2c, opts) {
                         Ok(plan) => {
@@ -717,7 +713,7 @@ impl PluginsHandler {
                 }
                 Kind::Hooks => {
                     let hooks_handler = crate::handlers::hooks::HooksHandler {
-                        map: maps["hooks"].clone(),
+                        map: self.maps["hooks"].clone(),
                     };
                     match hooks_handler.lower(child_ir, ConvDir::X2c, opts) {
                         Ok(plan) => {
@@ -735,7 +731,7 @@ impl PluginsHandler {
                 }
                 Kind::Mcp => {
                     let mcp_handler = crate::handlers::mcp::McpHandler {
-                        map: maps["mcp"].clone(),
+                        map: self.maps["mcp"].clone(),
                     };
                     match mcp_handler.lower(child_ir, ConvDir::X2c, opts) {
                         Ok(plan) => {
@@ -1150,9 +1146,10 @@ mod tests {
     use tempfile::TempDir;
 
     fn make_handler() -> PluginsHandler {
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         PluginsHandler {
             map: maps["plugins"].clone(),
+            maps,
         }
     }
 

@@ -84,9 +84,15 @@ fn ask_user_skill_target(ir: &IRNode) -> SkillTarget {
 /// Generates `.codex/agents/<skill>.toml` and appends the required `[agents.*]` /
 /// `[features].multi_agent` entries to `config.toml`.
 ///
-/// A Diagnostic is always emitted to record that the skill's auto-fork behaviour
-/// changes to an explicit `spawn_agent` call in Codex.
-pub fn degrade_to_subagent(skill_name: &str, ir: &IRNode) -> (Vec<SideArtifact>, Vec<Diagnostic>) {
+/// `trigger_id` is the mapping entry id of the field that caused the degrade
+/// (e.g. `"skills.model"`, `"skills.effort"`, `"skills.context-fork"`).
+/// A Diagnostic carrying that id is always emitted to record that the skill's
+/// auto-fork behaviour changes to an explicit `spawn_agent` call in Codex.
+pub fn degrade_to_subagent(
+    skill_name: &str,
+    ir: &IRNode,
+    trigger_id: &str,
+) -> (Vec<SideArtifact>, Vec<Diagnostic>) {
     let mut artifacts = Vec::new();
     let mut diagnostics = Vec::new();
 
@@ -180,7 +186,7 @@ pub fn degrade_to_subagent(skill_name: &str, ir: &IRNode) -> (Vec<SideArtifact>,
 
     diagnostics.push(Diagnostic {
         level: DiagLevel::Warn,
-        id: Some("skills.context-fork".to_string()),
+        id: Some(trigger_id.to_string()),
         message: format!(
             "skill '{}' degraded to subagent (.codex/agents/{}.toml). \
              Auto-fork is replaced by an explicit spawn_agent call. \
@@ -260,7 +266,7 @@ mod tests {
     #[test]
     fn test_degrade_to_subagent_unknown_model_passthrough_warns() {
         let n = node_with("skills.model", serde_json::json!("gpt-5-custom"));
-        let (artifacts, diags) = degrade_to_subagent("demo", &n);
+        let (artifacts, diags) = degrade_to_subagent("demo", &n, "skills.model");
         assert!(diags.iter().any(
             |d| d.id.as_deref() == Some("skills.model") && d.message.contains("Unknown model")
         ));
@@ -269,5 +275,25 @@ mod tests {
             .find(|a| a.path.ends_with("demo.toml"))
             .unwrap();
         assert!(agent_toml.content.contains("gpt-5-custom"));
+    }
+
+    #[test]
+    fn test_degrade_to_subagent_trigger_id_in_diagnostic() {
+        // Each trigger field id must appear in the emitted diagnostic id.
+        for trigger in &["skills.model", "skills.effort", "skills.context-fork"] {
+            let n = new_node(Kind::Skill, Tool::Claude, "demo");
+            let (_artifacts, diags) = degrade_to_subagent("demo", &n, trigger);
+            let degrade_diag = diags
+                .iter()
+                .find(|d| d.message.contains("degraded to subagent"))
+                .expect("degrade diagnostic must be emitted");
+            assert_eq!(
+                degrade_diag.id.as_deref(),
+                Some(*trigger),
+                "diagnostic id must match trigger_id '{}', got {:?}",
+                trigger,
+                degrade_diag.id
+            );
+        }
     }
 }

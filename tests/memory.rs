@@ -10,7 +10,7 @@ use cxbridge::handlers::memory::MemoryHandler;
 use cxbridge::handlers::{pick_handler, Handler};
 
 fn make_handler() -> MemoryHandler {
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     MemoryHandler {
         map: maps["memory"].clone(),
     }
@@ -27,7 +27,7 @@ fn test_memory_c2x_basic() {
     );
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(memory_path).expect("detect should succeed");
     assert_eq!(kind, cxbridge::core::ir::Kind::Memory);
 
@@ -66,7 +66,7 @@ fn test_memory_x2c_basic() {
     );
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(memory_path).expect("detect should succeed");
     assert_eq!(kind, cxbridge::core::ir::Kind::Memory);
 

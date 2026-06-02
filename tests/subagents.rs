@@ -18,7 +18,7 @@ fn test_subagent_c2x_generates_codex_toml() {
         agent_path
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(agent_path).expect("detect should succeed");
     assert_eq!(
         kind,
@@ -136,7 +136,7 @@ fn test_subagent_x2c_generates_claude_md() {
         agent_path
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(agent_path).expect("detect should succeed");
     assert_eq!(kind, cxbridge::core::ir::Kind::Subagent);
 
@@ -180,7 +180,7 @@ fn test_subagent_x2c_generates_claude_md() {
 fn test_subagent_c2x_report_dropped_fields() {
     let agent_path = "tests/fixtures/claude/agents/researcher.md";
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(agent_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -234,7 +234,7 @@ fn test_subagent_c2x_report_dropped_fields() {
 fn test_subagent_c2x_emits_config_toml_with_agents_and_features() {
     let agent_path = "tests/fixtures/claude/agents/researcher.md";
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(agent_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -303,7 +303,7 @@ fn test_subagent_x2c_skills_lifted_integration() {
         agent_path
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(agent_path).expect("detect should succeed");
     assert_eq!(kind, cxbridge::core::ir::Kind::Subagent);
 
@@ -385,7 +385,7 @@ fn test_subagent_x2c_skills_lifted_integration() {
 fn test_subagent_c2x_no_duplicate_dropped_entries() {
     let agent_path = "tests/fixtures/claude/agents/researcher.md";
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(agent_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -428,7 +428,7 @@ fn test_subagent_c2x_no_duplicate_dropped_entries() {
 fn test_subagent_c2x_dropped_and_lossy_are_disjoint() {
     let agent_path = "tests/fixtures/claude/agents/researcher.md";
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(agent_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -470,7 +470,7 @@ fn test_subagent_c2x_dropped_and_lossy_are_disjoint() {
 fn test_subagent_c2x_spawn_model_appears_exactly_once_in_lossy() {
     let agent_path = "tests/fixtures/claude/agents/researcher.md";
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(agent_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -520,7 +520,7 @@ fn test_subagent_c2x_permission_mode_accept_edits_dropped() {
     );
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(agent_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -567,7 +567,7 @@ fn test_subagent_c2x_permission_mode_accept_edits_dropped() {
 /// not produce sandbox_mode in the TOML output.
 #[test]
 fn test_subagent_c2x_permission_mode_dont_ask_and_auto_dropped() {
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
 
     for (agent_path, stem) in [
         (
@@ -639,7 +639,7 @@ fn test_subagents_dropped_warn_fields_appear_once_in_dropped() {
         "Fixture tests/fixtures/claude/agents/dropped_warn_fields.md must exist"
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&cxbridge::core::ir::Kind::Subagent, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
@@ -691,7 +691,7 @@ fn test_subagents_dropped_warn_fields_not_in_lossy() {
         "Fixture tests/fixtures/claude/agents/dropped_warn_fields.md must exist"
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&cxbridge::core::ir::Kind::Subagent, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");

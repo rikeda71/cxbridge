@@ -87,18 +87,16 @@ pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
                 });
             }
             DiagLevel::Warn => {
-                // Route body-scanner findings to body_warnings rather than lossy
-                if diag.message.contains("body L") || diag.message.starts_with("body ") {
-                    body_warnings.push(DiagEntry {
-                        id: diag.id.clone(),
-                        message: diag.message.clone(),
-                    });
-                } else {
-                    lossy.push(DiagEntry {
-                        id: diag.id.clone(),
-                        message: diag.message.clone(),
-                    });
-                }
+                lossy.push(DiagEntry {
+                    id: diag.id.clone(),
+                    message: diag.message.clone(),
+                });
+            }
+            DiagLevel::BodyWarn => {
+                body_warnings.push(DiagEntry {
+                    id: diag.id.clone(),
+                    message: diag.message.clone(),
+                });
             }
             DiagLevel::Info => {}
         }
@@ -138,6 +136,12 @@ pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
             }
             DiagLevel::Warn => {
                 lossy.push(DiagEntry {
+                    id: diag.id.clone(),
+                    message: diag.message.clone(),
+                });
+            }
+            DiagLevel::BodyWarn => {
+                body_warnings.push(DiagEntry {
                     id: diag.id.clone(),
                     message: diag.message.clone(),
                 });
@@ -594,6 +598,36 @@ mod tests {
         assert!(
             !in_lossy,
             "plugins.channels must NOT appear in lossy when no spurious Warn diagnostic is pushed"
+        );
+    }
+
+    // DiagLevel::BodyWarn must route to body_warnings, not lossy.
+    #[test]
+    fn test_build_report_body_warn_diag_routes_to_body_warnings() {
+        let mut node = new_node(Kind::Skill, Tool::Claude, "/test/SKILL.md");
+        node.diagnostics.push(Diagnostic {
+            level: DiagLevel::BodyWarn,
+            id: None,
+            message: "body L3: $ARGUMENTS[0] - Proposing $ARGUMENTS[0] → $1".to_string(),
+        });
+
+        let plan = empty_plan();
+        let report = build_report(&node, &plan);
+
+        assert!(
+            !report.body_warnings.is_empty(),
+            "DiagLevel::BodyWarn must route to body_warnings"
+        );
+        assert!(
+            report.lossy.is_empty(),
+            "DiagLevel::BodyWarn must NOT appear in lossy"
+        );
+        assert!(
+            report
+                .body_warnings
+                .iter()
+                .any(|e| e.message.contains("$ARGUMENTS[0]")),
+            "body_warnings must contain the BodyWarn message"
         );
     }
 }

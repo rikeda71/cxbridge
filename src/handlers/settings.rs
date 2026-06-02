@@ -1185,7 +1185,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn make_handler() -> SettingsHandler {
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         SettingsHandler {
             map: maps["settings-config"].clone(),
         }

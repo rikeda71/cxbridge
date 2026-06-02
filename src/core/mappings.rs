@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::path::Path;
 
 use serde::Deserialize;
 
@@ -146,14 +145,14 @@ const EMBEDDED_MAPPINGS: &[(&str, &str)] = &[
     ),
 ];
 
-/// Loads all YAML files and returns a HashMap of domain → DomainMap.
+/// Loads all domain maps from YAML embedded at compile time and returns a HashMap of domain → DomainMap.
 ///
 /// Asserts startup invariants:
 /// - id uniqueness
 /// - valid values for direction/loss
 /// - degrade implies loss:lossy
 /// - loss:dropped must have no transform
-pub fn load_mappings(_dir: &Path) -> HashMap<String, DomainMap> {
+pub fn load_mappings() -> HashMap<String, DomainMap> {
     let mut maps: HashMap<String, DomainMap> = HashMap::new();
     let mut all_ids: HashMap<String, String> = HashMap::new(); // id → filename
 
@@ -259,13 +258,13 @@ mod tests {
     #[test]
     fn test_load_mappings_invariants() {
         // Verify that load_mappings satisfies invariants (panics on failure)
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         assert!(!maps.is_empty(), "mappings should not be empty");
     }
 
     #[test]
     fn test_id_uniqueness() {
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         let mut all_ids = std::collections::HashSet::new();
         for dm in maps.values() {
             for entry in &dm.entries {
@@ -280,7 +279,7 @@ mod tests {
 
     #[test]
     fn test_degrade_implies_lossy() {
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         for dm in maps.values() {
             for entry in &dm.entries {
                 if entry.degrade.is_some() {
@@ -296,7 +295,7 @@ mod tests {
 
     #[test]
     fn test_dropped_has_no_transform() {
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         for dm in maps.values() {
             for entry in &dm.entries {
                 if matches!(entry.loss, LossSpec::Dropped) {
@@ -312,7 +311,7 @@ mod tests {
 
     #[test]
     fn test_index_by_claude_field_skips_pseudo() {
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         for dm in maps.values() {
             let idx = index_by_claude_field(dm);
             for key in idx.keys() {
@@ -332,7 +331,7 @@ mod tests {
     /// return the entry that applies to C2x, not the one that doesn't.
     #[test]
     fn test_index_by_claude_field_direction_collision_c2x() {
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         let skills_dm = &maps["skills"];
         let idx = index_by_claude_field(skills_dm);
         let entry = idx
@@ -350,7 +349,7 @@ mod tests {
 
     #[test]
     fn test_index_by_codex_field_skips_pseudo() {
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         for dm in maps.values() {
             let idx = index_by_codex_field(dm);
             for key in idx.keys() {
@@ -365,7 +364,7 @@ mod tests {
 
     #[test]
     fn test_all_domains_loaded() {
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         let expected = [
             "hooks",
             "mcp",
@@ -383,7 +382,7 @@ mod tests {
 
     #[test]
     fn test_format_parsed_as_list() {
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
 
         // format must parse as a non-empty list for every domain
         for (domain, dm) in &maps {

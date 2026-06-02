@@ -10,8 +10,6 @@ use crate::core::{
 };
 use crate::handlers::{pick_handler, EmitPlan, LowerOpts, Scope, SkillTargetMode};
 
-const MAPPINGS_DIR: &str = "mappings";
-
 #[derive(Parser)]
 #[command(
     name = "cxbridge",
@@ -153,7 +151,7 @@ pub fn default_out_dir(path: &str, kind: &Kind) -> String {
 }
 
 fn run_convert(dir: ConvDir, path: &str, opts: &ConvertOpts) -> anyhow::Result<()> {
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
 
     let pairs = detect_files(path)?;
 
@@ -265,7 +263,7 @@ pub fn infer_conv_dir(path: &str) -> ConvDir {
 
 /// check subcommand: reports dropped field counts without writing any files.
 fn run_check(path: &str) -> anyhow::Result<()> {
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
 
     let pairs = detect_files(path)?;
 

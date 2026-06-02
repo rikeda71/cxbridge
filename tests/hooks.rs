@@ -18,7 +18,7 @@ fn test_hooks_c2x_basic() {
         hooks_path
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(hooks_path).expect("detect should succeed");
     assert_eq!(kind, cxbridge::core::ir::Kind::Hooks);
 
@@ -77,7 +77,7 @@ fn test_hooks_c2x_lower_user_scope() {
     let hooks_path = "tests/fixtures/claude/hooks.json";
     let out_dir = tempfile::TempDir::new().unwrap();
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(hooks_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -144,7 +144,7 @@ fn test_hooks_c2x_lower_project_scope() {
     let hooks_path = "tests/fixtures/claude/hooks.json";
     let out_dir = tempfile::TempDir::new().unwrap();
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(hooks_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -201,7 +201,7 @@ fn test_hooks_c2x_matcher_alternation_normalized() {
     });
 
     // Use hooks handler directly (not via fixture)
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = cxbridge::handlers::hooks::HooksHandler {
         map: maps["hooks"].clone(),
     };
@@ -237,7 +237,7 @@ fn test_hooks_x2c_flat_json_produces_events() {
         hooks_path
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(hooks_path).expect("detect should succeed");
     assert_eq!(kind, cxbridge::core::ir::Kind::Hooks);
 
@@ -292,7 +292,7 @@ fn test_hooks_x2c_flat_json_lower_produces_hooks_json() {
     let hooks_path = "tests/fixtures/codex/hooks.json";
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(hooks_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -367,7 +367,7 @@ fn test_hooks_c2x_claude_only_event_dropped_exactly_once() {
         }
     });
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = HooksHandler {
         map: maps["hooks"].clone(),
     };
@@ -431,7 +431,7 @@ fn test_hooks_c2x_exact_matcher_lossy_exactly_once() {
         }
     });
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = HooksHandler {
         map: maps["hooks"].clone(),
     };
@@ -483,7 +483,7 @@ fn test_event_with_all_hooks_dropped_not_in_lossless() {
     let fixture = Path::new("tests/fixtures/claude/hooks_all_http_dropped/hooks.json");
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&cxbridge::core::ir::Kind::Hooks, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
@@ -546,7 +546,7 @@ fn test_event_with_surviving_hook_remains_lossless() {
     let fixture = Path::new("tests/fixtures/claude/hooks_wildcard/hooks.json");
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&cxbridge::core::ir::Kind::Hooks, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
@@ -594,7 +594,7 @@ fn test_hooks_args_report_section_is_dropped() {
     let fixture = Path::new("tests/fixtures/claude/hooks_args_drop/hooks.json");
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&cxbridge::core::ir::Kind::Hooks, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
@@ -669,7 +669,7 @@ fn test_hooks_regex_matcher_no_warn_e2e() {
     let fixture = Path::new("tests/fixtures/claude/hooks_regex_matcher/hooks.json");
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&cxbridge::core::ir::Kind::Hooks, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
@@ -735,7 +735,7 @@ fn test_hooks_wildcard_matcher_id_e2e() {
     let fixture = Path::new("tests/fixtures/claude/hooks_wildcard/hooks.json");
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&cxbridge::core::ir::Kind::Hooks, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");

@@ -22,7 +22,7 @@ fn test_plugin_c2x_generates_codex_manifest() {
         plugin_path
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(plugin_path).expect("detect should succeed");
     assert_eq!(kind, cxbridge::core::ir::Kind::Plugin);
 
@@ -87,7 +87,7 @@ fn test_plugin_c2x_generates_codex_manifest() {
 fn test_plugin_c2x_recursion() {
     let plugin_path = "tests/fixtures/claude/.claude-plugin/plugin.json";
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(plugin_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -123,7 +123,7 @@ fn test_plugin_c2x_recursion() {
 fn test_plugin_c2x_dropped_classification() {
     let plugin_path = "tests/fixtures/claude/.claude-plugin/plugin.json";
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(plugin_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -167,7 +167,7 @@ fn test_plugin_c2x_dropped_classification() {
 fn test_plugin_c2x_dual_manifest() {
     let plugin_path = "tests/fixtures/claude/.claude-plugin/plugin.json";
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(plugin_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -216,7 +216,7 @@ fn test_plugin_c2x_dual_manifest() {
 fn test_plugin_c2x_marketplace_policy_defaults() {
     let plugin_path = "tests/fixtures/claude/.claude-plugin/plugin.json";
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(plugin_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -285,7 +285,7 @@ fn test_plugin_x2c_interface_fields_expanded() {
         plugin_path
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(plugin_path).expect("detect should succeed");
     assert_eq!(kind, cxbridge::core::ir::Kind::Plugin);
 
@@ -353,7 +353,7 @@ fn test_plugin_x2c_interface_websiteurl_emits_homepage() {
     let plugin_path = "tests/fixtures/codex/.codex-plugin/plugin.json";
 
     let out_dir = tempfile::TempDir::new().unwrap();
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(plugin_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -412,7 +412,7 @@ fn test_marketplace_c2x_npm_source_emits_drop_diagnostic() {
         Path::new("tests/fixtures/claude/marketplace_npm_source/.claude-plugin/plugin.json");
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&Kind::Plugin, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
@@ -507,7 +507,7 @@ fn test_marketplace_c2x_dropped_top_level_fields_absent_from_output() {
         Path::new("tests/fixtures/claude/marketplace_dropped_fields/.claude-plugin/plugin.json");
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&Kind::Plugin, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
@@ -606,7 +606,7 @@ fn test_plugin_c2x_six_dropped_fields_no_duplicates() {
         Path::new("tests/fixtures/claude/plugin_six_dropped_fields/.claude-plugin/plugin.json");
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&Kind::Plugin, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
@@ -718,7 +718,7 @@ fn test_plugin_c2x_commands_and_agents_remapped() {
         "agents/bar.md fixture must exist"
     );
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(plugin_path).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -820,7 +820,7 @@ fn test_plugin_x2c_commands_and_agents_remapped() {
 
     let plugin_json_path = plugin_dir.join("plugin.json");
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let kind = detect(plugin_json_path.to_str().unwrap()).expect("detect should succeed");
     let handler = pick_handler(&kind, &maps);
     let parsed = handler
@@ -872,7 +872,7 @@ fn test_plugin_c2x_dropped_fields_without_secondary_warn_not_in_lossy() {
         Path::new("tests/fixtures/claude/plugin_six_dropped_fields/.claude-plugin/plugin.json");
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
-    let maps = load_mappings(Path::new(MAPPINGS_DIR));
+    let maps = load_mappings();
     let handler = pick_handler(&Kind::Plugin, &maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");

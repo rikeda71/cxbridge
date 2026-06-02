@@ -840,7 +840,7 @@ mod tests {
     use tempfile::TempDir;
 
     fn make_handler() -> HooksHandler {
-        let maps = load_mappings(Path::new("mappings"));
+        let maps = load_mappings();
         HooksHandler {
             map: maps["hooks"].clone(),
         }

@@ -232,6 +232,7 @@ pub fn pick_handler(kind: &Kind, maps: &HashMap<String, DomainMap>) -> Box<dyn H
         }),
         Kind::Plugin => Box::new(plugins::PluginsHandler {
             map: maps["plugins"].clone(),
+            maps: maps.clone(),
         }),
         Kind::Memory => Box::new(memory::MemoryHandler {
             map: maps["memory"].clone(),
