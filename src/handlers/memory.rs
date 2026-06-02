@@ -119,6 +119,37 @@ impl Handler for MemoryHandler {
             });
         }
 
+        // AGENTS.override.md → dropped (x2c: Claude has no same-directory override file;
+        // its content must not be silently folded into CLAUDE.md).
+        if filename == "AGENTS.override.md" {
+            node.fields.insert(
+                "memory.override-file".to_string(),
+                IRField {
+                    id: "memory.override-file".to_string(),
+                    value: Value::String(source_path.clone()),
+                    loss: Loss::Dropped,
+                    transforms_applied: vec![],
+                    degrade: None,
+                    warning: Some(
+                        "AGENTS.override.md has no Claude equivalent; its content is not merged \
+                         into CLAUDE.md. Move the content into CLAUDE.md manually if needed."
+                            .to_string(),
+                    ),
+                    dropped: Some(DroppedInfo {
+                        reason:
+                            "AGENTS.override.md: no same-directory override-file concept in Claude"
+                                .to_string(),
+                    }),
+                },
+            );
+            node.diagnostics.push(Diagnostic {
+                level: DiagLevel::Drop,
+                id: Some("memory.override-file".to_string()),
+                message: "AGENTS.override.md dropped: Claude has no override-file equivalent"
+                    .to_string(),
+            });
+        }
+
         // Managed policy (e.g. /etc/claude-code/CLAUDE.md) → dropped
         if source_path.contains("/etc/claude-code/")
             || source_path.contains("/Library/Application Support/ClaudeCode/")
@@ -281,6 +312,14 @@ impl MemoryHandler {
     fn lower_x2c(&self, ir: &IRNode, opts: &LowerOpts) -> anyhow::Result<EmitPlan> {
         let diagnostics = Vec::new();
         let out_root = opts.out.as_deref().unwrap_or(".");
+
+        // AGENTS.override.md is dropped (no Claude equivalent); emit nothing.
+        if ir.fields.contains_key("memory.override-file") {
+            return Ok(EmitPlan {
+                files: vec![],
+                diagnostics,
+            });
+        }
 
         let body = ir
             .fields
@@ -651,6 +690,39 @@ mod tests {
         assert!(
             plan.files.is_empty(),
             "Expected no output file for CLAUDE.local.md"
+        );
+    }
+
+    #[test]
+    fn test_memory_agents_override_dropped_x2c() {
+        let dir = TempDir::new().unwrap();
+        let override_md = dir.path().join("AGENTS.override.md");
+        fs::write(&override_md, "# Override stuff\n").unwrap();
+
+        let out_dir = TempDir::new().unwrap();
+        let h = make_handler();
+        let parsed = h.parse(&override_md).unwrap();
+        let ir = h.lift(&parsed, ConvDir::X2c).unwrap();
+
+        // Must be recorded as a dropped field with a Drop diagnostic, not silently
+        // converted to CLAUDE.md.
+        assert!(
+            ir.fields.contains_key("memory.override-file"),
+            "Expected override-file field"
+        );
+        assert_eq!(ir.fields["memory.override-file"].loss, Loss::Dropped);
+        assert!(
+            ir.diagnostics
+                .iter()
+                .any(|d| d.level == DiagLevel::Drop
+                    && d.id.as_deref() == Some("memory.override-file"))
+        );
+
+        let opts = default_opts(out_dir.path().to_str().unwrap());
+        let plan = h.lower(&ir, ConvDir::X2c, &opts).unwrap();
+        assert!(
+            plan.files.is_empty(),
+            "Expected no output file for AGENTS.override.md (must not become CLAUDE.md)"
         );
     }
 

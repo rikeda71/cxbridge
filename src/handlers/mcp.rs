@@ -134,12 +134,13 @@ impl McpHandler {
                     let transport_type = value.as_str().unwrap_or("");
                     match transport_type {
                         "sse" => {
-                            // Drop recorded via IRField.dropped; no separate diagnostic to
-                            // avoid double-counting in the report.
+                            // Dropped under its own mapping id (mcp.transport_sse), not the
+                            // surviving-transport id. Recorded via IRField.dropped; build_report
+                            // surfaces it (no separate diagnostic, matching the dropped-field pattern).
                             child.fields.insert(
-                                "mcp.transport_type".to_string(),
+                                "mcp.transport_sse".to_string(),
                                 IRField {
-                                    id: "mcp.transport_type".to_string(),
+                                    id: "mcp.transport_sse".to_string(),
                                     value: value.clone(),
                                     loss: Loss::Dropped,
                                     transforms_applied: vec![],
@@ -154,12 +155,12 @@ impl McpHandler {
                             );
                         }
                         "ws" => {
-                            // Drop recorded via IRField.dropped; no separate diagnostic to
-                            // avoid double-counting in the report.
+                            // Dropped under its own mapping id (mcp.transport_ws). Recorded via
+                            // IRField.dropped; build_report surfaces it.
                             child.fields.insert(
-                                "mcp.transport_type".to_string(),
+                                "mcp.transport_ws".to_string(),
                                 IRField {
-                                    id: "mcp.transport_type".to_string(),
+                                    id: "mcp.transport_ws".to_string(),
                                     value: value.clone(),
                                     loss: Loss::Dropped,
                                     transforms_applied: vec![],
@@ -1243,6 +1244,44 @@ mod tests {
         assert_eq!(child.source_path, "my-server");
         assert!(child.fields.contains_key("mcp.command"));
         assert!(child.fields.contains_key("mcp.args"));
+    }
+
+    #[test]
+    fn test_mcp_lift_c2x_sse_ws_dropped_under_own_ids() {
+        let dir = TempDir::new().unwrap();
+        let mcp_path = dir.path().join(".mcp.json");
+        std::fs::write(
+            &mcp_path,
+            r#"{
+  "mcpServers": {
+    "sse-server": {"type": "sse", "url": "https://example.com/sse"},
+    "ws-server": {"type": "ws", "url": "wss://example.com/ws"}
+  }
+}"#,
+        )
+        .unwrap();
+
+        let h = make_handler();
+        let parsed = h.parse(&mcp_path).unwrap();
+        let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
+
+        let sse = ir
+            .children
+            .iter()
+            .find(|c| c.source_path == "sse-server")
+            .unwrap();
+        // The drop is attributed to its own mapping id, not mcp.transport_type.
+        assert!(sse.fields.contains_key("mcp.transport_sse"));
+        assert!(!sse.fields.contains_key("mcp.transport_type"));
+        assert_eq!(sse.fields["mcp.transport_sse"].loss, Loss::Dropped);
+
+        let ws = ir
+            .children
+            .iter()
+            .find(|c| c.source_path == "ws-server")
+            .unwrap();
+        assert!(ws.fields.contains_key("mcp.transport_ws"));
+        assert_eq!(ws.fields["mcp.transport_ws"].loss, Loss::Dropped);
     }
 
     #[test]

@@ -314,12 +314,19 @@ impl SettingsHandler {
             "model_reasoning_effort",
             "settings.effortLevel",
         );
-        self.add_field_if_present(
-            settings,
-            node,
-            "dangerously_allow_all_unix_sockets",
-            "settings.sandbox.network.allowAllUnixSockets",
-        );
+        // Nested under [features.network_proxy] in Codex config.toml.
+        if let Some(allow_unix) = settings
+            .get("features")
+            .and_then(|f| f.get("network_proxy"))
+            .and_then(|np| np.get("dangerously_allow_all_unix_sockets"))
+        {
+            self.add_field(
+                node,
+                "settings.sandbox.network.allowAllUnixSockets",
+                allow_unix.clone(),
+                ConvDir::X2c,
+            );
+        }
         self.add_field_if_present(
             settings,
             node,
@@ -647,13 +654,24 @@ impl SettingsHandler {
             }
         }
 
-        // sandbox.network.allowAllUnixSockets → dangerously_allow_all_unix_sockets
+        // sandbox.network.allowAllUnixSockets →
+        // features.network_proxy.dangerously_allow_all_unix_sockets (nested, per mapping)
         if let Some(f) = ir
             .fields
             .get("settings.sandbox.network.allowAllUnixSockets")
         {
             if let Some(b) = f.value.as_bool() {
-                doc.insert("dangerously_allow_all_unix_sockets", toml_edit::value(b));
+                let features_item = doc
+                    .entry("features")
+                    .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+                if let Some(ftbl) = features_item.as_table_mut() {
+                    let np_item = ftbl
+                        .entry("network_proxy")
+                        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+                    if let Some(nptbl) = np_item.as_table_mut() {
+                        nptbl.insert("dangerously_allow_all_unix_sockets", toml_edit::value(b));
+                    }
+                }
             }
         }
 
@@ -1406,6 +1424,8 @@ mod tests {
             r#"
 model = "gpt-5-codex"
 model_reasoning_effort = "high"
+
+[features.network_proxy]
 dangerously_allow_all_unix_sockets = false
 "#,
         )

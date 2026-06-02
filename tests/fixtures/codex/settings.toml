@@ -1,7 +1,9 @@
 model = "gpt-5-codex"
 model_reasoning_effort = "high"
-dangerously_allow_all_unix_sockets = false
 commit_attribution = "Codex <noreply@openai.com>"
+
+[features.network_proxy]
+dangerously_allow_all_unix_sockets = false
 
 [tui]
 vim_mode_default = true
