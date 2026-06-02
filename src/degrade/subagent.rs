@@ -6,7 +6,7 @@ use crate::handlers::{LowerOpts, SkillTargetMode};
 ///
 /// Avoids a direct dependency on `cli.rs`; accessed through `LowerOpts`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SkillTarget {
+pub(crate) enum SkillTarget {
     Skill,
     Subagent,
 }
@@ -21,7 +21,7 @@ pub enum SkillTarget {
 /// 3. Ambiguous case (permissions present, unclear if session scope is acceptable):
 ///    - Interactive mode → prompt the user via TTY
 ///    - Non-interactive → conservative default (`Subagent`); reason is recorded in the report
-pub fn decide_skill_target(ir: &IRNode, opts: &LowerOpts) -> SkillTarget {
+pub(crate) fn decide_skill_target(ir: &IRNode, opts: &LowerOpts) -> SkillTarget {
     // Explicit option takes precedence over all heuristics.
     match opts.skill_target {
         SkillTargetMode::Skill => return SkillTarget::Skill,
@@ -88,7 +88,7 @@ fn ask_user_skill_target(ir: &IRNode) -> SkillTarget {
 /// (e.g. `"skills.model"`, `"skills.effort"`, `"skills.context-fork"`).
 /// A Diagnostic carrying that id is always emitted to record that the skill's
 /// auto-fork behaviour changes to an explicit `spawn_agent` call in Codex.
-pub fn degrade_to_subagent(
+pub(crate) fn degrade_to_subagent(
     skill_name: &str,
     ir: &IRNode,
     trigger_id: &str,

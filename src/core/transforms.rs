@@ -17,7 +17,7 @@ pub enum ConvDir {
 }
 
 /// Type signature for transform functions.
-pub type TransformFn = fn(&Value, &TransformCtx) -> Value;
+pub(crate) type TransformFn = fn(&Value, &TransformCtx) -> Value;
 
 /// Context information available during transform execution.
 pub struct TransformCtx<'a> {
@@ -30,11 +30,11 @@ pub struct TransformCtx<'a> {
 }
 
 /// Result of parsing a transform specification string.
-pub struct TransformSpec {
+pub(crate) struct TransformSpec {
     /// Transform name (e.g. "enum_map", "unit:ms_to_sec")
-    pub name: String,
+    pub(crate) name: String,
     /// Arguments from the `{...}` block (e.g. `enum_map:{max:xhigh}`)
-    pub args: Option<HashMap<String, String>>,
+    pub(crate) args: Option<HashMap<String, String>>,
 }
 
 fn tf_ms_to_sec(v: &Value, _ctx: &TransformCtx) -> Value {
@@ -221,13 +221,13 @@ static TRANSFORM_REGISTRY: Lazy<HashMap<&'static str, TransformFn>> = Lazy::new(
 });
 
 /// Looks up a TransformFn by name from the static registry.
-pub fn get_transform(name: &str) -> Option<TransformFn> {
+pub(crate) fn get_transform(name: &str) -> Option<TransformFn> {
     TRANSFORM_REGISTRY.get(name).copied()
 }
 
 /// Parses `"unit:ms_to_sec; enum_map:{max:xhigh,high:high}"` into a Vec<TransformSpec>.
 /// `{...}` blocks are split into key:value pairs and stored in TransformSpec.args.
-pub fn parse_transform(spec: &str) -> Vec<TransformSpec> {
+pub(crate) fn parse_transform(spec: &str) -> Vec<TransformSpec> {
     let mut results = Vec::new();
 
     for part in spec.split(';') {
