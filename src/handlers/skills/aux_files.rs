@@ -89,3 +89,166 @@ pub(super) fn extract_skill_name(source_path: &str) -> String {
     // Fallback: the string "skill"
     "skill".to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    // ── extract_skill_name ────────────────────────────────────────────────
+
+    #[test]
+    fn extract_skill_name_claude_path() {
+        assert_eq!(
+            extract_skill_name("/home/user/.claude/skills/deploy/SKILL.md"),
+            "deploy"
+        );
+    }
+
+    #[test]
+    fn extract_skill_name_agents_path() {
+        assert_eq!(extract_skill_name(".agents/skills/build/SKILL.md"), "build");
+    }
+
+    #[test]
+    fn extract_skill_name_parent_is_skills_falls_back() {
+        // Path where the parent dir IS "skills" — no valid skill name above it
+        assert_eq!(extract_skill_name("skills/SKILL.md"), "skill");
+    }
+
+    #[test]
+    fn extract_skill_name_bare_filename_falls_back() {
+        assert_eq!(extract_skill_name("SKILL.md"), "skill");
+    }
+
+    #[test]
+    fn extract_skill_name_parent_is_dot_claude_falls_back() {
+        assert_eq!(extract_skill_name(".claude/SKILL.md"), "skill");
+    }
+
+    // ── collect_aux_files ─────────────────────────────────────────────────
+
+    #[test]
+    fn collect_aux_files_returns_non_md_files() {
+        let dir = TempDir::new().unwrap();
+        let skill_dir = dir.path().join("my-skill");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(skill_dir.join("README.txt"), "readme content\n").unwrap();
+        fs::write(skill_dir.join("SKILL.md"), "---\nname: my-skill\n---\n").unwrap();
+
+        let files = collect_aux_files(&skill_dir, ".agents/skills/my-skill").unwrap();
+
+        let readme = files.iter().find(|f| f.path.ends_with("README.txt"));
+        assert!(
+            readme.is_some(),
+            "README.txt must be collected as aux file; got: {:?}",
+            files.iter().map(|f| &f.path).collect::<Vec<_>>()
+        );
+        assert_eq!(readme.unwrap().content.trim(), "readme content");
+
+        // .md files must be excluded
+        let has_md = files.iter().any(|f| f.path.ends_with(".md"));
+        assert!(!has_md, "SKILL.md must not appear in aux files");
+    }
+
+    #[test]
+    fn collect_aux_files_recurses_into_subdirectories() {
+        let dir = TempDir::new().unwrap();
+        let skill_dir = dir.path().join("sk");
+        let scripts_dir = skill_dir.join("scripts");
+        let refs_dir = skill_dir.join("references");
+        fs::create_dir_all(&scripts_dir).unwrap();
+        fs::create_dir_all(&refs_dir).unwrap();
+        fs::write(scripts_dir.join("run.sh"), "#!/bin/bash\necho hi\n").unwrap();
+        fs::write(refs_dir.join("spec.txt"), "spec content\n").unwrap();
+
+        let files = collect_aux_files(&skill_dir, ".agents/skills/sk").unwrap();
+
+        let run_sh = files
+            .iter()
+            .find(|f| f.path == ".agents/skills/sk/scripts/run.sh");
+        assert!(
+            run_sh.is_some(),
+            "scripts/run.sh must be collected with full remapped path"
+        );
+        assert_eq!(run_sh.unwrap().content, "#!/bin/bash\necho hi\n");
+
+        let spec = files
+            .iter()
+            .find(|f| f.path == ".agents/skills/sk/references/spec.txt");
+        assert!(
+            spec.is_some(),
+            "references/spec.txt must be collected with full remapped path"
+        );
+    }
+
+    #[test]
+    fn collect_aux_files_excludes_agents_openai_yaml() {
+        let dir = TempDir::new().unwrap();
+        let skill_dir = dir.path().join("sk");
+        let agents_dir = skill_dir.join("agents");
+        fs::create_dir_all(&agents_dir).unwrap();
+        fs::write(
+            agents_dir.join("openai.yaml"),
+            "policy:\n  allow_implicit_invocation: true\n",
+        )
+        .unwrap();
+        // A different yaml in agents/ should be collected normally
+        fs::write(agents_dir.join("other.yaml"), "key: value\n").unwrap();
+
+        let files = collect_aux_files(&skill_dir, ".agents/skills/sk").unwrap();
+
+        let has_openai = files.iter().any(|f| f.path.ends_with("agents/openai.yaml"));
+        assert!(
+            !has_openai,
+            "agents/openai.yaml must be excluded from aux file collection"
+        );
+
+        let other = files.iter().find(|f| f.path.ends_with("agents/other.yaml"));
+        assert!(other.is_some(), "agents/other.yaml must still be collected");
+    }
+
+    #[test]
+    fn collect_aux_files_remaps_output_prefix() {
+        let dir = TempDir::new().unwrap();
+        let skill_dir = dir.path().join("sk");
+        fs::create_dir_all(&skill_dir).unwrap();
+        fs::write(skill_dir.join("data.txt"), "data\n").unwrap();
+
+        let out_prefix = "custom/output/prefix";
+        let files = collect_aux_files(&skill_dir, out_prefix).unwrap();
+
+        let data = files
+            .iter()
+            .find(|f| f.path == "custom/output/prefix/data.txt");
+        assert!(
+            data.is_some(),
+            "output path must use the supplied out_skill_dir prefix; got: {:?}",
+            files.iter().map(|f| &f.path).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn collect_aux_files_empty_dir_returns_empty_vec() {
+        let dir = TempDir::new().unwrap();
+        let skill_dir = dir.path().join("empty-skill");
+        fs::create_dir_all(&skill_dir).unwrap();
+
+        let files = collect_aux_files(&skill_dir, ".agents/skills/empty-skill").unwrap();
+        assert!(files.is_empty(), "empty skill dir must yield no aux files");
+    }
+
+    #[test]
+    fn collect_aux_files_nonexistent_dir_returns_empty_vec() {
+        let dir = TempDir::new().unwrap();
+        let skill_dir = dir.path().join("does-not-exist");
+
+        // Nonexistent directory is silently treated as empty
+        let files = collect_aux_files(&skill_dir, ".agents/skills/x").unwrap();
+        assert!(
+            files.is_empty(),
+            "nonexistent skill dir must yield no aux files (silently ok)"
+        );
+    }
+}

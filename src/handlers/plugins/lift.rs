@@ -446,3 +446,348 @@ impl PluginsHandler {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::ir::{new_node, Kind, Loss, Tool};
+    use crate::core::mappings::load_mappings;
+    use crate::handlers::plugins::index::build_plugin_scope_index;
+
+    fn make_handler() -> PluginsHandler {
+        let maps = load_mappings();
+        PluginsHandler {
+            map: maps["plugins"].clone(),
+            maps,
+        }
+    }
+
+    fn plugin_node() -> IRNode {
+        new_node(Kind::Plugin, Tool::Claude, "test-path")
+    }
+
+    // ── lift_single_field ──────────────────────────────────────────────────────
+
+    #[test]
+    fn lift_single_field_known_lossless_inserts_ir_field() {
+        let h = make_handler();
+        let idx = build_plugin_scope_index(&h.map, ConvDir::C2x);
+        let mut node = plugin_node();
+
+        h.lift_single_field(
+            "name",
+            &serde_json::Value::String("test-plugin".to_string()),
+            &idx,
+            ConvDir::C2x,
+            &mut node,
+        );
+
+        let field = node
+            .fields
+            .get("plugins.name")
+            .expect("plugins.name must be inserted");
+        assert_eq!(field.loss, Loss::Lossless);
+        assert_eq!(
+            field.value,
+            serde_json::Value::String("test-plugin".to_string())
+        );
+    }
+
+    #[test]
+    fn lift_single_field_known_dropped_inserts_ir_field_with_dropped_loss() {
+        let h = make_handler();
+        let idx = build_plugin_scope_index(&h.map, ConvDir::C2x);
+        let mut node = plugin_node();
+
+        h.lift_single_field(
+            "lspServers",
+            &serde_json::Value::String("./lsp.json".to_string()),
+            &idx,
+            ConvDir::C2x,
+            &mut node,
+        );
+
+        let field = node
+            .fields
+            .get("plugins.lspServers")
+            .expect("plugins.lspServers must be inserted");
+        assert_eq!(field.loss, Loss::Dropped);
+        // No extra diagnostics on the node for a dropped field
+        assert!(
+            node.diagnostics.is_empty(),
+            "dropped field must not push an extra diagnostic"
+        );
+    }
+
+    #[test]
+    fn lift_single_field_unknown_key_pushes_drop_diagnostic() {
+        let h = make_handler();
+        let idx = build_plugin_scope_index(&h.map, ConvDir::C2x);
+        let mut node = plugin_node();
+
+        h.lift_single_field(
+            "nonExistentField",
+            &serde_json::Value::Bool(true),
+            &idx,
+            ConvDir::C2x,
+            &mut node,
+        );
+
+        assert!(
+            node.fields.is_empty(),
+            "unknown field must not insert an IRField"
+        );
+        assert_eq!(node.diagnostics.len(), 1);
+        assert_eq!(node.diagnostics[0].level, DiagLevel::Drop);
+        assert!(
+            node.diagnostics[0].message.contains("nonExistentField"),
+            "diagnostic message must name the unknown field"
+        );
+    }
+
+    #[test]
+    fn lift_single_field_direction_filter_skips_c2x_only_field_in_x2c() {
+        let h = make_handler();
+        // For X2c, build_plugin_scope_index uses the codex side.
+        // lspServers is claude_to_codex only → must NOT appear in x2c index.
+        let idx = build_plugin_scope_index(&h.map, ConvDir::X2c);
+        assert!(
+            !idx.contains_key("lspServers"),
+            "lspServers (claude_to_codex) must not appear in x2c index"
+        );
+    }
+
+    // ── lift_manifest_fields ───────────────────────────────────────────────────
+
+    #[test]
+    fn lift_manifest_fields_expands_experimental_subfields() {
+        let h = make_handler();
+        let idx = build_plugin_scope_index(&h.map, ConvDir::C2x);
+        let mut node = plugin_node();
+
+        let mut fm = serde_json::Map::new();
+        fm.insert(
+            "experimental".to_string(),
+            serde_json::json!({"themes": "./themes/", "monitors": "./monitors/"}),
+        );
+
+        h.lift_manifest_fields(&fm, &idx, ConvDir::C2x, &mut node);
+
+        // Each sub-key routes through "experimental.<sub_key>" in the index
+        assert!(
+            node.fields.contains_key("plugins.experimental.themes"),
+            "experimental.themes must be lifted individually"
+        );
+        assert!(
+            node.fields.contains_key("plugins.experimental.monitors"),
+            "experimental.monitors must be lifted individually"
+        );
+        // Both are claude_to_codex dropped
+        assert_eq!(
+            node.fields["plugins.experimental.themes"].loss,
+            Loss::Dropped
+        );
+        assert_eq!(
+            node.fields["plugins.experimental.monitors"].loss,
+            Loss::Dropped
+        );
+
+        // The "experimental" key itself must NOT produce an unknown-field diagnostic
+        let has_unknown_experimental = node.diagnostics.iter().any(|d| {
+            d.message
+                .contains("unknown plugin manifest field: experimental")
+        });
+        assert!(
+            !has_unknown_experimental,
+            "experimental must not produce an unknown-field diagnostic"
+        );
+    }
+
+    #[test]
+    fn lift_manifest_fields_malformed_experimental_not_object_produces_drop_diag() {
+        let h = make_handler();
+        let idx = build_plugin_scope_index(&h.map, ConvDir::C2x);
+        let mut node = plugin_node();
+
+        let mut fm = serde_json::Map::new();
+        // experimental with a non-object value
+        fm.insert("experimental".to_string(), serde_json::json!("bad-string"));
+
+        h.lift_manifest_fields(&fm, &idx, ConvDir::C2x, &mut node);
+
+        // The non-object experimental value is treated as an unknown field
+        let drop_diag = node
+            .diagnostics
+            .iter()
+            .find(|d| d.level == DiagLevel::Drop && d.message.contains("experimental"));
+        assert!(
+            drop_diag.is_some(),
+            "malformed experimental (non-object) must produce a Drop diagnostic"
+        );
+    }
+
+    #[test]
+    fn lift_manifest_fields_expands_interface_subfields() {
+        let h = make_handler();
+        // For x2c, build the Codex-side index
+        let idx = build_plugin_scope_index(&h.map, ConvDir::X2c);
+        let mut node = new_node(Kind::Plugin, Tool::Codex, "test-path");
+
+        let mut fm = serde_json::Map::new();
+        fm.insert(
+            "interface".to_string(),
+            serde_json::json!({
+                "displayName": "My Plugin",
+                "brandColor": "#FF0000"
+            }),
+        );
+
+        h.lift_manifest_fields(&fm, &idx, ConvDir::X2c, &mut node);
+
+        // interface.displayName → plugins.display-name (lossless rename)
+        assert!(
+            node.fields.contains_key("plugins.display-name"),
+            "interface.displayName must map to plugins.display-name"
+        );
+        // interface.brandColor is codex_to_claude dropped
+        assert!(
+            node.fields.contains_key("plugins.interface.brandColor"),
+            "interface.brandColor must be present"
+        );
+        assert_eq!(
+            node.fields["plugins.interface.brandColor"].loss,
+            Loss::Dropped
+        );
+
+        // Must NOT generate a single "unknown plugin manifest field: interface" diagnostic
+        let has_unknown_iface = node.diagnostics.iter().any(|d| {
+            d.message
+                .contains("unknown plugin manifest field: interface")
+        });
+        assert!(
+            !has_unknown_iface,
+            "interface must not produce a single undifferentiated unknown-field diagnostic"
+        );
+    }
+
+    #[test]
+    fn lift_manifest_fields_malformed_interface_not_object_produces_drop_diag() {
+        let h = make_handler();
+        let idx = build_plugin_scope_index(&h.map, ConvDir::X2c);
+        let mut node = new_node(Kind::Plugin, Tool::Codex, "test-path");
+
+        let mut fm = serde_json::Map::new();
+        fm.insert("interface".to_string(), serde_json::json!(42));
+
+        h.lift_manifest_fields(&fm, &idx, ConvDir::X2c, &mut node);
+
+        let drop_diag = node
+            .diagnostics
+            .iter()
+            .find(|d| d.level == DiagLevel::Drop && d.message.contains("interface"));
+        assert!(
+            drop_diag.is_some(),
+            "malformed interface (non-object) must produce a Drop diagnostic"
+        );
+    }
+
+    #[test]
+    fn lift_manifest_fields_unknown_top_level_key_produces_drop_diag() {
+        let h = make_handler();
+        let idx = build_plugin_scope_index(&h.map, ConvDir::C2x);
+        let mut node = plugin_node();
+
+        let mut fm = serde_json::Map::new();
+        fm.insert("totallyUnknownKey".to_string(), serde_json::json!("value"));
+
+        h.lift_manifest_fields(&fm, &idx, ConvDir::C2x, &mut node);
+
+        assert!(node.fields.is_empty());
+        assert_eq!(node.diagnostics.len(), 1);
+        assert_eq!(node.diagnostics[0].level, DiagLevel::Drop);
+        assert!(node.diagnostics[0].message.contains("totallyUnknownKey"));
+    }
+
+    #[test]
+    fn lift_manifest_fields_c2x_user_config_warn_diagnostic_emitted() {
+        let h = make_handler();
+        let idx = build_plugin_scope_index(&h.map, ConvDir::C2x);
+        let mut node = plugin_node();
+
+        let mut fm = serde_json::Map::new();
+        fm.insert(
+            "userConfig".to_string(),
+            serde_json::json!({"MY_KEY": {"type": "string", "title": "T", "description": "D"}}),
+        );
+
+        h.lift_manifest_fields(&fm, &idx, ConvDir::C2x, &mut node);
+
+        // userConfig must be lifted as Dropped (it's a claude_to_codex dropped field)
+        let field = node
+            .fields
+            .get("plugins.userConfig")
+            .expect("userConfig must be in fields");
+        assert_eq!(field.loss, Loss::Dropped);
+
+        // An additional Warn diagnostic must be emitted for the unresolved-variable risk
+        let warn = node
+            .diagnostics
+            .iter()
+            .find(|d| d.level == DiagLevel::Warn && d.id.as_deref() == Some("plugins.userConfig"));
+        assert!(
+            warn.is_some(),
+            "Expected Warn diagnostic for userConfig in c2x"
+        );
+        assert!(
+            warn.unwrap().message.contains("userConfig"),
+            "Warn message must mention userConfig"
+        );
+    }
+
+    #[test]
+    fn lift_manifest_fields_x2c_user_config_warn_not_emitted() {
+        let h = make_handler();
+        // x2c direction: userConfig is claude_to_codex only, so it won't appear in the x2c index
+        let idx = build_plugin_scope_index(&h.map, ConvDir::X2c);
+        let mut node = new_node(Kind::Plugin, Tool::Codex, "test-path");
+
+        let mut fm = serde_json::Map::new();
+        fm.insert("userConfig".to_string(), serde_json::json!({"K": {}}));
+
+        h.lift_manifest_fields(&fm, &idx, ConvDir::X2c, &mut node);
+
+        // userConfig not in x2c index → unknown-field drop diagnostic, no userConfig Warn
+        let has_user_config_warn = node
+            .diagnostics
+            .iter()
+            .any(|d| d.level == DiagLevel::Warn && d.id.as_deref() == Some("plugins.userConfig"));
+        assert!(
+            !has_user_config_warn,
+            "x2c direction must not emit userConfig Warn"
+        );
+    }
+
+    #[test]
+    fn lift_manifest_fields_known_lossless_fields_lifted_correctly() {
+        let h = make_handler();
+        let idx = build_plugin_scope_index(&h.map, ConvDir::C2x);
+        let mut node = plugin_node();
+
+        let mut fm = serde_json::Map::new();
+        fm.insert("name".to_string(), serde_json::json!("my-plugin"));
+        fm.insert("version".to_string(), serde_json::json!("1.2.3"));
+        fm.insert("description".to_string(), serde_json::json!("A plugin"));
+        fm.insert("license".to_string(), serde_json::json!("MIT"));
+
+        h.lift_manifest_fields(&fm, &idx, ConvDir::C2x, &mut node);
+
+        assert_eq!(
+            node.fields["plugins.name"].value,
+            serde_json::Value::String("my-plugin".to_string())
+        );
+        assert_eq!(node.fields["plugins.name"].loss, Loss::Lossless);
+        assert_eq!(node.fields["plugins.license"].loss, Loss::Lossless);
+        // version is lossy (warn:true in mappings)
+        assert_eq!(node.fields["plugins.version"].loss, Loss::Lossy);
+    }
+}

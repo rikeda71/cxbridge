@@ -76,4 +76,87 @@ mod tests {
         let parsed: Value = serde_json::from_str(&content).unwrap();
         assert_eq!(parsed["key"], "value");
     }
+
+    #[test]
+    fn parse_json_file_malformed_returns_err_with_context() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("bad.json");
+        fs::write(&path, r#"{"key": NOTJSON}"#).unwrap();
+
+        let err = parse_json_file(&path).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("Failed to parse JSON file"),
+            "error message must contain 'Failed to parse JSON file', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_json_file_missing_returns_err_with_context() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("nonexistent.json");
+
+        let err = parse_json_file(&path).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("Failed to read JSON file"),
+            "error message must contain 'Failed to read JSON file', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn parse_json_file_array_normalizes_to_empty_object() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("array.json");
+        fs::write(&path, r#"["a", "b", "c"]"#).unwrap();
+
+        let result = parse_json_file(&path).unwrap();
+        assert!(
+            result["frontmatter"].as_object().unwrap().is_empty(),
+            "top-level JSON array must normalize to empty frontmatter object"
+        );
+        assert_eq!(result["body"], "");
+    }
+
+    #[test]
+    fn parse_json_file_scalar_normalizes_to_empty_object() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("scalar.json");
+        fs::write(&path, "42").unwrap();
+
+        let result = parse_json_file(&path).unwrap();
+        assert!(
+            result["frontmatter"].as_object().unwrap().is_empty(),
+            "top-level JSON scalar must normalize to empty frontmatter object"
+        );
+    }
+
+    #[test]
+    fn emit_json_file_creates_parent_directories() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("nested").join("deep").join("output.json");
+        let value = serde_json::json!({"created": true});
+
+        emit_json_file(&path, &value).unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        let parsed: Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed["created"], true);
+    }
+
+    #[test]
+    fn emit_json_file_produces_pretty_printed_output() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("pretty.json");
+        let value = serde_json::json!({"a": 1, "b": [1, 2]});
+
+        emit_json_file(&path, &value).unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        // pretty-printed output contains newlines and indentation
+        assert!(
+            content.contains('\n'),
+            "emit_json_file must produce pretty-printed (multi-line) output"
+        );
+    }
 }

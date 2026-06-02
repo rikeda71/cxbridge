@@ -475,6 +475,9 @@ use anyhow::Context;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::ir::Kind;
+    use crate::handlers::{EmitFile, EmitPlan};
+    use tempfile::TempDir;
 
     #[test]
     fn test_infer_conv_dir_codex_files() {
@@ -503,5 +506,279 @@ mod tests {
             ConvDir::C2x
         );
         assert_eq!(infer_conv_dir("hooks.json"), ConvDir::C2x);
+    }
+
+    // ── default_out_dir ──────────────────────────────────────────────────────
+
+    #[test]
+    fn default_out_dir_skill_file_uses_parent_dir() {
+        // SKILL.md → parent dir + ".converted"
+        assert_eq!(
+            default_out_dir("/project/.claude/skills/deploy/SKILL.md", &Kind::Skill),
+            "/project/.claude/skills/deploy.converted"
+        );
+    }
+
+    #[test]
+    fn default_out_dir_skill_directory_appends_converted() {
+        // directory path (no SKILL.md tail) → path + ".converted"
+        assert_eq!(
+            default_out_dir("/project/.claude/skills/deploy", &Kind::Skill),
+            "/project/.claude/skills/deploy.converted"
+        );
+    }
+
+    #[test]
+    fn default_out_dir_mcp_json_file_uses_stem() {
+        // ".mcp.json" → parent/<stem>.converted (stem = ".mcp" after stripping ".json")
+        assert_eq!(
+            default_out_dir("/project/.mcp.json", &Kind::Mcp),
+            "/project/.mcp.converted"
+        );
+    }
+
+    #[test]
+    fn default_out_dir_project_root_directory() {
+        // Project root directory → <path>/.codex-converted
+        assert_eq!(
+            default_out_dir("/project", &Kind::Settings),
+            "/project/.codex-converted"
+        );
+    }
+
+    #[test]
+    fn default_out_dir_project_file_uses_parent() {
+        // A file with an extension that is not Mcp + not Skill → parent/.codex-converted
+        assert_eq!(
+            default_out_dir("/project/settings.json", &Kind::Settings),
+            "/project/.codex-converted"
+        );
+    }
+
+    // ── merge_config_toml ────────────────────────────────────────────────────
+
+    #[test]
+    fn merge_config_toml_existing_key_is_kept() {
+        let existing = "[features]\nweb_search = false\n";
+        let addition = "[features]\nweb_search = true\n";
+        let merged = merge_config_toml(existing, addition).unwrap();
+        // The existing value must win.
+        assert!(
+            merged.contains("web_search = false"),
+            "existing key must not be overwritten; got:\n{merged}"
+        );
+        assert!(
+            !merged.contains("web_search = true"),
+            "addition value must not appear; got:\n{merged}"
+        );
+    }
+
+    #[test]
+    fn merge_config_toml_new_key_is_inserted() {
+        let existing = "[features]\nweb_search = true\n";
+        let addition = "[features]\ncode_search = true\n";
+        let merged = merge_config_toml(existing, addition).unwrap();
+        // Both keys must be present.
+        assert!(
+            merged.contains("web_search = true"),
+            "original key must be preserved; got:\n{merged}"
+        );
+        assert!(
+            merged.contains("code_search = true"),
+            "new key from addition must be inserted; got:\n{merged}"
+        );
+    }
+
+    #[test]
+    fn merge_config_toml_nested_tables_merged() {
+        // The existing table has [permissions.deploy]; the addition carries
+        // [permissions.build] which is absent in existing. Both must appear.
+        let existing = "[permissions.deploy]\nnetwork = true\n";
+        let addition = "[permissions.build]\nnetwork = true\n";
+        let merged = merge_config_toml(existing, addition).unwrap();
+
+        assert!(
+            merged.contains("network = true"),
+            "existing nested key must be preserved; got:\n{merged}"
+        );
+        // The addition's [permissions.build] table must be inserted.
+        assert!(
+            merged.contains("build"),
+            "new nested table from addition must be inserted; got:\n{merged}"
+        );
+    }
+
+    #[test]
+    fn merge_config_toml_nested_existing_key_wins() {
+        // Nested key conflict: existing value must survive.
+        let existing = "[agents.deploy]\nmodel = \"high\"\n";
+        let addition = "[agents.deploy]\nmodel = \"low\"\n";
+        let merged = merge_config_toml(existing, addition).unwrap();
+
+        assert!(
+            merged.contains("model = \"high\""),
+            "existing nested key must win; got:\n{merged}"
+        );
+        assert!(
+            !merged.contains("model = \"low\""),
+            "addition nested value must not appear; got:\n{merged}"
+        );
+    }
+
+    #[test]
+    fn merge_config_toml_invalid_toml_returns_error() {
+        let result = merge_config_toml("not = valid = toml", "[ok]\nk = 1\n");
+        assert!(
+            result.is_err(),
+            "invalid existing TOML must return an error"
+        );
+    }
+
+    // ── write_plan ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn write_plan_creates_file_with_correct_content() {
+        let tmp = TempDir::new().unwrap();
+        let dest = tmp.path().join("out").join("SKILL.md");
+        let plan = EmitPlan {
+            files: vec![EmitFile {
+                path: dest.to_str().unwrap().to_string(),
+                content: "---\nname: test\n---\nBody.\n".to_string(),
+            }],
+            diagnostics: vec![],
+        };
+
+        write_plan(&plan, false).unwrap();
+
+        let written = std::fs::read_to_string(&dest).unwrap();
+        assert_eq!(written, "---\nname: test\n---\nBody.\n");
+    }
+
+    #[test]
+    fn write_plan_refuses_overwrite_without_force() {
+        let tmp = TempDir::new().unwrap();
+        let dest = tmp.path().join("SKILL.md");
+        std::fs::write(&dest, "original content\n").unwrap();
+
+        let plan = EmitPlan {
+            files: vec![EmitFile {
+                path: dest.to_str().unwrap().to_string(),
+                content: "new content\n".to_string(),
+            }],
+            diagnostics: vec![],
+        };
+
+        let result = write_plan(&plan, false);
+        assert!(
+            result.is_err(),
+            "write_plan must fail when file exists and force=false"
+        );
+        // Original content must be intact.
+        let still_original = std::fs::read_to_string(&dest).unwrap();
+        assert_eq!(still_original, "original content\n");
+    }
+
+    #[test]
+    fn write_plan_overwrites_with_force() {
+        let tmp = TempDir::new().unwrap();
+        let dest = tmp.path().join("output.toml");
+        std::fs::write(&dest, "old = true\n").unwrap();
+
+        let plan = EmitPlan {
+            files: vec![EmitFile {
+                path: dest.to_str().unwrap().to_string(),
+                content: "new = true\n".to_string(),
+            }],
+            diagnostics: vec![],
+        };
+
+        write_plan(&plan, true).unwrap();
+
+        let written = std::fs::read_to_string(&dest).unwrap();
+        assert_eq!(written, "new = true\n");
+    }
+
+    #[test]
+    fn write_plan_config_toml_merges_additively() {
+        // When a config.toml already exists, write_plan must merge rather than
+        // overwrite, even without --force.
+        let tmp = TempDir::new().unwrap();
+        let dest = tmp.path().join("config.toml");
+        std::fs::write(&dest, "[features]\nweb_search = false\n").unwrap();
+
+        let plan = EmitPlan {
+            files: vec![EmitFile {
+                path: dest.to_str().unwrap().to_string(),
+                content: "[features]\ncode_search = true\n".to_string(),
+            }],
+            diagnostics: vec![],
+        };
+
+        write_plan(&plan, false).unwrap();
+
+        let written = std::fs::read_to_string(&dest).unwrap();
+        // Existing key preserved, new key inserted.
+        assert!(
+            written.contains("web_search = false"),
+            "existing key must survive merge; got:\n{written}"
+        );
+        assert!(
+            written.contains("code_search = true"),
+            "new key from addition must be inserted; got:\n{written}"
+        );
+    }
+
+    #[test]
+    fn write_plan_rules_file_appended_not_overwritten() {
+        // .rules files must be concatenated, not replaced.
+        let tmp = TempDir::new().unwrap();
+        let dest = tmp.path().join("project.rules");
+        std::fs::write(&dest, "existing rule\n").unwrap();
+
+        let plan = EmitPlan {
+            files: vec![EmitFile {
+                path: dest.to_str().unwrap().to_string(),
+                content: "new rule\n".to_string(),
+            }],
+            diagnostics: vec![],
+        };
+
+        write_plan(&plan, false).unwrap();
+
+        let written = std::fs::read_to_string(&dest).unwrap();
+        assert!(
+            written.contains("existing rule"),
+            "original rules must be preserved; got:\n{written}"
+        );
+        assert!(
+            written.contains("new rule"),
+            "new rule must be appended; got:\n{written}"
+        );
+    }
+
+    #[test]
+    fn write_plan_rules_file_idempotent() {
+        // Appending the same content twice must not duplicate it.
+        let tmp = TempDir::new().unwrap();
+        let dest = tmp.path().join("project.rules");
+        std::fs::write(&dest, "rule A\n").unwrap();
+
+        let plan = EmitPlan {
+            files: vec![EmitFile {
+                path: dest.to_str().unwrap().to_string(),
+                content: "rule A\n".to_string(),
+            }],
+            diagnostics: vec![],
+        };
+
+        write_plan(&plan, false).unwrap();
+
+        let written = std::fs::read_to_string(&dest).unwrap();
+        // "rule A" must appear exactly once.
+        let count = written.matches("rule A").count();
+        assert_eq!(
+            count, 1,
+            "duplicate rule must not be appended; got:\n{written}"
+        );
     }
 }

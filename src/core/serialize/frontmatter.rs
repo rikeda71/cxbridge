@@ -126,4 +126,73 @@ mod tests {
         assert!(!content.contains("---"));
         assert!(content.contains("Body only."));
     }
+
+    #[test]
+    fn emit_then_parse_round_trip_preserves_fields() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("round_trip.md");
+
+        let mut fm = serde_json::Map::new();
+        fm.insert("name".to_string(), Value::String("my-skill".to_string()));
+        fm.insert(
+            "description".to_string(),
+            Value::String("Does something useful".to_string()),
+        );
+        let body = "\nRun the task.\n";
+
+        emit_frontmatter_file(&path, &fm, body).unwrap();
+        let result = parse_frontmatter_file(&path).unwrap();
+
+        assert_eq!(result["frontmatter"]["name"], "my-skill");
+        assert_eq!(
+            result["frontmatter"]["description"],
+            "Does something useful"
+        );
+        assert!(
+            result["body"].as_str().unwrap().contains("Run the task."),
+            "body must survive the round-trip"
+        );
+    }
+
+    #[test]
+    fn parse_frontmatter_file_missing_returns_err_with_context() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("does_not_exist.md");
+
+        let err = parse_frontmatter_file(&path).unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("Failed to read file"),
+            "error must mention 'Failed to read file', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn emit_frontmatter_file_creates_parent_directories() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("nested").join("dir").join("out.md");
+        let fm = serde_json::Map::new();
+
+        emit_frontmatter_file(&path, &fm, "content\n").unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.contains("content"));
+    }
+
+    #[test]
+    fn parse_frontmatter_file_multiline_body_preserved() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("multi.md");
+        fs::write(
+            &path,
+            "---\nname: multi\n---\nLine one.\nLine two.\nLine three.\n",
+        )
+        .unwrap();
+
+        let result = parse_frontmatter_file(&path).unwrap();
+        let body = result["body"].as_str().unwrap();
+        assert!(body.contains("Line one."));
+        assert!(body.contains("Line two."));
+        assert!(body.contains("Line three."));
+    }
 }
