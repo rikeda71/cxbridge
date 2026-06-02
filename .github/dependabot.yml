@@ -1,0 +1,14 @@
+version: 2
+updates:
+  # Weekly Cargo dependency updates, all grouped into a single PR.
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 1
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      cargo-dependencies:
+        patterns:
+          - "*"

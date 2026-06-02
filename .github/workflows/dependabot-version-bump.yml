@@ -1,0 +1,58 @@
+name: Dependabot Version Bump
+
+# When Dependabot opens a dependency-update PR, bump the patch version so the
+# merge cuts a fresh release (every dependency update ships a patch release).
+# A GITHUB_TOKEN push does not re-trigger CI, so the bump commit re-dispatches
+# the CI workflow to keep the required "ci" check green on the new head.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  bump-patch-version:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump patch version in Cargo.toml
+        id: bump
+        run: |
+          current=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          IFS='.' read -r major minor patch <<< "$current"
+          next="${major}.${minor}.$((patch + 1))"
+          sed -i "s/^version = \"${current}\"/version = \"${next}\"/" Cargo.toml
+          echo "next=${next}" >> "$GITHUB_OUTPUT"
+          echo "Bumped version: ${current} -> ${next}"
+
+      - name: Sync Cargo.lock (workspace package only, no dependency re-resolution)
+        run: cargo update --workspace
+
+      - name: Commit and push the version bump
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock
+          if git diff --cached --quiet; then
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+            echo "No version change to commit."
+          else
+            git commit -m "chore: bump patch version to v${{ steps.bump.outputs.next }}"
+            git push
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Re-run CI on the bumped commit
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run ci.yml --ref "${{ github.head_ref }}"
