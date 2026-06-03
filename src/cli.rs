@@ -109,6 +109,20 @@ pub fn run() -> anyhow::Result<()> {
     }
 }
 
+/// Report-header label for a converted file: its path relative to the input root, else the file name.
+fn display_source(file_path: &Path, input_root: &str) -> String {
+    if let Ok(rel) = file_path.strip_prefix(input_root) {
+        if !rel.as_os_str().is_empty() {
+            return rel.display().to_string();
+        }
+    }
+    file_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| file_path.display().to_string())
+}
+
 /// Computes the spec-mandated default output root when `--out` is not provided.
 ///
 /// - Skill file (`SKILL.md`): `<parent_dir>.converted` (skill dir + `.converted`).
@@ -211,7 +225,8 @@ fn run_convert(dir: ConvDir, path: &str, opts: &ConvertOpts) -> anyhow::Result<(
         // purpose is to show the report without writing).
         if opts.report.is_some() || opts.dry_run {
             let report_fmt = opts.report.as_ref().and_then(|f| f.as_deref());
-            print_report(&report, report_fmt);
+            let source = display_source(file_path, path);
+            print_report(&report, report_fmt, &source, kind.domain_name());
         }
         combined_files.extend(plan.files);
         combined_diags.extend(plan.diagnostics);

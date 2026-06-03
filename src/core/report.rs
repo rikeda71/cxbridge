@@ -207,15 +207,18 @@ pub fn build_report(ir: &IRNode, plan: &EmitPlan) -> Report {
 ///   ⚠ body L<n>: <warning>                 body-warning
 /// Summary: N lossless, N lossy(N degraded), N dropped, N body-warning
 /// ```
-pub fn print_report(report: &Report, fmt: Option<&str>) {
+pub fn print_report(report: &Report, fmt: Option<&str>, source: &str, domain: &str) {
     if fmt == Some("json") {
-        print_report_json(report);
+        print_report_json(report, source, domain);
     } else {
-        print_report_text(report);
+        print_report_text(report, source, domain);
     }
 }
 
-fn print_report_text(report: &Report) {
+fn print_report_text(report: &Report, source: &str, domain: &str) {
+    // Header identifies which item (domain + source path) this report is for, so
+    // that a directory conversion's per-file reports are distinguishable.
+    println!("\n\u{25b8} {domain}: {source}");
     print!("{}", format_report_text(report));
 }
 
@@ -335,8 +338,10 @@ fn truncate_msg(s: &str, max_chars: usize) -> String {
     }
 }
 
-fn print_report_json(report: &Report) {
+fn print_report_json(report: &Report, source: &str, domain: &str) {
     let json = serde_json::json!({
+        "source": source,
+        "domain": domain,
         "lossless": report.lossless,
         "lossy": report.lossy.iter().map(|e| serde_json::json!({
             "id": e.id,

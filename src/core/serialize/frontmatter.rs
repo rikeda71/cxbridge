@@ -88,61 +88,81 @@ fn parse_frontmatter_lenient(content: &str) -> Option<(serde_json::Map<String, V
     };
 
     let mut map = serde_json::Map::new();
+    let mut last_key: Option<String> = None;
     let mut i = 0;
     while i < fm_lines.len() {
         let line = fm_lines[i];
-        // Skip blank lines and indented lines (handled as list items below).
-        if line.trim().is_empty() || line.starts_with(' ') || line.starts_with('\t') {
+        if line.trim().is_empty() {
             i += 1;
             continue;
         }
-        // Top-level `key: value` or `key:`.
-        if let Some(colon_pos) = line.find(':') {
-            let key = line[..colon_pos].trim();
-            if key.is_empty() {
-                i += 1;
+
+        // A new top-level key requires a non-indented `key: …` whose key is an
+        // ASCII identifier. Lines that don't match (continuation text, or a value
+        // line like `例: …` inside a multi-line description) are appended to the
+        // previous value so wrapped descriptions survive intact.
+        let key_value = if line.starts_with(' ') || line.starts_with('\t') {
+            None
+        } else {
+            line.find(':')
+                .map(|c| (line[..c].trim(), line[c + 1..].trim()))
+                .filter(|(k, _)| is_ascii_key(k))
+        };
+
+        let Some((key, raw_value)) = key_value else {
+            if let Some(k) = &last_key {
+                if let Some(Value::String(v)) = map.get_mut(k) {
+                    if !v.is_empty() {
+                        v.push('\n');
+                    }
+                    v.push_str(line.trim());
+                }
+            }
+            i += 1;
+            continue;
+        };
+
+        // Look ahead for indented list items (`- item`).
+        let mut list_items: Vec<Value> = Vec::new();
+        let mut j = i + 1;
+        while j < fm_lines.len() {
+            let next = fm_lines[j];
+            if next.trim().is_empty() {
+                j += 1;
                 continue;
             }
-            let raw_value = line[colon_pos + 1..].trim();
-
-            // Look ahead for indented list items (`- item`).
-            let mut list_items: Vec<Value> = Vec::new();
-            let mut j = i + 1;
-            while j < fm_lines.len() {
-                let next = fm_lines[j];
-                if next.trim().is_empty() {
-                    j += 1;
-                    continue;
-                }
-                // An indented line starting with `- ` is a list item.
-                let trimmed = next.trim();
-                if (next.starts_with(' ') || next.starts_with('\t')) && trimmed.starts_with("- ") {
-                    let item = strip_surrounding_quotes(trimmed[2..].trim());
-                    list_items.push(Value::String(item.to_string()));
-                    j += 1;
-                } else {
-                    break;
-                }
-            }
-
-            if !list_items.is_empty() {
-                map.insert(key.to_string(), Value::Array(list_items));
-                i = j;
-            } else if raw_value.is_empty() {
-                // `key:` with no value and no list items → empty string.
-                map.insert(key.to_string(), Value::String(String::new()));
-                i += 1;
+            let trimmed = next.trim();
+            if (next.starts_with(' ') || next.starts_with('\t')) && trimmed.starts_with("- ") {
+                let item = strip_surrounding_quotes(trimmed[2..].trim());
+                list_items.push(Value::String(item.to_string()));
+                j += 1;
             } else {
-                let value = strip_surrounding_quotes(raw_value);
-                map.insert(key.to_string(), Value::String(value.to_string()));
-                i += 1;
+                break;
             }
+        }
+
+        if !list_items.is_empty() {
+            map.insert(key.to_string(), Value::Array(list_items));
+            last_key = None;
+            i = j;
         } else {
+            let value = strip_surrounding_quotes(raw_value);
+            map.insert(key.to_string(), Value::String(value.to_string()));
+            last_key = Some(key.to_string());
             i += 1;
         }
     }
 
     Some((map, body))
+}
+
+/// True when `s` is an ASCII frontmatter key (e.g. `description`, `allowed-tools`).
+/// Excludes non-ASCII text such as `例` so it is treated as a value continuation.
+fn is_ascii_key(s: &str) -> bool {
+    let mut chars = s.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic())
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 }
 
 /// Strips a single layer of surrounding `"…"` or `'…'` quotes, if present.
@@ -335,6 +355,21 @@ mod tests {
         );
         assert_eq!(map["model"].as_str().unwrap(), "opus");
         assert!(body.contains("Body text."));
+    }
+
+    #[test]
+    fn lenient_multiline_description_continuation_not_a_new_key() {
+        // A wrapped description whose continuation lines start with non-ASCII
+        // `例:` must append to `description`, not become a new top-level key.
+        let content =
+            "---\nname: terraform-reviewer\ndescription: Terraform をレビューします。\n例: plan の差分を確認。\nさらに state も検証。\nmodel: opus\n---\n\nBody.\n";
+        let (map, _body) = parse_frontmatter_lenient(content).unwrap();
+        assert!(map.get("例").is_none(), "`例` must not become a key");
+        let desc = map["description"].as_str().unwrap();
+        assert!(desc.contains("Terraform をレビューします。"));
+        assert!(desc.contains("例: plan の差分を確認。"));
+        assert!(desc.contains("さらに state も検証。"));
+        assert_eq!(map["model"].as_str().unwrap(), "opus");
     }
 
     #[test]
