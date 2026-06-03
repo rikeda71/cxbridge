@@ -11,16 +11,19 @@
 skills / hooks / MCP サーバー / memory / subagents / plugins / settings をどちらの向きにも変換し、「何が完全に移せて、何が形を変え、何が移せなかったか」をレポートで示します。サイレントな損失は起こしません。
 
 ```text
-$ cxbridge c2x .claude/skills/deploy/SKILL.md
+$ cxbridge c2x .claude/skills/deploy/SKILL.md --report
 
-✔ skills/deploy/SKILL.md → .agents/skills/deploy/SKILL.md
-  ◎ name, description                          lossless
-  ○ when_to_use → description(concatenated)    lossy
-  △ allowed-tools → .codex/rules/deploy.rules  lossy (degrade: skill→project)
-  ✕ user-invocable                             dropped (no Codex equivalent)
-  ⚠ body L42: !`git diff` not executed in Codex (literal residue risk)
-Summary: 2 lossless, 2 lossy (1 degraded), 1 dropped, 1 body-warning
+▸ skills: SKILL.md
+  ◎ skills.name, skills.description  lossless
+  △ skills.allowed-tools  degrade  skills.allowed-tools → .codex/rules/<skill>.rules (execpolicy allow)…
+  ✕ skills.user-invocable  dropped  model-only / hidden-from-user flag has no Codex concept
+  ⚠ 3 body warnings — run with --report=json for line-by-line
+Summary: 2 lossless, 1 lossy(1 degraded), 1 dropped, 3 body-warning
 ```
+
+変換した各ファイルは `▸ <ドメイン>: <ソース>` のヘッダーで始まるので、ディレクトリ
+一括変換でも読みやすいままです。同一フィールドは `×N` で集約、body warning は件数に
+集約され、行単位の全詳細は常に `--report=json` で得られます。
 
 ## Claude Code と Codex の設定を揃える
 
@@ -146,7 +149,7 @@ cargo install --path .
 
 ## conversion report の読み方
 
-実行ごとに必ず 1 行サマリが出ます。`--report` を付けると上記のフィールド単位の詳細も得られます。各行には記号が 1 つ付きます:
+実行ごとに必ず 1 行 `Summary:` が出ます。`--report` を付けるとフィールド単位の詳細も得られます。各ファイルは `▸ <ドメイン>: <ソース>` のヘッダーで始まり（ディレクトリ変換でも識別可能）、各フィールド行に記号が 1 つ付きます:
 
 | 記号 | 意味 |
 |---|---|
@@ -155,6 +158,8 @@ cargo install --path .
 | △ | **Degraded** — より広いスコープへ移動（例: skill → project）。移動先を明示 |
 | ✕ | **Dropped** — 変換先なしで破棄（必ず報告される） |
 | ⚠ | **Body warning** — 本文中の構文に手動確認が必要 |
+
+読みやすさのため、同一フィールドは `×N` で集約し長いメッセージは短縮、body warning は件数 1 行に集約されます。**`--report=json`** は網羅的で（全 dropped/degraded/lossy と body warning の全行＋各ファイルの `source`/`domain`）、dropped・degraded はどちらの形式でも必ず列挙されます（サイレントな損失なし）。
 
 `--strict` を付けると dropped が 1 件でもあれば非ゼロ（exit code 2）で終了するので、データを黙って失う変換を CI で拒否できます。
 

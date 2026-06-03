@@ -348,6 +348,7 @@ Every handler's `parse(path) -> anyhow::Result<serde_json::Value>` returns a `Va
 
 - For TOML/JSON sources, all top-level fields go into `"frontmatter"` and `"body"` is empty.
 - Frontmatter output key order follows the `mappings` entry definition order (leveraging `serde-saphyr` key-order preservation).
+- **Lenient frontmatter fallback (`core/serialize/frontmatter.rs`):** Markdown frontmatter is parsed with strict YAML first. Real Claude agent/skill files often contain frontmatter that strict YAML rejects — most commonly an unquoted colon inside a value (e.g. a `description` containing `例: …`). When strict parse fails, a flat line-based fallback parser runs instead of skipping the file: a non-indented line whose key is an ASCII identifier starts a new string field (value = everything after the first colon); `key:` followed by indented `- item` lines becomes a string array; any other line is appended to the previous value, so wrapped multi-line descriptions survive without spawning spurious keys. Strict parse is unchanged when it succeeds (typed values and lists preserved).
 
 ---
 
@@ -871,18 +872,26 @@ pub struct Report {
 
 ### Report Format (human-readable)
 
+`print_report` delegates the text formatting to the pure, testable
+`format_report_text(report) -> String`. Each converted file's report is preceded
+by a `▸ <domain>: <source>` header (the source path relative to the input root, or
+the file name for single-file inputs), so a directory conversion's per-file reports
+are distinguishable. Within a file, lossy/degraded/dropped entries are **grouped by
+id** with a `(×N)` count, long messages are truncated to ~100 chars, and body
+warnings are collapsed to a single count line (`--report=json` keeps the full
+line-by-line detail). Lossless ids are listed when few, counted when many. Dropped
+and degraded ids are always enumerated.
+
 ```
-$ cxbridge c2x ./skills/deploy --report
-✔ skills/deploy/SKILL.md → .agents/skills/deploy/SKILL.md
-  ◎ name, description                         lossless
-  ○ when_to_use → description(concatenated)   lossy
-  △ allowed-tools → .codex/rules/deploy.rules lossy  (degrade: skill→project)
-  △ model: opus→gpt-5.x, effort: max→xhigh    lossy  (degrade: skill→subagent .codex/agents/deploy.toml)
-  ✕ user-invocable                             dropped (no Codex equivalent)
-  ✕ paths                                      dropped
-  ⚠ body L42: !`git diff` not executed in Codex (literal residue risk, requires manual fix)
-  + generated: .codex/rules/deploy.rules, .codex/agents/deploy.toml, config.toml (appended)
-Summary: 2 lossless, 3 lossy(2 degraded), 2 dropped, 1 body-warning
+$ cxbridge c2x .claude/skills/deploy/SKILL.md --report
+
+▸ skills: SKILL.md
+  ◎ skills.name, skills.description  lossless
+  ○ skills.allowed-tools (×2)  lossy  Per-tool pre-approval control at skill scope does not exist in Codex…
+  △ skills.allowed-tools  degrade  skills.allowed-tools → .codex/rules/<skill>.rules (execpolicy allow)…
+  ✕ skills.user-invocable  dropped  model-only / hidden-from-user flag has no Codex concept
+  ⚠ 3 body warnings — run with --report=json for line-by-line
+Summary: 2 lossless, 1 lossy(1 degraded), 1 dropped, 3 body-warning
 ```
 
 | Symbol | Meaning |
@@ -893,8 +902,9 @@ Summary: 2 lossless, 3 lossy(2 degraded), 2 dropped, 1 body-warning
 | ✕ | Dropped: no conversion target; discarded |
 | ⚠ | Body warning: requires manual review |
 
-**`--report=json`:** Machine-readable JSON format for CI integration.  
-**`--dry-run`:** Produces report without writing any files.
+**`--report=json`:** machine-readable, exhaustive — every lossy/degraded/dropped
+entry and every body-warning line, plus the `source` and `domain` of each file.
+**`--dry-run`:** produces the report without writing any files.
 
 ---
 

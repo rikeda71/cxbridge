@@ -11,16 +11,19 @@ Bidirectional config converter between [Claude Code](https://code.claude.com/doc
 Convert skills, hooks, MCP servers, memory, subagents, plugins, and settings in either direction — and get a report of exactly what converted, what was reshaped, and what had no equivalent. Nothing is ever dropped silently.
 
 ```text
-$ cxbridge c2x .claude/skills/deploy/SKILL.md
+$ cxbridge c2x .claude/skills/deploy/SKILL.md --report
 
-✔ skills/deploy/SKILL.md → .agents/skills/deploy/SKILL.md
-  ◎ name, description                          lossless
-  ○ when_to_use → description(concatenated)    lossy
-  △ allowed-tools → .codex/rules/deploy.rules  lossy (degrade: skill→project)
-  ✕ user-invocable                             dropped (no Codex equivalent)
-  ⚠ body L42: !`git diff` not executed in Codex (literal residue risk)
-Summary: 2 lossless, 2 lossy (1 degraded), 1 dropped, 1 body-warning
+▸ skills: SKILL.md
+  ◎ skills.name, skills.description  lossless
+  △ skills.allowed-tools  degrade  skills.allowed-tools → .codex/rules/<skill>.rules (execpolicy allow)…
+  ✕ skills.user-invocable  dropped  model-only / hidden-from-user flag has no Codex concept
+  ⚠ 3 body warnings — run with --report=json for line-by-line
+Summary: 2 lossless, 1 lossy(1 degraded), 1 dropped, 3 body-warning
 ```
+
+Each converted file gets a `▸ <domain>: <source>` header, so a whole-directory
+conversion stays readable. Repeated fields are grouped (`×N`), and body warnings
+are summarized — the full line-by-line detail is always in `--report=json`.
 
 ## Keep Claude Code and Codex in sync
 
@@ -146,7 +149,7 @@ For a per-domain breakdown of what converts cleanly, what is reshaped, and what 
 
 ## The conversion report
 
-Every run ends with a one-line summary; with `--report` you also get the per-field detail shown at the top. Each line is tagged with one symbol:
+Every run ends with a one-line `Summary:`; with `--report` you also get the per-field detail. Each converted file is introduced by a `▸ <domain>: <source>` header (so directory conversions stay legible), and each field line is tagged with one symbol:
 
 | Symbol | Meaning |
 |---|---|
@@ -155,6 +158,8 @@ Every run ends with a one-line summary; with `--report` you also get the per-fie
 | △ | **Degraded** — moved to a broader scope (e.g. skill → project), which is named |
 | ✕ | **Dropped** — no conversion target; discarded (and always reported) |
 | ⚠ | **Body warning** — a construct in the body needs manual review |
+
+To keep the output scannable, repeated fields are grouped with a `×N` count and long messages are truncated; body warnings are collapsed to a single count line. The **`--report=json`** form is exhaustive — every dropped/degraded/lossy entry and every body warning line, plus the `source` and `domain` of each file. Dropped and degraded fields are *always* enumerated either way — nothing is lost silently.
 
 `--strict` turns any dropped field into a non-zero exit (code 2), so you can refuse conversions that would quietly lose data in CI.
 
