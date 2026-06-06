@@ -26,7 +26,7 @@ fn test_subagent_c2x_generates_codex_toml() {
         "agents/<n>.md should be Kind::Subagent"
     );
 
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(agent_path))
         .expect("parse should succeed");
@@ -140,7 +140,7 @@ fn test_subagent_x2c_generates_claude_md() {
     let kind = detect(agent_path).expect("detect should succeed");
     assert_eq!(kind, cxbridge::core::ir::Kind::Subagent);
 
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(agent_path))
         .expect("parse should succeed");
@@ -182,7 +182,7 @@ fn test_subagent_c2x_report_dropped_fields() {
 
     let maps = load_mappings();
     let kind = detect(agent_path).expect("detect should succeed");
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(agent_path))
         .expect("parse should succeed");
@@ -236,7 +236,7 @@ fn test_subagent_c2x_emits_config_toml_with_agents_and_features() {
 
     let maps = load_mappings();
     let kind = detect(agent_path).expect("detect should succeed");
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(agent_path))
         .expect("parse should succeed");
@@ -307,7 +307,7 @@ fn test_subagent_x2c_skills_lifted_integration() {
     let kind = detect(agent_path).expect("detect should succeed");
     assert_eq!(kind, cxbridge::core::ir::Kind::Subagent);
 
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(agent_path))
         .expect("parse should succeed");
@@ -387,7 +387,7 @@ fn test_subagent_c2x_no_duplicate_dropped_entries() {
 
     let maps = load_mappings();
     let kind = detect(agent_path).expect("detect should succeed");
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(agent_path))
         .expect("parse should succeed");
@@ -430,7 +430,7 @@ fn test_subagent_c2x_dropped_and_lossy_are_disjoint() {
 
     let maps = load_mappings();
     let kind = detect(agent_path).expect("detect should succeed");
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(agent_path))
         .expect("parse should succeed");
@@ -472,7 +472,7 @@ fn test_subagent_c2x_spawn_model_appears_exactly_once_in_lossy() {
 
     let maps = load_mappings();
     let kind = detect(agent_path).expect("detect should succeed");
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(agent_path))
         .expect("parse should succeed");
@@ -522,7 +522,7 @@ fn test_subagent_c2x_permission_mode_accept_edits_dropped() {
     let out_dir = tempfile::TempDir::new().unwrap();
     let maps = load_mappings();
     let kind = detect(agent_path).expect("detect should succeed");
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(agent_path))
         .expect("parse should succeed");
@@ -581,7 +581,7 @@ fn test_subagent_c2x_permission_mode_dont_ask_and_auto_dropped() {
     ] {
         let out_dir = tempfile::TempDir::new().unwrap();
         let kind = detect(agent_path).expect("detect should succeed");
-        let handler = pick_handler(&kind, &maps);
+        let handler = pick_handler(&kind, maps);
         let parsed = handler
             .parse(Path::new(agent_path))
             .expect("parse should succeed");
@@ -640,7 +640,7 @@ fn test_subagents_dropped_warn_fields_appear_once_in_dropped() {
     );
 
     let maps = load_mappings();
-    let handler = pick_handler(&cxbridge::core::ir::Kind::Subagent, &maps);
+    let handler = pick_handler(&cxbridge::core::ir::Kind::Subagent, maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
     let ir = handler
@@ -692,7 +692,7 @@ fn test_subagents_dropped_warn_fields_not_in_lossy() {
     );
 
     let maps = load_mappings();
-    let handler = pick_handler(&cxbridge::core::ir::Kind::Subagent, &maps);
+    let handler = pick_handler(&cxbridge::core::ir::Kind::Subagent, maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
     let ir = handler

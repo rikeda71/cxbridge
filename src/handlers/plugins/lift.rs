@@ -437,7 +437,7 @@ mod tests {
         let maps = load_mappings();
         PluginsHandler {
             map: maps["plugins"].clone(),
-            maps,
+            maps: maps.clone(),
         }
     }
 

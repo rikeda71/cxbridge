@@ -27,7 +27,7 @@ fn test_settings_c2x_generates_config_toml() {
     let kind = detect(settings_path).expect("detect should succeed");
     assert_eq!(kind, cxbridge::core::ir::Kind::Settings);
 
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(settings_path))
         .expect("parse should succeed");
@@ -135,7 +135,7 @@ fn test_settings_c2x_report_enumerates_remainder() {
 
     let maps = load_mappings();
     let kind = detect(settings_path).expect("detect should succeed");
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(settings_path))
         .expect("parse should succeed");
@@ -272,7 +272,7 @@ fn test_developer_instructions_produces_claude_md() {
 
     let maps = load_mappings();
     let kind = cxbridge::core::detect::detect(fixture_path).expect("detect should succeed");
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(fixture_path))
         .expect("parse should succeed");
@@ -318,7 +318,7 @@ fn test_developer_instructions_degrade_diagnostic_present() {
 
     let maps = load_mappings();
     let kind = cxbridge::core::detect::detect(fixture_path).expect("detect should succeed");
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(fixture_path))
         .expect("parse should succeed");
@@ -370,7 +370,7 @@ fn test_no_developer_instructions_no_claude_md_from_settings() {
 
     let maps = load_mappings();
     let kind = cxbridge::core::detect::detect(fixture_path).expect("detect should succeed");
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(fixture_path))
         .expect("parse should succeed");
@@ -406,7 +406,7 @@ fn test_webfetch_deny_domains_appear_in_config_toml() {
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
     let maps = load_mappings();
-    let handler = pick_handler(&Kind::Settings, &maps);
+    let handler = pick_handler(&Kind::Settings, maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
     let ir = handler
@@ -459,7 +459,7 @@ fn test_webfetch_deny_domains_emit_warn_diagnostic() {
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
     let maps = load_mappings();
-    let handler = pick_handler(&Kind::Settings, &maps);
+    let handler = pick_handler(&Kind::Settings, maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
     let ir = handler
@@ -507,7 +507,7 @@ fn test_webfetch_deny_domains_visible_in_report() {
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
     let maps = load_mappings();
-    let handler = pick_handler(&Kind::Settings, &maps);
+    let handler = pick_handler(&Kind::Settings, maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
     let ir = handler

@@ -136,11 +136,14 @@ fn tf_str_to_list_space(v: &Value, _ctx: &TransformCtx) -> Value {
 fn tf_list_to_str_space(v: &Value, _ctx: &TransformCtx) -> Value {
     match v {
         Value::Array(arr) => {
-            let parts: Vec<String> = arr
-                .iter()
-                .filter_map(|x| x.as_str().map(|s| s.to_string()))
-                .collect();
-            Value::String(parts.join(" "))
+            let mut out = String::new();
+            for (i, s) in arr.iter().filter_map(|x| x.as_str()).enumerate() {
+                if i > 0 {
+                    out.push(' ');
+                }
+                out.push_str(s);
+            }
+            Value::String(out)
         }
         _ => v.clone(),
     }

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use once_cell::sync::Lazy;
 use serde::Deserialize;
 
 use crate::core::ir::Loss;
@@ -150,14 +151,25 @@ const EMBEDDED_MAPPINGS: &[(&str, &str)] = &[
     ),
 ];
 
-/// Loads all domain maps from YAML embedded at compile time and returns a HashMap of domain → DomainMap.
+/// Domain map set parsed once from the embedded YAML on first access.
+///
+/// The mappings are static data that never change at runtime, so parsing and
+/// validating them a single time avoids redoing that work on every conversion.
+static MAPPINGS: Lazy<HashMap<String, DomainMap>> = Lazy::new(build_mappings);
+
+/// Returns the shared domain map set (parsed lazily on first access).
+pub fn load_mappings() -> &'static HashMap<String, DomainMap> {
+    &MAPPINGS
+}
+
+/// Parses and validates all domain maps from the YAML embedded at compile time.
 ///
 /// Asserts startup invariants:
 /// - id uniqueness
 /// - valid values for direction/loss
 /// - degrade implies loss:lossy
 /// - loss:dropped must have no transform
-pub fn load_mappings() -> HashMap<String, DomainMap> {
+fn build_mappings() -> HashMap<String, DomainMap> {
     let mut maps: HashMap<String, DomainMap> = HashMap::new();
     let mut all_ids: HashMap<String, String> = HashMap::new(); // id → filename
 
@@ -390,7 +402,7 @@ mod tests {
         let maps = load_mappings();
 
         // format must parse as a non-empty list for every domain
-        for (domain, dm) in &maps {
+        for (domain, dm) in maps {
             let format = dm
                 .format
                 .as_ref()

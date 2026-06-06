@@ -26,7 +26,7 @@ fn test_plugin_c2x_generates_codex_manifest() {
     let kind = detect(plugin_path).expect("detect should succeed");
     assert_eq!(kind, cxbridge::core::ir::Kind::Plugin);
 
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(plugin_path))
         .expect("parse should succeed");
@@ -89,7 +89,7 @@ fn test_plugin_c2x_recursion() {
 
     let maps = load_mappings();
     let kind = detect(plugin_path).expect("detect should succeed");
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(plugin_path))
         .expect("parse should succeed");
@@ -125,7 +125,7 @@ fn test_plugin_c2x_dropped_classification() {
 
     let maps = load_mappings();
     let kind = detect(plugin_path).expect("detect should succeed");
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(plugin_path))
         .expect("parse should succeed");
@@ -169,7 +169,7 @@ fn test_plugin_c2x_dual_manifest() {
 
     let maps = load_mappings();
     let kind = detect(plugin_path).expect("detect should succeed");
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(plugin_path))
         .expect("parse should succeed");
@@ -218,7 +218,7 @@ fn test_plugin_c2x_marketplace_policy_defaults() {
 
     let maps = load_mappings();
     let kind = detect(plugin_path).expect("detect should succeed");
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(plugin_path))
         .expect("parse should succeed");
@@ -289,7 +289,7 @@ fn test_plugin_x2c_interface_fields_expanded() {
     let kind = detect(plugin_path).expect("detect should succeed");
     assert_eq!(kind, cxbridge::core::ir::Kind::Plugin);
 
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(plugin_path))
         .expect("parse should succeed");
@@ -355,7 +355,7 @@ fn test_plugin_x2c_interface_websiteurl_emits_homepage() {
     let out_dir = tempfile::TempDir::new().unwrap();
     let maps = load_mappings();
     let kind = detect(plugin_path).expect("detect should succeed");
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(plugin_path))
         .expect("parse should succeed");
@@ -413,7 +413,7 @@ fn test_marketplace_c2x_npm_source_emits_drop_diagnostic() {
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
     let maps = load_mappings();
-    let handler = pick_handler(&Kind::Plugin, &maps);
+    let handler = pick_handler(&Kind::Plugin, maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
     let ir = handler
@@ -508,7 +508,7 @@ fn test_marketplace_c2x_dropped_top_level_fields_absent_from_output() {
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
     let maps = load_mappings();
-    let handler = pick_handler(&Kind::Plugin, &maps);
+    let handler = pick_handler(&Kind::Plugin, maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
     let ir = handler
@@ -607,7 +607,7 @@ fn test_plugin_c2x_six_dropped_fields_no_duplicates() {
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
     let maps = load_mappings();
-    let handler = pick_handler(&Kind::Plugin, &maps);
+    let handler = pick_handler(&Kind::Plugin, maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
     let ir = handler
@@ -720,7 +720,7 @@ fn test_plugin_c2x_commands_and_agents_remapped() {
 
     let maps = load_mappings();
     let kind = detect(plugin_path).expect("detect should succeed");
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(plugin_path))
         .expect("parse should succeed");
@@ -822,7 +822,7 @@ fn test_plugin_x2c_commands_and_agents_remapped() {
 
     let maps = load_mappings();
     let kind = detect(plugin_json_path.to_str().unwrap()).expect("detect should succeed");
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(&plugin_json_path)
         .expect("parse should succeed");
@@ -873,7 +873,7 @@ fn test_plugin_c2x_dropped_fields_without_secondary_warn_not_in_lossy() {
     assert!(fixture.exists(), "Fixture {} must exist", fixture.display());
 
     let maps = load_mappings();
-    let handler = pick_handler(&Kind::Plugin, &maps);
+    let handler = pick_handler(&Kind::Plugin, maps);
 
     let parsed = handler.parse(fixture).expect("parse should succeed");
     let ir = handler

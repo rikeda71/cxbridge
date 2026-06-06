@@ -97,10 +97,11 @@ pub(crate) fn lift_mapped_field(
     let warning = (entry.warn == Some(true))
         .then(|| format!("{}: {}", entry.id, entry.notes.as_deref().unwrap_or("warn")));
 
+    let id = entry.id.clone();
     node.fields.insert(
-        entry.id.clone(),
+        id.clone(),
         IRField {
-            id: entry.id.clone(),
+            id: id.clone(),
             value: v,
             loss,
             transforms_applied: applied,
@@ -114,7 +115,7 @@ pub(crate) fn lift_mapped_field(
         if let Some(msg) = warning {
             node.diagnostics.push(Diagnostic {
                 level: DiagLevel::Warn,
-                id: Some(entry.id.clone()),
+                id: Some(id),
                 message: msg,
             });
         }

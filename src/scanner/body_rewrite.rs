@@ -14,8 +14,7 @@ pub fn rewrite_body(raw: &str, findings: &[BodyFinding]) -> String {
         return raw.to_string();
     }
 
-    let lines: Vec<&str> = raw.lines().collect();
-    let mut result_lines: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+    let mut result_lines: Vec<String> = raw.lines().map(str::to_string).collect();
 
     for finding in &rewrites {
         let line_idx = finding.line - 1; // convert 1-based to 0-based

@@ -197,7 +197,7 @@ fn run_convert(dir: ConvDir, path: &str, opts: &ConvertOpts) -> anyhow::Result<(
             }
         }
 
-        let handler = pick_handler(kind, &maps);
+        let handler = pick_handler(kind, maps);
         let parsed = match handler.parse(file_path) {
             Ok(v) => v,
             Err(e) => {
@@ -286,7 +286,7 @@ fn run_check(path: &str) -> anyhow::Result<()> {
         // Infer direction from the individual file path so that Codex-origin
         // files are lifted with X2c and their dropped fields are reported.
         let dir = infer_conv_dir(file_path.to_str().unwrap_or(""));
-        let handler = pick_handler(kind, &maps);
+        let handler = pick_handler(kind, maps);
         let parsed = match handler.parse(file_path) {
             Ok(v) => v,
             Err(e) => {

@@ -344,7 +344,7 @@ fn test_c2x_skill_without_out_uses_converted_dir() {
         ..skill_lower_opts_no_out()
     };
 
-    let handler = pick_handler(kind, &maps);
+    let handler = pick_handler(kind, maps);
     let parsed = handler.parse(file_path).unwrap();
     let ir = handler.lift(&parsed, ConvDir::C2x).unwrap();
     let plan = handler.lower(&ir, ConvDir::C2x, &opts).unwrap();
@@ -406,7 +406,7 @@ fn test_c2x_mcp_without_out_uses_converted_dir() {
         ..skill_lower_opts_no_out()
     };
 
-    let handler = pick_handler(kind, &maps);
+    let handler = pick_handler(kind, maps);
     let parsed = handler.parse(file_path).unwrap();
     let ir = handler.lift(&parsed, ConvDir::C2x).unwrap();
     let plan = handler.lower(&ir, ConvDir::C2x, &opts).unwrap();
@@ -546,7 +546,7 @@ fn run_convert_only(path: &str, only: &[&str], out_dir: &str) -> EmitPlan {
             }
         }
 
-        let handler = pick_handler(kind, &maps);
+        let handler = pick_handler(kind, maps);
         let parsed = handler
             .parse(file_path)
             .unwrap_or_else(|e| panic!("parse failed for {}: {e}", file_path.display()));
@@ -1061,7 +1061,7 @@ fn test_c2x_directory_converts_all_files() {
     let mut all_diags: Vec<cxbridge::core::ir::Diagnostic> = Vec::new();
 
     for (kind, file_path) in &pairs {
-        let handler = pick_handler(kind, &maps);
+        let handler = pick_handler(kind, maps);
         let parsed = handler
             .parse(file_path)
             .unwrap_or_else(|e| panic!("parse failed for {}: {}", file_path.display(), e));
@@ -1121,7 +1121,7 @@ fn test_check_directory_processes_all_files() {
 
     // Simulate run_check: parse + lift each file
     for (kind, file_path) in &pairs {
-        let handler = pick_handler(kind, &maps);
+        let handler = pick_handler(kind, maps);
         let parsed = handler
             .parse(file_path)
             .unwrap_or_else(|e| panic!("parse failed for {}: {}", file_path.display(), e));
@@ -1185,7 +1185,7 @@ fn test_c2x_plugin_directory_input() {
     let out_dir = tempfile::TempDir::new().unwrap();
     let opts = default_lower_opts(out_dir.path().to_str().unwrap());
 
-    let handler = pick_handler(&Kind::Plugin, &maps);
+    let handler = pick_handler(&Kind::Plugin, maps);
     let parsed = handler
         .parse(plugin_path)
         .unwrap_or_else(|e| panic!("parse failed for {}: {}", plugin_path.display(), e));
@@ -1233,7 +1233,7 @@ fn test_x2c_plugin_directory_input() {
     let out_dir = tempfile::TempDir::new().unwrap();
     let opts = default_lower_opts(out_dir.path().to_str().unwrap());
 
-    let handler = pick_handler(&Kind::Plugin, &maps);
+    let handler = pick_handler(&Kind::Plugin, maps);
     let parsed = handler
         .parse(plugin_path)
         .unwrap_or_else(|e| panic!("parse failed: {}", e));
@@ -1286,7 +1286,7 @@ fn test_c2x_hooks_directory_input() {
     let out_dir = tempfile::TempDir::new().unwrap();
     let opts = default_lower_opts(out_dir.path().to_str().unwrap());
 
-    let handler = pick_handler(&Kind::Hooks, &maps);
+    let handler = pick_handler(&Kind::Hooks, maps);
     let parsed = handler
         .parse(hooks_path)
         .unwrap_or_else(|e| panic!("parse failed for {}: {}", hooks_path.display(), e));
@@ -1343,7 +1343,7 @@ fn test_c2x_settings_directory_input() {
     let out_dir = tempfile::TempDir::new().unwrap();
     let opts = default_lower_opts(out_dir.path().to_str().unwrap());
 
-    let handler = pick_handler(&Kind::Settings, &maps);
+    let handler = pick_handler(&Kind::Settings, maps);
     let parsed = handler
         .parse(settings_path)
         .unwrap_or_else(|e| panic!("parse failed for {}: {}", settings_path.display(), e));
@@ -1392,7 +1392,7 @@ fn test_c2x_subagent_directory_input() {
     let out_dir = tempfile::TempDir::new().unwrap();
     let opts = default_lower_opts(out_dir.path().to_str().unwrap());
 
-    let handler = pick_handler(&Kind::Subagent, &maps);
+    let handler = pick_handler(&Kind::Subagent, maps);
     let parsed = handler
         .parse(subagent_path)
         .unwrap_or_else(|e| panic!("parse failed for {}: {}", subagent_path.display(), e));
@@ -1447,7 +1447,7 @@ fn test_c2x_memory_directory_input() {
     let out_dir = tempfile::TempDir::new().unwrap();
     let opts = default_lower_opts(out_dir.path().to_str().unwrap());
 
-    let handler = pick_handler(&Kind::Memory, &maps);
+    let handler = pick_handler(&Kind::Memory, maps);
     let parsed = handler
         .parse(memory_path)
         .unwrap_or_else(|e| panic!("parse failed for {}: {}", memory_path.display(), e));
@@ -1487,7 +1487,7 @@ fn test_check_plugin_directory_input() {
         file_path.display()
     );
 
-    let handler = pick_handler(kind, &maps);
+    let handler = pick_handler(kind, maps);
     let parsed = handler
         .parse(file_path)
         .unwrap_or_else(|e| panic!("check parse failed: {}", e));

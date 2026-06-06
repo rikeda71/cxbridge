@@ -329,12 +329,9 @@ fn group_by_id(entries: &[DiagEntry]) -> Vec<(String, usize, String)> {
 
 /// Truncates `s` to at most `max_chars` Unicode scalar values, appending `…` if truncated.
 fn truncate_msg(s: &str, max_chars: usize) -> String {
-    let chars: Vec<char> = s.chars().collect();
-    if chars.len() <= max_chars {
-        s.to_string()
-    } else {
-        let truncated: String = chars[..max_chars].iter().collect();
-        format!("{}…", truncated)
+    match s.char_indices().nth(max_chars) {
+        Some((byte_pos, _)) => format!("{}…", &s[..byte_pos]),
+        None => s.to_string(),
     }
 }
 

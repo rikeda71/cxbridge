@@ -31,7 +31,7 @@ fn test_memory_c2x_basic() {
     let kind = detect(memory_path).expect("detect should succeed");
     assert_eq!(kind, cxbridge::core::ir::Kind::Memory);
 
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(memory_path))
         .expect("parse should succeed");
@@ -70,7 +70,7 @@ fn test_memory_x2c_basic() {
     let kind = detect(memory_path).expect("detect should succeed");
     assert_eq!(kind, cxbridge::core::ir::Kind::Memory);
 
-    let handler = pick_handler(&kind, &maps);
+    let handler = pick_handler(&kind, maps);
     let parsed = handler
         .parse(Path::new(memory_path))
         .expect("parse should succeed");
