@@ -554,3 +554,158 @@ fn test_webfetch_deny_domains_visible_in_report() {
             .collect::<Vec<_>>()
     );
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// 2026-06 upstream updates: model tier mapping & newly tracked keys
+// ────────────────────────────────────────────────────────────────────────────
+
+/// c2x: a Mythos-class model ID tier-maps to the High-tier Codex model, and the
+/// newly tracked Claude-only settings keys are dropped with diagnostics.
+#[test]
+fn test_settings_c2x_fable_model_and_new_dropped_keys() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("settings.json");
+    std::fs::write(
+        &path,
+        r#"{
+            "model": "claude-fable-5",
+            "fallbackModel": ["claude-opus-4-8", "claude-sonnet-4-6"],
+            "agent": "code-reviewer",
+            "disableBundledSkills": true,
+            "enforceAvailableModels": true,
+            "wheelScrollAccelerationEnabled": false
+        }"#,
+    )
+    .unwrap();
+
+    let maps = load_mappings();
+    use cxbridge::handlers::settings::SettingsHandler;
+    use cxbridge::handlers::Handler;
+    let handler = SettingsHandler {
+        map: maps["settings-config"].clone(),
+    };
+    let parsed = handler.parse(&path).expect("parse should succeed");
+    let ir = handler
+        .lift(&parsed, ConvDir::C2x)
+        .expect("lift should succeed");
+
+    // IR fields are keyed by the canonical mappings entry id, not the raw key.
+    for key in [
+        "settings.fallbackModel",
+        "settings.agent",
+        "settings.disableBundledSkills",
+        "settings.availableModels",
+        "settings.wheelScrollAcceleration",
+    ] {
+        let f = ir
+            .fields
+            .get(key)
+            .unwrap_or_else(|| panic!("{key} should be lifted"));
+        assert!(
+            matches!(f.loss, cxbridge::core::ir::Loss::Dropped),
+            "{key} should be dropped"
+        );
+    }
+
+    let out_dir = tempfile::TempDir::new().unwrap();
+    let opts = default_lower_opts_subagent(out_dir.path().to_str().unwrap());
+    let plan = handler
+        .lower(&ir, ConvDir::C2x, &opts)
+        .expect("lower should succeed");
+    let config_toml = plan
+        .files
+        .iter()
+        .find(|f| f.path.ends_with("config.toml"))
+        .expect("Expected config.toml in output");
+    assert!(
+        config_toml.content.contains(r#"model = "gpt-5.5""#),
+        "claude-fable-5 should tier-map to gpt-5.5, got: {}",
+        config_toml.content
+    );
+    assert!(
+        !config_toml.content.contains("fallbackModel"),
+        "Dropped keys must not leak into config.toml"
+    );
+}
+
+/// x2c: gpt-5.5 tier-maps to the Opus ID (never the credit-metered Fable ID),
+/// and newly tracked Codex-only keys produce drop diagnostics.
+#[test]
+fn test_settings_x2c_tier_maps_model_and_drops_new_codex_keys() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"
+model = "gpt-5.5"
+plan_mode_reasoning_effort = "low"
+approvals_reviewer = "auto_review"
+
+[auto_review]
+policy = "Reject anything touching prod credentials."
+
+[projects."/home/u/repo"]
+trust_level = "trusted"
+
+[tui]
+theme = "dark"
+"#,
+    )
+    .unwrap();
+
+    let maps = load_mappings();
+    use cxbridge::handlers::settings::SettingsHandler;
+    use cxbridge::handlers::Handler;
+    let handler = SettingsHandler {
+        map: maps["settings-config"].clone(),
+    };
+    let parsed = handler.parse(&path).expect("parse should succeed");
+    let ir = handler
+        .lift(&parsed, ConvDir::X2c)
+        .expect("lift should succeed");
+
+    let diag_ids: Vec<_> = ir
+        .diagnostics
+        .iter()
+        .filter(|d| matches!(d.level, DiagLevel::Drop))
+        .filter_map(|d| d.id.as_deref())
+        .collect();
+    for id in [
+        "settings.codex.plan_mode_reasoning_effort",
+        "settings.codex.auto_review",
+        "settings.codex.projects_trust",
+        "settings.codex.tui_display",
+    ] {
+        assert!(
+            diag_ids.contains(&id),
+            "Expected drop diagnostic {id}, got: {diag_ids:?}"
+        );
+    }
+    // approvals_reviewer + auto_review.policy form one combined mappings entry:
+    // exactly one settings.codex.auto_review diagnostic even with both keys present.
+    assert_eq!(
+        diag_ids
+            .iter()
+            .filter(|id| **id == "settings.codex.auto_review")
+            .count(),
+        1,
+        "Combined entry must be reported once, got: {diag_ids:?}"
+    );
+
+    let out_dir = tempfile::TempDir::new().unwrap();
+    let opts = default_lower_opts_subagent(out_dir.path().to_str().unwrap());
+    let plan = handler
+        .lower(&ir, ConvDir::X2c, &opts)
+        .expect("lower should succeed");
+    let settings_json = plan
+        .files
+        .iter()
+        .find(|f| f.path.ends_with("settings.json"))
+        .expect("Expected settings.json in output");
+    let content: serde_json::Value = serde_json::from_str(&settings_json.content).unwrap();
+    assert_eq!(
+        content["model"],
+        serde_json::Value::String("claude-opus-4-8".to_string()),
+        "High tier must map back to the Opus ID, never Fable/Mythos"
+    );
+}

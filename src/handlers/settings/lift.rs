@@ -113,41 +113,65 @@ impl SettingsHandler {
             }
         }
 
-        // Dropped fields: record them so report sees them
-        for dropped_key in &[
-            "viewMode",
-            "worktree",
-            "autoUpdatesChannel",
-            "spinnerTipsEnabled",
-            "spinnerTipsOverride",
-            "spinnerVerbs",
-            "voice",
-            "voiceEnabled",
-            "maxSkillDescriptionChars",
-            "skillListingBudgetFraction",
-            "statusLine",
-        ] {
-            if let Some(v) = settings.get(*dropped_key) {
-                node.fields.insert(
-                    format!("settings.{}", dropped_key),
-                    IRField {
-                        id: format!("settings.{}", dropped_key),
-                        value: v.clone(),
-                        loss: Loss::Dropped,
-                        transforms_applied: vec![],
-                        degrade: None,
-                        warning: Some(format!("{} has no Codex equivalent", dropped_key)),
-                        dropped: Some(DroppedInfo {
-                            reason: format!("{} dropped (Claude-specific UI field)", dropped_key),
-                        }),
-                    },
-                );
-                node.diagnostics.push(Diagnostic {
-                    level: DiagLevel::Drop,
-                    id: Some(format!("settings.{}", dropped_key)),
-                    message: format!("{} dropped: no Codex equivalent", dropped_key),
-                });
+        // Dropped fields: record them under their canonical mappings entry id so the
+        // report cross-references mappings/*.yaml. Several settings keys share one
+        // entry (e.g. spinnerTips*); the first key present wins to avoid duplicates.
+        const DROPPED_KEYS: &[(&str, &str)] = &[
+            ("viewMode", "settings.viewMode"),
+            ("worktree", "settings.worktree"),
+            ("autoUpdatesChannel", "settings.autoUpdatesChannel"),
+            ("spinnerTipsEnabled", "settings.spinnerTips"),
+            ("spinnerTipsOverride", "settings.spinnerTips"),
+            ("spinnerVerbs", "settings.spinnerTips"),
+            ("voice", "settings.voice"),
+            ("voiceEnabled", "settings.voice"),
+            (
+                "maxSkillDescriptionChars",
+                "settings.maxSkillDescriptionChars",
+            ),
+            (
+                "skillListingBudgetFraction",
+                "settings.maxSkillDescriptionChars",
+            ),
+            ("statusLine", "settings.statusLine"),
+            (
+                "wheelScrollAccelerationEnabled",
+                "settings.wheelScrollAcceleration",
+            ),
+            ("fallbackModel", "settings.fallbackModel"),
+            ("availableModels", "settings.availableModels"),
+            ("enforceAvailableModels", "settings.availableModels"),
+            ("disableBundledSkills", "settings.disableBundledSkills"),
+            ("requiredMinimumVersion", "settings.requiredVersionRange"),
+            ("requiredMaximumVersion", "settings.requiredVersionRange"),
+            ("agent", "settings.agent"),
+        ];
+        for (settings_key, entry_id) in DROPPED_KEYS {
+            let Some(v) = settings.get(*settings_key) else {
+                continue;
+            };
+            if node.fields.contains_key(*entry_id) {
+                continue;
             }
+            node.fields.insert(
+                (*entry_id).to_string(),
+                IRField {
+                    id: (*entry_id).to_string(),
+                    value: v.clone(),
+                    loss: Loss::Dropped,
+                    transforms_applied: vec![],
+                    degrade: None,
+                    warning: Some(format!("{} has no Codex equivalent", settings_key)),
+                    dropped: Some(DroppedInfo {
+                        reason: format!("{} dropped (Claude-specific field)", settings_key),
+                    }),
+                },
+            );
+            node.diagnostics.push(Diagnostic {
+                level: DiagLevel::Drop,
+                id: Some((*entry_id).to_string()),
+                message: format!("{} dropped: no Codex equivalent", settings_key),
+            });
         }
 
         // skillOverrides, enabledPlugins → lossy
@@ -216,6 +240,19 @@ impl SettingsHandler {
 
         // tui.vim_mode_default → editorMode
         if let Some(tui) = settings.get("tui") {
+            // Display customization (theme / status_line / terminal_title) has no Claude
+            // receptacle: Claude's statusLine renders a shell command, not item lists.
+            if ["theme", "status_line", "terminal_title"]
+                .iter()
+                .any(|k| tui.get(*k).is_some())
+            {
+                node.diagnostics.push(Diagnostic {
+                    level: DiagLevel::Drop,
+                    id: Some("settings.codex.tui_display".to_string()),
+                    message: "tui.theme/status_line/terminal_title dropped: no Claude equivalent"
+                        .to_string(),
+                });
+            }
             if let Some(vim_mode) = tui.get("vim_mode_default") {
                 // enum_map: true → vim, false → normal
                 let editor_mode = if vim_mode.as_bool().unwrap_or(false) {
@@ -280,21 +317,35 @@ impl SettingsHandler {
             self.add_field(node, "settings.codex.otel", otel.clone(), ConvDir::X2c);
         }
 
-        // Codex-specific dropped fields
-        for dropped_key in &[
-            "profiles",
-            "approval_policy",
-            "agents",
-            "web_search",
-            "project_doc_max_bytes",
-            "model_verbosity",
-            "model_reasoning_summary",
-        ] {
-            if settings.get(*dropped_key).is_some() {
+        // Codex-specific dropped fields, keyed by their canonical mappings entry id.
+        // Combined entries (e.g. approvals_reviewer + auto_review.policy) emit a
+        // single diagnostic even when both config keys are present.
+        const CODEX_DROPPED_KEYS: &[(&str, &str)] = &[
+            ("profiles", "settings.codex.profiles"),
+            ("approval_policy", "settings.codex.granular_approval"),
+            ("agents", "settings.codex.agents_config"),
+            ("web_search", "settings.codex.web_search"),
+            (
+                "project_doc_max_bytes",
+                "settings.codex.project_doc_max_bytes",
+            ),
+            ("model_verbosity", "settings.codex.model_verbosity"),
+            ("model_reasoning_summary", "settings.codex.model_verbosity"),
+            (
+                "plan_mode_reasoning_effort",
+                "settings.codex.plan_mode_reasoning_effort",
+            ),
+            ("approvals_reviewer", "settings.codex.auto_review"),
+            ("auto_review", "settings.codex.auto_review"),
+            ("projects", "settings.codex.projects_trust"),
+        ];
+        let mut dropped_seen = std::collections::HashSet::new();
+        for (codex_key, entry_id) in CODEX_DROPPED_KEYS {
+            if settings.get(*codex_key).is_some() && dropped_seen.insert(*entry_id) {
                 node.diagnostics.push(Diagnostic {
                     level: DiagLevel::Drop,
-                    id: Some(format!("settings.codex.{}", dropped_key)),
-                    message: format!("{} dropped: no Claude equivalent", dropped_key),
+                    id: Some((*entry_id).to_string()),
+                    message: format!("{} dropped: no Claude equivalent", codex_key),
                 });
             }
         }

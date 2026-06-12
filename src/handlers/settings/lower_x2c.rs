@@ -2,6 +2,7 @@ use anyhow::Context;
 use serde_json::Value;
 
 use crate::core::ir::{DiagLevel, Diagnostic};
+use crate::core::model_tiers::{codex_tier, tier_to_claude};
 use crate::handlers::{EmitFile, EmitPlan, LowerOpts};
 
 use super::SettingsHandler;
@@ -19,18 +20,28 @@ impl SettingsHandler {
 
         let mut settings = serde_json::Map::new();
 
-        // model
+        // model: tier mapping (lossy); the emitted High-tier name is Opus, never Fable/Mythos
         if let Some(f) = ir.fields.get("settings.model") {
             if let Some(s) = f.value.as_str() {
-                settings.insert("model".to_string(), Value::String(s.to_string()));
-                diagnostics.push(Diagnostic {
-                    level: DiagLevel::Warn,
-                    id: Some("settings.model".to_string()),
-                    message: format!(
-                        "model '{}' may not be a valid Claude model ID (different provider)",
-                        s
-                    ),
-                });
+                if let Some(tier) = codex_tier(s) {
+                    let claude_model = tier_to_claude(tier);
+                    settings.insert("model".to_string(), Value::String(claude_model.to_string()));
+                    diagnostics.push(Diagnostic {
+                        level: DiagLevel::Warn,
+                        id: Some("settings.model".to_string()),
+                        message: format!(
+                            "model '{}' mapped to '{}' via tier mapping (lossy; different provider)",
+                            s, claude_model
+                        ),
+                    });
+                } else {
+                    settings.insert("model".to_string(), Value::String(s.to_string()));
+                    diagnostics.push(Diagnostic {
+                        level: DiagLevel::Warn,
+                        id: Some("settings.model".to_string()),
+                        message: format!("Unknown Codex model '{}': copied as-is", s),
+                    });
+                }
             }
         }
 

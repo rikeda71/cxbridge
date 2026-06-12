@@ -1,6 +1,7 @@
 use serde_json::Value;
 
 use crate::core::ir::{DiagLevel, Diagnostic};
+use crate::core::model_tiers::{claude_tier, tier_to_codex};
 use crate::degrade::rules::degrade_allowed_tools;
 use crate::handlers::{EmitFile, EmitPlan, LowerOpts};
 
@@ -20,18 +21,31 @@ impl SettingsHandler {
         // Build TOML document
         let mut doc = toml_edit::DocumentMut::new();
 
-        // model
+        // model: tier mapping (lossy); unknown IDs pass through with a warning
         if let Some(f) = ir.fields.get("settings.model") {
             if let Some(s) = f.value.as_str() {
-                doc.insert("model", toml_edit::value(s));
-                diagnostics.push(Diagnostic {
-                    level: DiagLevel::Warn,
-                    id: Some("settings.model".to_string()),
-                    message: format!(
-                        "model '{}' may not be a valid Codex model ID (different provider; manual review required)",
-                        s
-                    ),
-                });
+                if let Some(tier) = claude_tier(s) {
+                    let codex_model = tier_to_codex(tier);
+                    doc.insert("model", toml_edit::value(codex_model));
+                    diagnostics.push(Diagnostic {
+                        level: DiagLevel::Warn,
+                        id: Some("settings.model".to_string()),
+                        message: format!(
+                            "model '{}' mapped to '{}' via tier mapping (lossy; different provider)",
+                            s, codex_model
+                        ),
+                    });
+                } else {
+                    doc.insert("model", toml_edit::value(s));
+                    diagnostics.push(Diagnostic {
+                        level: DiagLevel::Warn,
+                        id: Some("settings.model".to_string()),
+                        message: format!(
+                            "Unknown model '{}': copied as-is (no tier mapping; manual review required)",
+                            s
+                        ),
+                    });
+                }
             }
         }
 

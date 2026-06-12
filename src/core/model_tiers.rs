@@ -8,8 +8,12 @@ pub(crate) enum Tier {
 
 /// Maps a Claude model name to a Tier.
 /// Returns None for unknown model names; the caller is responsible for emitting a warning.
+///
+/// Mythos-class names (`fable`/`mythos`, Claude 5) are accepted as High-tier *input* only;
+/// `tier_to_claude(High)` still returns the Opus name because Fable/Mythos usage is
+/// credit-metered and must never be written into a converted config.
 pub(crate) fn claude_tier(m: &str) -> Option<Tier> {
-    if m.contains("opus") {
+    if m.contains("opus") || m.contains("fable") || m.contains("mythos") {
         Some(Tier::High)
     } else if m.contains("sonnet") {
         Some(Tier::Mid)
@@ -48,6 +52,8 @@ pub(crate) const CODEX_LATEST: &[(Tier, &str)] = &[
     (Tier::Low, "gpt-5.4-mini"), // fast/lightweight
 ];
 
+/// High deliberately stays on the Opus name: `claude-fable-5` (Mythos class) is
+/// credit-metered, so conversions must not select it as an output model.
 pub(crate) const CLAUDE_LATEST: &[(Tier, &str)] = &[
     (Tier::High, "claude-opus-4-8"),  // contains("opus") → High ✓
     (Tier::Mid, "claude-sonnet-4-6"), // contains("sonnet") → Mid ✓
@@ -87,6 +93,22 @@ mod tests {
                 "codex_tier(tier_to_codex({tier:?})) should be Some({tier:?}), model={model}"
             );
         }
+    }
+
+    #[test]
+    fn test_fable_mythos_are_high_tier_input_only() {
+        assert_eq!(claude_tier("claude-fable-5"), Some(Tier::High));
+        assert_eq!(claude_tier("claude-fable-5[1m]"), Some(Tier::High));
+        assert_eq!(claude_tier("claude-mythos-5"), Some(Tier::High));
+        assert_eq!(claude_tier("fable"), Some(Tier::High));
+        // Output side must never be the credit-metered Fable/Mythos ID.
+        assert_eq!(tier_to_claude(Tier::High), "claude-opus-4-8");
+    }
+
+    #[test]
+    fn test_context_suffix_does_not_break_tier_detection() {
+        assert_eq!(claude_tier("claude-opus-4-6[1m]"), Some(Tier::High));
+        assert_eq!(claude_tier("claude-sonnet-4-6[1m]"), Some(Tier::Mid));
     }
 
     #[test]

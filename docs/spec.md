@@ -42,7 +42,7 @@
 
 **cxbridge** is a Rust CLI that bidirectionally converts configuration files between Claude Code (`.claude/`, JSON) and OpenAI Codex CLI (`.codex/`, TOML). It covers Skills, Plugins, Hooks, MCP servers, Memory files, Subagents, and Settings.
 
-Conversion rules are declared in `mappings/*.yaml` (304 entries). The CLI is an engine that interprets those declarations. New field support requires only YAML edits, not code changes (mappings-driven design).
+Conversion rules are declared in `mappings/*.yaml` (314 entries). The CLI is an engine that interprets those declarations. New field support requires only YAML edits, not code changes (mappings-driven design).
 
 Every conversion produces a **conversion report** that enumerates what was lossless, lossy, degraded, dropped, and any body-scan warnings. Silent data loss is prohibited.
 
@@ -157,7 +157,7 @@ Key design principles:
 ```
 cxbridge/
 ├── Cargo.toml
-├── mappings/           # ← YAML truth tables (304 entries)
+├── mappings/           # ← YAML truth tables (314 entries)
 │   ├── SCHEMA.md
 │   └── *.yaml
 ├── src/
@@ -458,7 +458,10 @@ Model names are not automatically inferred from ID strings. Instead, models are 
 ```rust
 pub enum Tier { High, Mid, Low }
 
-// Claude: opus → High, sonnet → Mid, haiku → Low
+// Claude: opus/fable/mythos → High, sonnet → Mid, haiku → Low
+//         (substring match, so `[1m]` context-suffixed IDs resolve too).
+//         fable/mythos (Claude 5 Mythos class) are HIGH-TIER INPUT ONLY: tier_to_claude(High)
+//         emits the Opus ID — Fable usage is credit-metered, so converted configs never select it.
 // Codex: explicit lookup against CODEX_LATEST first (roundtrip invariant);
 //        fallback heuristic for unknown names: "mini" in name → Low, else Mid.
 //        No suffix-based rule (-high/-xhigh) — current Codex models do not use such suffixes.
@@ -469,7 +472,7 @@ const CODEX_LATEST: &[(Tier, &str)] = &[
     (Tier::Low,  "gpt-5.4-mini"), // fast/lightweight
 ];
 const CLAUDE_LATEST: &[(Tier, &str)] = &[
-    (Tier::High, "claude-opus-4-8"),
+    (Tier::High, "claude-opus-4-8"),  // deliberately NOT claude-fable-5 (credit-metered)
     (Tier::Mid,  "claude-sonnet-4-6"),
     (Tier::Low,  "claude-haiku-4-5"),
 ];
@@ -721,10 +724,10 @@ Full automatic conversion is not attempted. Only a subset is converted.
 - `permissions.allow(Read/Write)` → `[permissions.<n>].filesystem` (tool-axis → resource-axis; Read/Write boundary lost)
 - `permissions.allow/deny(WebFetch)` → `[permissions.<n>].network = true|false` (boolean)
 
-**Dropped (c2x):** viewMode, worktree, autoUpdatesChannel, spinnerTips, voice/voiceEnabled, maxSkillDescriptionChars, defaultMode:plan.  
-**Dropped (x2c):** profiles, permissions.extends, approval_policy.granular.*, agents.max_threads/max_depth, tui.keymap.*, model_verbosity, web_search, features.child_agents_md, project_doc_fallback_filenames, developer_instructions (→ CLAUDE.md approximation only).
+**Dropped (c2x):** viewMode, worktree, autoUpdatesChannel, spinnerTips, voice/voiceEnabled, maxSkillDescriptionChars, defaultMode:plan, wheelScrollAccelerationEnabled, fallbackModel, availableModels/enforceAvailableModels, disableBundledSkills, requiredMinimumVersion/requiredMaximumVersion, agent.  
+**Dropped (x2c):** profiles, permissions.extends, approval_policy.granular.*, agents.max_threads/max_depth, tui.keymap.*, tui.theme/status_line/terminal_title, model_verbosity, web_search, plan_mode_reasoning_effort, approvals_reviewer/auto_review.policy, projects.\<path\>.trust_level, features.child_agents_md, project_doc_fallback_filenames, developer_instructions (→ CLAUDE.md approximation only).
 
-**Lossless count: 2 out of 49 entries (4%).**
+**Lossless count: 2 out of 70 entries (3%).**
 
 ---
 
@@ -1009,13 +1012,13 @@ All writes to `config.toml` use `toml_edit::DocumentMut`. No string-patching (se
 
 ## 16. Feature & Loss Matrix Summary
 
-Total entries across all `mappings/*.yaml`: **304**
+Total entries across all `mappings/*.yaml`: **314**
 
 | Loss level | Count | % |
 |---|---|---|
-| lossless | 73 | 24% |
-| lossy | 89 | 29% |
-| dropped | 142 | 47% |
+| lossless | 73 | 23% |
+| lossy | 89 | 28% |
+| dropped | 152 | 48% |
 
 **Directional asymmetry:**
 - **Codex → Claude:** Near-lossless. Codex vocabulary is smaller; Claude has receptacles for most concepts.
@@ -1031,7 +1034,7 @@ Total entries across all `mappings/*.yaml`: **304**
 | Plugins | 48 | 13 | 15 | 20 | Integration point; recursive |
 | Memory | 18 | 3 | 5 | 10 | File rename + @import expansion |
 | Subagents | 25 | 4 | 10 | 11 | Large structural divergence |
-| Settings/Config | 60 | 2 (3%) | 31 | 27 | Hardest; permission axis mismatch |
+| Settings/Config | 70 | 2 (3%) | 31 | 37 | Hardest; permission axis mismatch |
 | Variables | 15 | 2 | 5 | 8 | No standalone handler. All variable-related transformations are performed by the body scanner within the Skills handler. |
 
 **Implementation value/complexity concentration:**
@@ -1090,7 +1093,7 @@ Claude uses description semantic matching for automatic subagent dispatch. Codex
 
 ## 18. Testing Strategy
 
-1. **Mappings invariant tests** (at startup + CI): assert globally unique `id`, `degrade` implies `loss:lossy`, `loss:dropped` has no `transform`. 304 entries; 0 issues confirmed. (Note: `source` field is not validated — it is documentation metadata only.)
+1. **Mappings invariant tests** (at startup + CI): assert globally unique `id`, `degrade` implies `loss:lossy`, `loss:dropped` has no `transform`. 314 entries; 0 issues confirmed. (Note: `source` field is not validated — it is documentation metadata only.)
 
 2. **Unit tests:**
    - Each transform function (`unit:ms_to_sec`, `polarity:invert`, `enum_map`, `index_shift`, etc.)

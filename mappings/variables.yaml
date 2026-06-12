@@ -206,10 +206,9 @@ entries:
       hook commands. This mapping is therefore lossless within that specific scope.
       IMPORTANT scope restriction: this variable is only available inside plugin-sourced hook
       commands. In general skill bodies (SKILL.md), ${CLAUDE_PLUGIN_ROOT} is NOT set by Codex
-      and must still be treated as unsupported. The body scanner (scanner/body.rs) does not
-      yet distinguish plugin-hook context from skill-body context; until that is fixed,
-      occurrences in skill bodies should be reported as unsupported. See maintainer note in
-      /tmp/issue29_followup.txt.
+      and must still be treated as unsupported. The body scanner (scanner/body.rs) implements
+      this distinction via BodyContext: occurrences in plugin-hook commands are accepted as
+      lossless, while occurrences in skill bodies are reported as unsupported.
     source: "https://developers.openai.com/codex/plugins/build"
 
   - id: variables.plugin-data

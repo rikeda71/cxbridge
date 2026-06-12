@@ -248,7 +248,7 @@ entries:
     degrade: null
     transform: "unit:ms_to_sec"
     warn: false
-    notes: "Per-tool-call timeout. Claude uses an integer in milliseconds; Codex uses a floating-point number in seconds. Conversion: `unit:ms_to_sec` (e.g. `60000` → `60.0`) / `unit:sec_to_ms` (e.g. `60.0` → `60000`)."
+    notes: "Per-tool-call timeout. Claude uses an integer in milliseconds; Codex uses a floating-point number in seconds. Conversion: `unit:ms_to_sec` (e.g. `60000` → `60.0`) / `unit:sec_to_ms` (e.g. `60.0` → `60000`). Note: Claude Code v2.1.162+ ignores `timeout` values below 1000 ms (with a warning), so a Codex `tool_timeout_sec` under 1.0 converts to a value Claude will not honor."
     source: "https://code.claude.com/docs/en/mcp"
 
   - id: mcp.startup_timeout
