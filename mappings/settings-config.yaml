@@ -303,6 +303,26 @@ entries:
 
   # ─── Permissions: defaultMode ──────────────────────────────────────────
 
+  - id: settings.permissions.defaultMode.default
+    claude:
+      field: "permissions.defaultMode"
+      type: "enum(default)"
+      scope: user
+    codex:
+      field: "approval_policy + sandbox_mode"
+      type: "string"
+      scope: user
+    direction: claude_to_codex
+    loss: lossy
+    degrade: null
+    transform: null
+    warn: false
+    notes: |
+      Claude `defaultMode: "default"` → Codex `approval_policy="on-request"` + `sandbox_mode="workspace-write"`
+      (Codex documented defaults). Both prompt on boundary crossing within a writable workspace.
+      Lossy: Claude's single default axis collapses to two orthogonal Codex axes (1-axis → 2-axis).
+    source: "https://developers.openai.com/codex/agent-approvals-security"
+
   - id: settings.permissions.defaultMode.bypassPermissions
     claude:
       field: "permissions.defaultMode"
@@ -318,9 +338,11 @@ entries:
     transform: null
     warn: true
     notes: |
-      Claude `defaultMode: "bypassPermissions"` →
-      Approximated by combining Codex `approval_policy="never"` + `sandbox_mode="danger-full-access"`.
-      Not fully equivalent; requires combining two fields. Security risk must be stated explicitly in the warning.
+      Claude `defaultMode: "bypassPermissions"` → Codex `approval_policy="never"` + `sandbox_mode="danger-full-access"`.
+      This combination removes both the approval prompt layer and the sandbox boundary, granting fully
+      unrestricted execution. Not fully equivalent to Claude's bypassPermissions (which bypasses Claude's
+      internal permission checks); requires combining two Codex fields. Explicit security risk — must be
+      stated in the conversion warning.
     source: "https://developers.openai.com/codex/agent-approvals-security"
 
   - id: settings.permissions.defaultMode.acceptEdits
@@ -329,8 +351,8 @@ entries:
       type: "enum(acceptEdits)"
       scope: user
     codex:
-      field: "approval_policy"
-      type: "string(\"untrusted\")"
+      field: "approval_policy + sandbox_mode"
+      type: "string"
       scope: user
     direction: claude_to_codex
     loss: lossy
@@ -338,9 +360,10 @@ entries:
     transform: null
     warn: true
     notes: |
-      Claude `defaultMode: "acceptEdits"` → approximated by Codex `approval_policy="untrusted"`.
-      Semantic difference: Claude auto-approves edit-class tools; Codex auto-approves read operations
-      while requiring approval for state-changing operations.
+      Claude `defaultMode: "acceptEdits"` auto-approves edit-class tools (file writes, edits).
+      Approximated by Codex `approval_policy="on-request"` + `sandbox_mode="workspace-write"`:
+      edits within the workspace proceed without per-operation prompts; operations that cross sandbox
+      boundaries still escalate. Lossy: the edit-class auto-approval granularity is not preserved.
     source: "https://developers.openai.com/codex/agent-approvals-security"
 
   - id: settings.permissions.defaultMode.auto
@@ -349,8 +372,8 @@ entries:
       type: "enum(auto)"
       scope: user
     codex:
-      field: "approval_policy"
-      type: "string(\"on-request\")"
+      field: "approval_policy + sandbox_mode"
+      type: "string"
       scope: user
     direction: claude_to_codex
     loss: lossy
@@ -358,8 +381,9 @@ entries:
     transform: null
     warn: false
     notes: |
-      Claude `defaultMode: "auto"` → approximated by Codex `approval_policy="on-request"` (Codex default).
-      Both share the same basic behavior of "prompt on boundary crossing".
+      Claude `defaultMode: "auto"` → Codex `approval_policy="on-request"` + `sandbox_mode="workspace-write"`
+      (Codex defaults). Both prompt on boundary crossing within a writable workspace. Lossy: the exact
+      boundary conditions differ between Claude's auto mode and Codex's on-request policy.
     source: "https://developers.openai.com/codex/agent-approvals-security"
 
   - id: settings.permissions.defaultMode.plan
@@ -368,18 +392,20 @@ entries:
       type: "enum(plan)"
       scope: user
     codex:
-      field: null
-      type: null
-      scope: null
+      field: "approval_policy + sandbox_mode"
+      type: "string"
+      scope: user
     direction: claude_to_codex
-    loss: dropped
+    loss: lossy
     degrade: null
     transform: null
     warn: true
     notes: |
-      Codex has no equivalent to plan mode. Dropped.
-      The conversion report must state explicitly that plan mode is not available in Codex.
-    source: "https://code.claude.com/docs/en/settings"
+      Claude `defaultMode: "plan"` approximated by Codex `sandbox_mode="read-only"` + `approval_policy="on-request"` —
+      the closest Codex equivalent. Codex has no true "plan mode"; the read-only sandbox enforces
+      investigate-without-changes behavior. Lossy: the semantic distinction between planning and executing
+      is not preserved on the Codex side.
+    source: "https://developers.openai.com/codex/agent-approvals-security"
 
   - id: settings.permissions.defaultMode.dontAsk
     claude:
@@ -396,13 +422,13 @@ entries:
     transform: null
     warn: true
     notes: |
-      Claude `defaultMode: "dontAsk"` is the 6th value (added after bypassPermissions).
-      Approximated by combining Codex `approval_policy="never"` + `sandbox_mode="danger-full-access"`.
-      Semantic difference: `dontAsk` suppresses permission prompts but does not fully bypass Claude's
-      internal guardrails in the same way `bypassPermissions` does. The Codex combination grants
-      unrestricted sandbox access, which is a broader relaxation than `dontAsk` intends.
-      Security risk must be stated explicitly in the conversion warning.
-    source: "https://code.claude.com/docs/en/settings"
+      Claude `defaultMode: "dontAsk"` suppresses permission prompts but retains Claude's internal
+      guardrails. Mapped to Codex `approval_policy="never"` + `sandbox_mode="workspace-write"`.
+      This is more faithful and safer than danger-full-access: the workspace sandbox boundary is
+      preserved, preventing writes outside the workspace even without approval prompts.
+      Still an approximation — Codex does not have a guardrail layer equivalent to Claude's internal
+      safety checks. Lossy.
+    source: "https://developers.openai.com/codex/agent-approvals-security"
 
   # ─── Sandbox ─────────────────────────────────────────────
 
@@ -1200,6 +1226,52 @@ entries:
       At conversion time, attempt to expand the inheritance chain into a flat allow/deny list.
     source: "https://developers.openai.com/codex/permissions"
 
+  - id: settings.codex.approval_policy
+    claude:
+      field: "permissions.defaultMode"
+      type: "enum(default|plan|acceptEdits|auto|dontAsk|bypassPermissions)"
+      scope: user
+    codex:
+      field: "approval_policy"
+      type: "enum(untrusted|on-request|never)"
+      scope: user
+    direction: codex_to_claude
+    loss: lossy
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Codex flat `approval_policy` string is reverse-mapped jointly WITH `sandbox_mode` to the closest
+      Claude `permissions.defaultMode` (axis collapse: 2 Codex axes → 1 Claude axis, lossy).
+      Joint reverse matrix (missing sandbox axis defaults to workspace-write):
+      sandbox=read-only → plan (any approval_policy value);
+      sandbox=workspace-write + approval_policy=untrusted/on-request → default;
+      sandbox=workspace-write + approval_policy=never → dontAsk;
+      sandbox=danger-full-access → bypassPermissions (any approval_policy value).
+    source: "https://developers.openai.com/codex/agent-approvals-security"
+
+  - id: settings.codex.sandbox_mode
+    claude:
+      field: "permissions.defaultMode"
+      type: "enum(default|plan|acceptEdits|auto|dontAsk|bypassPermissions)"
+      scope: user
+    codex:
+      field: "sandbox_mode"
+      type: "enum(read-only|workspace-write|danger-full-access)"
+      scope: user
+    direction: codex_to_claude
+    loss: lossy
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Codex `sandbox_mode` is reverse-mapped jointly WITH `approval_policy` to the closest Claude
+      `permissions.defaultMode` (axis collapse, lossy). Missing approval axis defaults to on-request.
+      Joint reverse matrix (same as settings.codex.approval_policy):
+      read-only → plan; danger-full-access → bypassPermissions;
+      workspace-write + on-request/untrusted → default; workspace-write + never → dontAsk.
+    source: "https://developers.openai.com/codex/agent-approvals-security"
+
   - id: settings.codex.granular_approval
     claude:
       field: null
@@ -1215,9 +1287,11 @@ entries:
     transform: null
     warn: true
     notes: |
-      Codex granular approval policy (skill_approval/mcp_elicitations/sandbox_approval, etc.).
-      Claude has no separation of individual approval categories. Dropped.
-      At conversion time, consider approximating with the closest `defaultMode` value.
+      Only the GRANULAR sub-table form of approval_policy (`approval_policy.granular.*` /
+      skill_approval / mcp_elicitations / sandbox_approval) remains dropped here.
+      The FLAT `approval_policy` string (untrusted|on-request|never) is handled by
+      `settings.codex.approval_policy`. Claude has no separation of individual approval categories.
+      Dropped. At conversion time, consider approximating with the closest `defaultMode` value.
     source: "https://developers.openai.com/codex/agent-approvals-security"
 
   - id: settings.codex.agents_config

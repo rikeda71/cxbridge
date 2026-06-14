@@ -394,31 +394,53 @@ impl SettingsHandler {
             }
         }
 
-        // defaultMode
+        // defaultMode: map through the typed approval module (both axes always emitted).
         if let Some(f) = ir.fields.get("__permissions.defaultMode") {
-            if let Some(mode) = f.value.as_str() {
-                let (approval, sandbox) = map_default_mode(mode);
-                if let Some(ap) = approval {
-                    doc.insert("approval_policy", toml_edit::value(ap));
-                }
-                if let Some(sm) = sandbox {
-                    doc.insert("sandbox_mode", toml_edit::value(sm));
-                }
-                if mode == "plan" {
-                    diagnostics.push(Diagnostic {
-                        level: DiagLevel::Drop,
-                        id: Some("settings.permissions.defaultMode.plan".to_string()),
-                        message: "defaultMode=plan dropped: Codex has no plan mode equivalent"
-                            .to_string(),
-                    });
-                } else if mode == "dontAsk" {
+            if let Some(mode_str) = f.value.as_str() {
+                if let Some(mode) = super::approval::DefaultMode::from_config(mode_str) {
+                    let (approval, sandbox) = mode.to_codex();
+                    doc.insert("approval_policy", toml_edit::value(approval.as_str()));
+                    doc.insert("sandbox_mode", toml_edit::value(sandbox.as_str()));
+
+                    let diag_id = format!("settings.permissions.defaultMode.{}", mode_str);
+                    let diag_msg = match mode {
+                        super::approval::DefaultMode::Plan => {
+                            "defaultMode=plan approximated by sandbox_mode=read-only + \
+                             approval_policy=on-request (closest Codex equivalent; no true plan mode)"
+                                .to_string()
+                        }
+                        super::approval::DefaultMode::DontAsk => {
+                            "defaultMode=dontAsk approximated by approval_policy=never + \
+                             sandbox_mode=workspace-write; retains the workspace sandbox boundary \
+                             while suppressing all approval prompts"
+                                .to_string()
+                        }
+                        super::approval::DefaultMode::BypassPermissions => {
+                            "defaultMode=bypassPermissions mapped to approval_policy=never + \
+                             sandbox_mode=danger-full-access; removes sandbox AND approval gate \
+                             (security risk — review before deploying)"
+                                .to_string()
+                        }
+                        _ => {
+                            format!(
+                                "defaultMode={} approximated across two Codex axes \
+                                 (approval_policy={} + sandbox_mode={}); lossy 1-axis→2-axis mapping",
+                                mode_str,
+                                approval.as_str(),
+                                sandbox.as_str()
+                            )
+                        }
+                    };
                     diagnostics.push(Diagnostic {
                         level: DiagLevel::Warn,
-                        id: Some("settings.permissions.defaultMode.dontAsk".to_string()),
-                        message: "defaultMode=dontAsk approximated by approval_policy=never + \
-                                  sandbox_mode=danger-full-access; this grants broader access than \
-                                  dontAsk intends — review the security implication"
-                            .to_string(),
+                        id: Some(diag_id),
+                        message: diag_msg,
+                    });
+                } else {
+                    diagnostics.push(Diagnostic {
+                        level: DiagLevel::Warn,
+                        id: Some("settings.permissions.defaultMode".to_string()),
+                        message: format!("unknown defaultMode '{}': no Codex mapping", mode_str),
                     });
                 }
             }
@@ -565,20 +587,6 @@ pub(super) fn extract_tool_arg(tool: &str) -> String {
     }
 }
 
-/// Map Claude defaultMode to Codex approval_policy + sandbox_mode.
-pub(super) fn map_default_mode(mode: &str) -> (Option<&'static str>, Option<&'static str>) {
-    match mode {
-        "bypassPermissions" => (Some("never"), Some("danger-full-access")),
-        // dontAsk suppresses prompts; approximated by the same full-access combo
-        // as bypassPermissions (a broader relaxation than dontAsk intends — warned).
-        "dontAsk" => (Some("never"), Some("danger-full-access")),
-        "acceptEdits" => (Some("untrusted"), None),
-        "auto" => (Some("on-request"), None),
-        "plan" => (None, None), // dropped; handled separately
-        _ => (None, None),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -588,16 +596,6 @@ mod tests {
         assert_eq!(extract_tool_arg("Bash(git add)"), "git add");
         assert_eq!(extract_tool_arg("Read(/tmp/foo)"), "/tmp/foo");
         assert_eq!(extract_tool_arg("Bash"), "Bash");
-    }
-
-    #[test]
-    fn test_map_default_mode() {
-        assert_eq!(
-            map_default_mode("bypassPermissions"),
-            (Some("never"), Some("danger-full-access"))
-        );
-        assert_eq!(map_default_mode("acceptEdits"), (Some("untrusted"), None));
-        assert_eq!(map_default_mode("plan"), (None, None));
     }
 
     #[test]

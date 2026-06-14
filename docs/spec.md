@@ -42,7 +42,7 @@
 
 **cxbridge** is a Rust CLI that bidirectionally converts configuration files between Claude Code (`.claude/`, JSON) and OpenAI Codex CLI (`.codex/`, TOML). It covers Skills, Plugins, Hooks, MCP servers, Memory files, Subagents, and Settings.
 
-Conversion rules are declared in `mappings/*.yaml` (314 entries). The CLI is an engine that interprets those declarations. New field support requires only YAML edits, not code changes (mappings-driven design).
+Conversion rules are declared in `mappings/*.yaml` (317 entries). The CLI is an engine that interprets those declarations. New field support requires only YAML edits, not code changes (mappings-driven design).
 
 Every conversion produces a **conversion report** that enumerates what was lossless, lossy, degraded, dropped, and any body-scan warnings. Silent data loss is prohibited.
 
@@ -82,7 +82,7 @@ MVP = v1 (Skills + MCP roundtrip + report).
 | Sub-agents | `.claude/agents/<n>.md` | `[agents.<n>]` + `~/.codex/agents/<n>.toml` | MD / TOML | Structural divergence |
 | Lifecycle hooks | `settings.json` / `hooks.json` `hooks` key | `config.toml` `[hooks.*]` | JSON / TOML | Claude: 30 events; Codex: 10 |
 | MCP servers | `.mcp.json` | `[mcp_servers.*]` in `config.toml` | JSON / TOML | Claude→Codex: sse/ws dropped |
-| Core settings | `settings.json` | `config.toml` | JSON / TOML | Axis divergence; partial subset only |
+| Core settings | `settings.json` | `config.toml` | JSON / TOML | Axis divergence; partial subset only. Codex two-axis model (`sandbox_mode` × `approval_policy`) now bidirectionally mapped to Claude `permissions.defaultMode` (lossy axis collapse). |
 | Instruction memory | `CLAUDE.md` | `AGENTS.md` | Markdown | File rename + @import inline expansion |
 
 **Invocation syntax:** `/skill-name` (Claude) ↔ `$skill-name` (Codex).
@@ -114,6 +114,8 @@ This is not a simple missing field — Codex skill design intentionally uses a m
 - **Codex = resource-axis + phase separation:** `approval_policy` (when to confirm) + `sandbox_mode` (technical boundary) + `[permissions.<n>]` (filesystem paths with read/write/deny, network domains) + `.rules` (execpolicy: allow/prompt/forbidden Starlark).
 
 Most permission conversions are `lossy`. The axis change means Claude's `Read`/`Write`/`Edit` boundaries are lost when converting to Codex filesystem permissions.
+
+**Two-axis sandbox/approval handling:** Codex separates `sandbox_mode` (technical boundary: `read-only`, `workspace-write`, `danger-full-access`) from `approval_policy` (when to confirm: `untrusted`, `on-request`, `never`). On c2x, Claude `defaultMode` expands to both axes — notably `plan` maps to `read-only` sandbox (previously dropped). On x2c, the two Codex axes jointly collapse to the nearest Claude `defaultMode` (lossy): `read-only` → `plan` (any approval policy); `danger-full-access` → `bypassPermissions` (any approval policy); `workspace-write` → `dontAsk` if `approval_policy=never`, else `default`. Any missing axis is filled with the Codex default (`sandbox_mode=workspace-write`, `approval_policy=on-request`).
 
 ### 4.3 File format and placement divergence
 
@@ -157,7 +159,7 @@ Key design principles:
 ```
 cxbridge/
 ├── Cargo.toml
-├── mappings/           # ← YAML truth tables (314 entries)
+├── mappings/           # ← YAML truth tables (317 entries)
 │   ├── SCHEMA.md
 │   └── *.yaml
 ├── src/
@@ -713,10 +715,18 @@ Full automatic conversion is not attempted. Only a subset is converted.
 **Partial-subset converted (lossy):** model (tier mapping), effortLevel/model_reasoning_effort, autoMemoryEnabled→use_memories+generate_memories, cleanupPeriodDays, attribution/commit_attribution, editorMode/vim_mode_default, sandbox.network.allowAllUnixSockets.
 
 **`defaultMode` approximate conversions (lossy, c2x):**
-- `defaultMode: acceptEdits` → `approval_policy = "untrusted"`
-- `defaultMode: auto` → `approval_policy = "on-request"` (Codex default)
+- `defaultMode: default` → `approval_policy = "on-request"` + `sandbox_mode = "workspace-write"`
+- `defaultMode: acceptEdits` → `approval_policy = "on-request"` + `sandbox_mode = "workspace-write"`
+- `defaultMode: auto` → `approval_policy = "on-request"` + `sandbox_mode = "workspace-write"`
+- `defaultMode: dontAsk` → `approval_policy = "never"` + `sandbox_mode = "workspace-write"`
 - `defaultMode: bypassPermissions` → `approval_policy = "never"` + `sandbox_mode = "danger-full-access"`
-- `defaultMode: plan` → **dropped** (no Codex equivalent)
+- `defaultMode: plan` → `approval_policy = "on-request"` + `sandbox_mode = "read-only"` (lossy — previously dropped)
+
+**`(approval_policy, sandbox_mode)` reverse conversions (lossy, x2c):**
+- `sandbox_mode = "read-only"` (any approval) → `defaultMode: plan`
+- `sandbox_mode = "danger-full-access"` (any approval) → `defaultMode: bypassPermissions`
+- `sandbox_mode = "workspace-write"` + `approval_policy = "never"` → `defaultMode: dontAsk`
+- `sandbox_mode = "workspace-write"` + other approval → `defaultMode: default`
 
 **Permission conversion (lossy, degrade):**
 - `permissions.allow(Bash(...))` → `.codex/rules/<n>.rules` (prefix_rule allow)
@@ -724,10 +734,10 @@ Full automatic conversion is not attempted. Only a subset is converted.
 - `permissions.allow(Read/Write)` → `[permissions.<n>].filesystem` (tool-axis → resource-axis; Read/Write boundary lost)
 - `permissions.allow/deny(WebFetch)` → `[permissions.<n>].network = true|false` (boolean)
 
-**Dropped (c2x):** viewMode, worktree, autoUpdatesChannel, spinnerTips, voice/voiceEnabled, maxSkillDescriptionChars, defaultMode:plan, wheelScrollAccelerationEnabled, fallbackModel, availableModels/enforceAvailableModels, disableBundledSkills, requiredMinimumVersion/requiredMaximumVersion, agent.  
+**Dropped (c2x):** viewMode, worktree, autoUpdatesChannel, spinnerTips, voice/voiceEnabled, maxSkillDescriptionChars, wheelScrollAccelerationEnabled, fallbackModel, availableModels/enforceAvailableModels, disableBundledSkills, requiredMinimumVersion/requiredMaximumVersion, agent.  
 **Dropped (x2c):** profiles, permissions.extends, approval_policy.granular.*, agents.max_threads/max_depth, tui.keymap.*, tui.theme/status_line/terminal_title, model_verbosity, web_search, plan_mode_reasoning_effort, approvals_reviewer/auto_review.policy, projects.\<path\>.trust_level, features.child_agents_md, project_doc_fallback_filenames, developer_instructions (→ CLAUDE.md approximation only).
 
-**Lossless count: 2 out of 70 entries (3%).**
+**Lossless count: 2 out of 73 entries (3%).**
 
 ---
 
@@ -1012,13 +1022,13 @@ All writes to `config.toml` use `toml_edit::DocumentMut`. No string-patching (se
 
 ## 16. Feature & Loss Matrix Summary
 
-Total entries across all `mappings/*.yaml`: **314**
+Total entries across all `mappings/*.yaml`: **317**
 
 | Loss level | Count | % |
 |---|---|---|
 | lossless | 73 | 23% |
-| lossy | 89 | 28% |
-| dropped | 152 | 48% |
+| lossy | 93 | 29% |
+| dropped | 151 | 48% |
 
 **Directional asymmetry:**
 - **Codex → Claude:** Near-lossless. Codex vocabulary is smaller; Claude has receptacles for most concepts.
@@ -1034,7 +1044,7 @@ Total entries across all `mappings/*.yaml`: **314**
 | Plugins | 48 | 13 | 15 | 20 | Integration point; recursive |
 | Memory | 18 | 3 | 5 | 10 | File rename + @import expansion |
 | Subagents | 25 | 4 | 10 | 11 | Large structural divergence |
-| Settings/Config | 70 | 2 (3%) | 31 | 37 | Hardest; permission axis mismatch |
+| Settings/Config | 73 | 2 (3%) | 35 | 36 | Hardest; permission axis mismatch (sandbox × approval now reverse-mapped) |
 | Variables | 15 | 2 | 5 | 8 | No standalone handler. All variable-related transformations are performed by the body scanner within the Skills handler. |
 
 **Implementation value/complexity concentration:**
@@ -1079,6 +1089,10 @@ The CLI mirrors this philosophy: unknown fields produce drop diagnostics but pro
 
 Current `awaiting-codex` fields include: `user-invocable`, `paths` (auto-trigger), `http`/`mcp_tool` hook types, `prompt`/`agent` hook types (Codex parses but does not execute), Claude-only hook events (20), `once`, `if`, `asyncRewake`, and SessionStart output fields `sessionTitle`/`watchPaths`/`reloadSkills`/`initialUserMessage`.
 
+### approval_policy / sandbox_mode Reverse Mapping
+
+Reverse mapping of the two Codex permission axes (`approval_policy` × `sandbox_mode`) to Claude `defaultMode` is implemented and inherently lossy — two axes of information collapse to a single enum. The joint matrix (read-only → plan; danger-full-access → bypassPermissions; workspace-write+never → dontAsk; workspace-write+other → default) captures the most semantically meaningful approximation, but any round-trip through both directions will lose the distinct approval and sandbox boundaries. Notably, `plan` mode now approximates as `sandbox_mode = "read-only"` (rather than being dropped as it was previously), improving round-trip fidelity for read-only workflows.
+
 ### Codex Invocation Model Difference
 
 Claude uses description semantic matching for automatic subagent dispatch. Codex requires explicit `spawn_agent` call. There is no mechanical workaround for this behavioral difference — it is always noted as a `lossy` diagnostic.
@@ -1093,7 +1107,7 @@ Claude uses description semantic matching for automatic subagent dispatch. Codex
 
 ## 18. Testing Strategy
 
-1. **Mappings invariant tests** (at startup + CI): assert globally unique `id`, `degrade` implies `loss:lossy`, `loss:dropped` has no `transform`. 314 entries; 0 issues confirmed. (Note: `source` field is not validated — it is documentation metadata only.)
+1. **Mappings invariant tests** (at startup + CI): assert globally unique `id`, `degrade` implies `loss:lossy`, `loss:dropped` has no `transform`. 317 entries; 0 issues confirmed. (Note: `source` field is not validated — it is documentation metadata only.)
 
 2. **Unit tests:**
    - Each transform function (`unit:ms_to_sec`, `polarity:invert`, `enum_map`, `index_shift`, etc.)

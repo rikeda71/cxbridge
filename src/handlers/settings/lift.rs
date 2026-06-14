@@ -3,6 +3,8 @@ use serde_json::Value;
 use crate::core::ir::{DegradeInfo, DiagLevel, Diagnostic, DroppedInfo, IRField, IRNode, Loss};
 use crate::core::transforms::ConvDir;
 
+use super::approval::{ApprovalPolicy, DefaultMode, SandboxMode};
+
 use super::SettingsHandler;
 
 impl SettingsHandler {
@@ -317,12 +319,118 @@ impl SettingsHandler {
             self.add_field(node, "settings.codex.otel", otel.clone(), ConvDir::X2c);
         }
 
+        // approval_policy + sandbox_mode: two-axis reverse mapping to defaultMode.
+        // Only the FLAT string form feeds this path; a table/object value means
+        // granular approval (handled below as dropped).
+        let approval_val = settings.get("approval_policy");
+        let is_granular = approval_val.map(|v| !v.is_string()).unwrap_or(false);
+
+        if is_granular {
+            // Object form of approval_policy (granular sub-table) → dropped.
+            node.diagnostics.push(Diagnostic {
+                level: DiagLevel::Drop,
+                id: Some("settings.codex.granular_approval".to_string()),
+                message: "approval_policy (granular table form) dropped: no Claude equivalent for per-category approval".to_string(),
+            });
+        } else {
+            // Flat string axes: parse each with fallback to Codex default.
+            let approval_str = approval_val.and_then(|v| v.as_str());
+            let sandbox_str = settings.get("sandbox_mode").and_then(|v| v.as_str());
+
+            // Only proceed when at least one axis is explicitly present.
+            if approval_str.is_some() || sandbox_str.is_some() {
+                let approval = approval_str
+                    .and_then(|s| {
+                        let parsed = ApprovalPolicy::from_config(s);
+                        if parsed.is_none() {
+                            node.diagnostics.push(Diagnostic {
+                                level: DiagLevel::Warn,
+                                id: Some("settings.codex.approval_policy".to_string()),
+                                message: format!(
+                                    "unknown approval_policy '{}': defaulting to on-request",
+                                    s
+                                ),
+                            });
+                        }
+                        parsed
+                    })
+                    .unwrap_or_default();
+
+                let sandbox = sandbox_str
+                    .and_then(|s| {
+                        let parsed = SandboxMode::from_config(s);
+                        if parsed.is_none() {
+                            node.diagnostics.push(Diagnostic {
+                                level: DiagLevel::Warn,
+                                id: Some("settings.codex.sandbox_mode".to_string()),
+                                message: format!(
+                                    "unknown sandbox_mode '{}': defaulting to workspace-write",
+                                    s
+                                ),
+                            });
+                        }
+                        parsed
+                    })
+                    .unwrap_or_default();
+
+                let mode = DefaultMode::from_codex(approval, sandbox);
+
+                // Store as internal IR field consumed by lower_x2c; `__`-prefix
+                // keeps it out of the public report.
+                node.fields.insert(
+                    "__permissions.defaultMode".to_string(),
+                    IRField {
+                        id: "__permissions.defaultMode".to_string(),
+                        value: Value::String(mode.as_str().to_string()),
+                        loss: Loss::Lossless,
+                        transforms_applied: vec![],
+                        degrade: None,
+                        warning: None,
+                        dropped: None,
+                    },
+                );
+
+                // Surface the source axes as lossy IR fields so the report shows
+                // them in the degraded/lossy bucket rather than dropping silently.
+                if let Some(s) = approval_str {
+                    self.add_field(
+                        node,
+                        "settings.codex.approval_policy",
+                        Value::String(s.to_string()),
+                        ConvDir::X2c,
+                    );
+                }
+                if let Some(s) = sandbox_str {
+                    self.add_field(
+                        node,
+                        "settings.codex.sandbox_mode",
+                        Value::String(s.to_string()),
+                        ConvDir::X2c,
+                    );
+                }
+
+                // Joint-collapse summary for the operator.
+                node.diagnostics.push(Diagnostic {
+                    level: DiagLevel::Warn,
+                    id: Some("settings.codex.approval_policy".to_string()),
+                    message: format!(
+                        "approval_policy={} + sandbox_mode={} jointly collapsed to \
+                         permissions.defaultMode={} (lossy: 2 Codex axes → 1 Claude axis)",
+                        approval.as_str(),
+                        sandbox.as_str(),
+                        mode.as_str()
+                    ),
+                });
+            }
+        }
+
         // Codex-specific dropped fields, keyed by their canonical mappings entry id.
         // Combined entries (e.g. approvals_reviewer + auto_review.policy) emit a
         // single diagnostic even when both config keys are present.
+        // NOTE: approval_policy is NOT listed here; it is handled above via the
+        // two-axis reverse mapping (flat string) or the granular guard (table form).
         const CODEX_DROPPED_KEYS: &[(&str, &str)] = &[
             ("profiles", "settings.codex.profiles"),
-            ("approval_policy", "settings.codex.granular_approval"),
             ("agents", "settings.codex.agents_config"),
             ("web_search", "settings.codex.web_search"),
             (
