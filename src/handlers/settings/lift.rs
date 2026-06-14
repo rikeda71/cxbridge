@@ -355,18 +355,17 @@ impl SettingsHandler {
             // we should still process it and populate __permissions.defaultMode.
             let sandbox_str = settings.get("sandbox_mode").and_then(|v| v.as_str());
             if let Some(sandbox_str_val) = sandbox_str {
-                let sandbox = SandboxMode::from_config(sandbox_str_val)
-                    .unwrap_or_else(|| {
-                        node.diagnostics.push(Diagnostic {
-                            level: DiagLevel::Warn,
-                            id: Some("settings.codex.sandbox_mode".to_string()),
-                            message: format!(
-                                "unknown sandbox_mode '{}': defaulting to workspace-write",
-                                sandbox_str_val
-                            ),
-                        });
-                        SandboxMode::default()
+                let sandbox = SandboxMode::from_config(sandbox_str_val).unwrap_or_else(|| {
+                    node.diagnostics.push(Diagnostic {
+                        level: DiagLevel::Warn,
+                        id: Some("settings.codex.sandbox_mode".to_string()),
+                        message: format!(
+                            "unknown sandbox_mode '{}': defaulting to workspace-write",
+                            sandbox_str_val
+                        ),
                     });
+                    SandboxMode::default()
+                });
 
                 // Use default approval policy with the parsed sandbox mode.
                 let mode = DefaultMode::from_codex(ApprovalPolicy::default(), sandbox);
