@@ -31,7 +31,7 @@ These symbols match the report output from `cxbridge --report`.
 ## Per-Domain Summary
 
 Numbers are taken directly from `docs/spec.md §16` and confirmed against the
-YAML source. They sum to 304.
+YAML source. They sum to 314.
 
 | Domain | Total | ◎ Lossless | ○ Lossy | ✕ Dropped |
 |--------|------:|----------:|--------:|----------:|
@@ -41,9 +41,9 @@ YAML source. They sum to 304.
 | Plugins | 48 | 13 | 15 | 20 |
 | Memory | 18 | 3 | 5 | 10 |
 | Subagents | 25 | 4 | 10 | 11 |
-| Settings/Config | 60 | 2 | 31 | 27 |
+| Settings/Config | 70 | 2 | 31 | 37 |
 | Variables | 15 | 2 | 5 | 8 |
-| **Total** | **304** | **73** | **89** | **142** |
+| **Total** | **314** | **73** | **89** | **152** |
 
 **Directional note:** Codex → Claude conversion is generally lower-loss than
 Claude → Codex. Codex has a smaller vocabulary; Claude has receptacles for most
@@ -255,7 +255,7 @@ See [`mappings/subagents.yaml`](../mappings/subagents.yaml) for all 25 entries.
 
 Full automatic conversion is not attempted. The permission model axis mismatch
 (Claude: tool-axis; Codex: resource-axis) makes complete machine translation
-infeasible. **Only 2 of 60 entries (3%) are lossless.**
+infeasible. **Only 2 of 70 entries (3%) are lossless.**
 
 ◎ **Converts cleanly:** `editorMode`/`tui.vim_mode_default` (enum → boolean
 rename), `sandbox.network.allowAllUnixSockets`/`features.network_proxy.dangerously_allow_all_unix_sockets`
@@ -286,11 +286,20 @@ rename), `sandbox.network.allowAllUnixSockets`/`features.network_proxy.dangerous
 ✕ **Dropped (notable examples, c2x):**
 - `defaultMode: plan` (`settings.permissions.defaultMode.plan`) — no Codex equivalent.
 - `viewMode`, `worktree`, `autoUpdatesChannel`, `spinnerTips*`, `voice`,
-  `maxSkillDescriptionChars` — Claude-only UI/behavior controls.
+  `maxSkillDescriptionChars`, `wheelScrollAccelerationEnabled` — Claude-only UI/behavior controls.
 - `apiKeyHelper` (`settings.apiKeyHelper`) — shell-command-based API key helper.
 - `alwaysThinkingEnabled`, `disableBypassPermissionsMode`.
+- `fallbackModel` (`settings.fallbackModel`) — overload fallback chain; no Codex counterpart.
+- `availableModels` / `enforceAvailableModels` (`settings.availableModels`) — managed model allowlist.
+- `disableBundledSkills`, `requiredMinimumVersion` / `requiredMaximumVersion`.
+- `agent` (`settings.agent`) — run the main thread as a named subagent; Codex agents are
+  explicit `spawn_agent` targets only.
 
-See [`mappings/settings-config.yaml`](../mappings/settings-config.yaml) for all 60 entries.
+✕ **Dropped (notable examples, x2c):** `plan_mode_reasoning_effort`,
+`approvals_reviewer` / `auto_review.policy`, `projects.<path>.trust_level`,
+`tui.theme` / `tui.status_line` / `tui.terminal_title`.
+
+See [`mappings/settings-config.yaml`](../mappings/settings-config.yaml) for all 70 entries.
 
 ---
 

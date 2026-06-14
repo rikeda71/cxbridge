@@ -93,9 +93,9 @@ entries:
     direction: both
     loss: lossy
     degrade: null
-    transform: "enum_map:{sonnet:(claude-sonnet full ID),opus:(claude-opus full ID),haiku:(claude-haiku full ID),inherit:(omit)}"
+    transform: "enum_map:{sonnet:(claude-sonnet full ID),opus:(claude-opus full ID),haiku:(claude-haiku full ID),fable:(High tier; input only),inherit:(omit)}"
     warn: true
-    notes: "Claude accepts the sonnet/opus/haiku aliases, full model IDs (e.g. claude-opus-4-8), or inherit. Codex standalone TOML's model field only accepts a full model ID (GPT-family IDs) and does not support aliases. `inherit` corresponds to omitting the field. Model providers differ, so there is no strict equivalent mapping (lossy). Unmapped aliases should trigger a warning and prompt manual review."
+    notes: "Claude accepts the sonnet/opus/haiku/fable aliases, full model IDs (e.g. claude-opus-4-8, claude-fable-5), or inherit. Codex standalone TOML's model field only accepts a full model ID (GPT-family IDs) and does not support aliases. `inherit` corresponds to omitting the field. Model providers differ, so there is no strict equivalent mapping (lossy). `fable`/`claude-fable-5` (Mythos class) is recognized as High tier on claude_to_codex, but codex_to_claude never emits Fable/Mythos IDs (credit-metered) — High maps back to the Opus ID. Unmapped aliases should trigger a warning and prompt manual review."
     source: "https://code.claude.com/docs/en/sub-agents"
 
   - id: subagents.effort

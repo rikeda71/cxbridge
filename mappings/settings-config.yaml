@@ -35,10 +35,14 @@ entries:
     transform: null
     warn: true
     notes: |
-      Model ID formats are entirely different systems (`claude-opus-4-6` ⇔ `gpt-5.x`).
-      Mechanical string conversion is not possible. The conversion CLI must maintain a separate
-      model mapping table, and if the ID is unknown, conversion should be deferred and noted in the report.
-    source: "https://code.claude.com/docs/en/settings"
+      Model ID formats are entirely different systems (`claude-opus-4-8` ⇔ `gpt-5.x`).
+      Mechanical string conversion is not possible. The CLI buckets models into High/Mid/Low
+      tiers (model_tiers const table) and emits the canonical name on the other side;
+      unknown IDs are copied as-is and noted in the report.
+      Claude 5 Mythos-class IDs (`claude-fable-5` / `claude-mythos-5`, also with the `[1m]`
+      context suffix) are recognized as High-tier input, but codex_to_claude High always emits
+      the Opus ID — Fable/Mythos usage is credit-metered, so converted configs never select it.
+    source: "https://code.claude.com/docs/en/settings, https://www.anthropic.com/news/claude-fable-5-mythos-5"
 
   - id: settings.effortLevel
     claude:
@@ -926,6 +930,123 @@ entries:
       there is no equivalent helper-command mechanism. Dropped.
     source: "https://code.claude.com/docs/en/settings"
 
+  - id: settings.fallbackModel
+    claude:
+      field: "fallbackModel"
+      type: "string[] (max 3)"
+      scope: user
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Ordered list of models to try when the primary model is overloaded (Claude Code v2.1.166+).
+      Codex has no fallback-model chain mechanism. Dropped.
+    source: "https://code.claude.com/docs/en/settings"
+
+  - id: settings.availableModels
+    claude:
+      field: "availableModels / enforceAvailableModels"
+      type: "string[]/boolean"
+      scope: managed
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Managed model allowlist. `enforceAvailableModels` (Claude Code v2.1.175+) extends the
+      restriction to the default model and prevents user/project settings from widening the list.
+      Codex has no model-allowlist mechanism in config.toml. Dropped.
+    source: "https://code.claude.com/docs/en/settings"
+
+  - id: settings.agent
+    claude:
+      field: "agent"
+      type: "string"
+      scope: user
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Runs the main thread as the named subagent (Claude Code v2.1.157+).
+      Codex defines agent roles under `agents.<name>`, but has no setting that makes the main
+      thread run as one of them — Codex subagents are explicit spawn_agent targets only. Dropped.
+    source: "https://code.claude.com/docs/en/settings"
+
+  - id: settings.disableBundledSkills
+    claude:
+      field: "disableBundledSkills"
+      type: "boolean"
+      scope: user
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: false
+    notes: |
+      Hides Claude Code's bundled skills, workflows, and built-in slash commands from the model
+      (Claude Code v2.1.169+; env equivalent CLAUDE_CODE_DISABLE_BUNDLED_SKILLS).
+      Codex has no bundled-skill concept, so there is nothing to disable. Dropped.
+    source: "https://code.claude.com/docs/en/settings"
+
+  - id: settings.requiredVersionRange
+    claude:
+      field: "requiredMinimumVersion / requiredMaximumVersion"
+      type: "string"
+      scope: managed
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: false
+    notes: |
+      Managed launch gate by CLI version (Claude Code v2.1.163+): refuses to start outside the
+      configured version range. Codex requirements.toml has no version-gating key. Dropped.
+    source: "https://code.claude.com/docs/en/settings"
+
+  - id: settings.wheelScrollAcceleration
+    claude:
+      field: "wheelScrollAccelerationEnabled"
+      type: "boolean"
+      scope: user
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: false
+    notes: |
+      TUI mouse-wheel acceleration toggle (Claude Code v2.1.174+). Claude UI-specific input
+      tuning with no Codex counterpart. Dropped.
+    source: "https://code.claude.com/docs/en/settings"
+
   # ─── Codex-only → Claude dropped/lossy ────────────────────────
 
   - id: settings.codex.notify
@@ -1232,6 +1353,87 @@ entries:
       Codex `developer_instructions` is additional instruction injected into the session.
       Claude provides equivalent functionality via CLAUDE.md (user/project).
       Approximated by appending the text content to CLAUDE.md (lossy: scope is fixed to project).
+    source: "https://developers.openai.com/codex/config-reference"
+
+  - id: settings.codex.plan_mode_reasoning_effort
+    claude:
+      field: null
+      type: null
+      scope: null
+    codex:
+      field: "plan_mode_reasoning_effort"
+      type: "enum(none|minimal|low|medium|high|xhigh)"
+      scope: user
+    direction: codex_to_claude
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: false
+    notes: |
+      Plan-mode-only reasoning effort override (Codex 0.13x). Claude's `effortLevel` is
+      session-global; there is no plan-mode-scoped effort setting. Dropped.
+    source: "https://developers.openai.com/codex/config-reference"
+
+  - id: settings.codex.auto_review
+    claude:
+      field: null
+      type: null
+      scope: null
+    codex:
+      field: "approvals_reviewer / auto_review.policy"
+      type: "enum(user|auto_review)/string"
+      scope: user
+    direction: codex_to_claude
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: false
+    notes: |
+      Codex auto-review of approval prompts (`approvals_reviewer = "auto_review"`) and its
+      policy instruction string (`auto_review.policy`), introduced in Codex 0.13x.
+      Claude has no automatic approval-reviewer mechanism (PreToolUse hooks are the closest
+      concept but are not a mechanical equivalent). Dropped.
+    source: "https://developers.openai.com/codex/config-reference"
+
+  - id: settings.codex.projects_trust
+    claude:
+      field: null
+      type: null
+      scope: null
+    codex:
+      field: "projects.<path>.trust_level"
+      type: "enum(trusted|untrusted)"
+      scope: user
+    direction: codex_to_claude
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Per-project trust level; `untrusted` makes Codex skip the project-scoped `.codex/` layer
+      entirely. Claude tracks folder trust in internal state (~/.claude.json), not in
+      settings.json, so there is no config field to write. Dropped — re-confirm project trust
+      manually after conversion.
+    source: "https://developers.openai.com/codex/config-reference"
+
+  - id: settings.codex.tui_display
+    claude:
+      field: null
+      type: null
+      scope: null
+    codex:
+      field: "tui.theme / tui.status_line / tui.terminal_title"
+      type: "string/array"
+      scope: user
+    direction: codex_to_claude
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: false
+    notes: |
+      Codex TUI display customization (theme selection, footer status-line items, window
+      title), introduced in Codex 0.13x. Claude's `statusLine` renders the output of a shell
+      command and accepts no item list, so no mechanical conversion is attempted. Dropped.
     source: "https://developers.openai.com/codex/config-reference"
 
 notes:
