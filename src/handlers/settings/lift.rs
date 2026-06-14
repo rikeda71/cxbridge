@@ -332,6 +332,67 @@ impl SettingsHandler {
                 id: Some("settings.codex.granular_approval".to_string()),
                 message: "approval_policy (granular table form) dropped: no Claude equivalent for per-category approval".to_string(),
             });
+
+            // Add the dropped granular approval to the conversion report.
+            if let Some(approval_obj) = approval_val {
+                node.fields.insert(
+                    "settings.codex.granular_approval".to_string(),
+                    IRField {
+                        id: "settings.codex.granular_approval".to_string(),
+                        value: approval_obj.clone(),
+                        loss: Loss::Dropped,
+                        transforms_applied: vec![],
+                        degrade: None,
+                        warning: Some("approval_policy (granular table form) has no Claude equivalent".to_string()),
+                        dropped: Some(DroppedInfo {
+                            reason: "approval_policy (granular table form) dropped (Codex-specific field)".to_string(),
+                        }),
+                    },
+                );
+            }
+
+            // Even when approval_policy is granular, if sandbox_mode is present
+            // we should still process it and populate __permissions.defaultMode.
+            let sandbox_str = settings.get("sandbox_mode").and_then(|v| v.as_str());
+            if let Some(sandbox_str_val) = sandbox_str {
+                let sandbox = SandboxMode::from_config(sandbox_str_val)
+                    .unwrap_or_else(|| {
+                        node.diagnostics.push(Diagnostic {
+                            level: DiagLevel::Warn,
+                            id: Some("settings.codex.sandbox_mode".to_string()),
+                            message: format!(
+                                "unknown sandbox_mode '{}': defaulting to workspace-write",
+                                sandbox_str_val
+                            ),
+                        });
+                        SandboxMode::default()
+                    });
+
+                // Use default approval policy with the parsed sandbox mode.
+                let mode = DefaultMode::from_codex(ApprovalPolicy::default(), sandbox);
+
+                // Store as internal IR field consumed by lower_x2c.
+                node.fields.insert(
+                    "__permissions.defaultMode".to_string(),
+                    IRField {
+                        id: "__permissions.defaultMode".to_string(),
+                        value: Value::String(mode.as_str().to_string()),
+                        loss: Loss::Lossless,
+                        transforms_applied: vec![],
+                        degrade: None,
+                        warning: None,
+                        dropped: None,
+                    },
+                );
+
+                // Surface sandbox_mode as a lossy IR field in the report.
+                self.add_field(
+                    node,
+                    "settings.codex.sandbox_mode",
+                    Value::String(sandbox_str_val.to_string()),
+                    ConvDir::X2c,
+                );
+            }
         } else {
             // Flat string axes: parse each with fallback to Codex default.
             let approval_str = approval_val.and_then(|v| v.as_str());
