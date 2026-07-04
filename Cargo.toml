@@ -1,6 +1,6 @@
 [package]
 name = "cxbridge"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 description = "Claude Code ⇄ Codex config file bidirectional conversion CLI"
 authors = ["Ryuya Ikeda <rikeda71@gmail.com>"]
@@ -24,7 +24,7 @@ path = "src/lib.rs"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-serde-saphyr = "0.0.27"
+serde-saphyr = "0.0.28"
 toml = "1.1"
 toml_edit = "0.25"
 gray_matter = "0.3"
