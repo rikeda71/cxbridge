@@ -167,7 +167,7 @@ To keep the output scannable, repeated fields are grouped with a `×N` count and
 
 - **[docs/conversion-coverage.md](docs/conversion-coverage.md)** — what converts, what degrades, and what is dropped, per domain.
 - **[docs/spec.md](docs/spec.md)** — full design & implementation spec (IR model, transform registry, degrade engine, CLI flags, exit codes).
-- **[mappings/](mappings/)** — the canonical conversion table (329 entries across 8 domains); schema in [mappings/SCHEMA.md](mappings/SCHEMA.md).
+- **[mappings/](mappings/)** — the canonical conversion table (332 entries across 8 domains); schema in [mappings/SCHEMA.md](mappings/SCHEMA.md).
 
 ## License
 

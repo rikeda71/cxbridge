@@ -31,7 +31,7 @@ These symbols match the report output from `cxbridge --report`.
 ## Per-Domain Summary
 
 Numbers are taken directly from `docs/spec.md §16` and confirmed against the
-YAML source. They sum to 329.
+YAML source. They sum to 332.
 
 | Domain | Total | ◎ Lossless | ○ Lossy | ✕ Dropped |
 |--------|------:|----------:|--------:|----------:|
@@ -41,9 +41,9 @@ YAML source. They sum to 329.
 | Plugins | 49 | 13 | 15 | 21 |
 | Memory | 18 | 3 | 5 | 10 |
 | Subagents | 25 | 4 | 10 | 11 |
-| Settings/Config | 81 | 2 | 33 | 46 |
+| Settings/Config | 84 | 2 | 37 | 45 |
 | Variables | 15 | 2 | 5 | 8 |
-| **Total** | **329** | **74** | **91** | **164** |
+| **Total** | **332** | **74** | **95** | **163** |
 
 **Directional note:** Codex → Claude conversion is generally lower-loss than
 Claude → Codex. Codex has a smaller vocabulary; Claude has receptacles for most
@@ -263,7 +263,7 @@ See [`mappings/subagents.yaml`](../mappings/subagents.yaml) for all 25 entries.
 
 Full automatic conversion is not attempted. The permission model axis mismatch
 (Claude: tool-axis; Codex: resource-axis) makes complete machine translation
-infeasible. **Only 2 of 81 entries (2%) are lossless.**
+infeasible. **Only 2 of 84 entries (2%) are lossless.**
 
 ◎ **Converts cleanly:** `editorMode`/`tui.vim_mode_default` (enum → boolean
 rename), `sandbox.network.allowAllUnixSockets`/`features.network_proxy.dangerously_allow_all_unix_sockets`
@@ -287,15 +287,19 @@ rename), `sandbox.network.allowAllUnixSockets`/`features.network_proxy.dangerous
 `effortLevel`/`model_reasoning_effort` (`max` rounds to `xhigh`),
 `autoMemoryEnabled` → `memories.use_memories + memories.generate_memories`,
 `cleanupPeriodDays` → `memories.max_rollout_age_days` (clamped to 0–90),
-`attribution.commit`/`commit_attribution` (rename), `defaultMode` values
-(`acceptEdits` → `approval_policy="untrusted"`, `auto` → `"on-request"`,
-`bypassPermissions` → `approval_policy="never" + sandbox_mode="danger-full-access"`),
-`sandbox.credentials.files` → `[permissions.default].filesystem` deny entries,
+`attribution.commit`/`commit_attribution` (rename), `defaultMode` values (c2x):
+`default`/`acceptEdits`/`auto` → `approval_policy="on-request" + sandbox_mode="workspace-write"`;
+`plan` → `approval_policy="on-request" + sandbox_mode="read-only"`;
+`dontAsk` → `approval_policy="never" + sandbox_mode="workspace-write"`;
+`bypassPermissions` → `approval_policy="never" + sandbox_mode="danger-full-access"`.
+Reverse (x2c): `sandbox_mode` × `approval_policy` jointly collapse to the nearest `defaultMode`
+(`read-only` → `plan`; `danger-full-access` → `bypassPermissions`;
+`workspace-write+never` → `dontAsk`; `workspace-write+other` → `default`). Both directions are lossy.
+Also lossy: `sandbox.credentials.files` → `[permissions.default].filesystem` deny entries,
 `sandbox.credentials.envVars` (mode `deny`) → `shell_environment_policy.exclude`
 (mode `mask` entries have no Codex equivalent and are dropped with a warning).
 
 ✕ **Dropped (notable examples, c2x):**
-- `defaultMode: plan` (`settings.permissions.defaultMode.plan`) — no Codex equivalent.
 - `viewMode`, `worktree`, `autoUpdatesChannel`, `spinnerTips*`, `voice`,
   `maxSkillDescriptionChars`, `wheelScrollAccelerationEnabled` — Claude-only UI/behavior controls.
 - `apiKeyHelper` (`settings.apiKeyHelper`) — shell-command-based API key helper.
@@ -319,7 +323,7 @@ rename), `sandbox.network.allowAllUnixSockets`/`features.network_proxy.dangerous
 `orchestrator.skills/mcp.enabled` (`settings.codex.orchestrator`), experimental
 `features.*` flags (`settings.codex.feature_flags` catch-all).
 
-See [`mappings/settings-config.yaml`](../mappings/settings-config.yaml) for all 81 entries.
+See [`mappings/settings-config.yaml`](../mappings/settings-config.yaml) for all 84 entries.
 
 ---
 

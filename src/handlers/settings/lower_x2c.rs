@@ -93,6 +93,22 @@ impl SettingsHandler {
             settings.insert("cleanupPeriodDays".to_string(), f.value.clone());
         }
 
+        // permissions.defaultMode: written from the internal IR field produced by lift_x2c
+        // when approval_policy / sandbox_mode are present in the Codex config.
+        if let Some(f) = ir.fields.get("__permissions.defaultMode") {
+            if let Some(mode_str) = f.value.as_str() {
+                let perms = settings
+                    .entry("permissions".to_string())
+                    .or_insert_with(|| Value::Object(serde_json::Map::new()));
+                if let Value::Object(perms_obj) = perms {
+                    perms_obj.insert(
+                        "defaultMode".to_string(),
+                        Value::String(mode_str.to_string()),
+                    );
+                }
+            }
+        }
+
         let json_content = serde_json::to_string_pretty(&Value::Object(settings))
             .with_context(|| "Failed to serialize settings.json")?;
 
