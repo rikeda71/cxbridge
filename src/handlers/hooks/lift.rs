@@ -23,6 +23,21 @@ fn resolve_hooks_obj(parsed: &Value) -> Option<serde_json::Map<String, Value>> {
     parsed.as_object().cloned()
 }
 
+/// Resolves a Codex hooks.json top-level `description` metadata string, mirroring
+/// `resolve_hooks_obj`'s lookup order (direct key, then nested under `frontmatter`).
+/// This field is a sibling of `hooks`, not part of it, so `resolve_hooks_obj`
+/// never surfaces it on its own.
+fn resolve_description(parsed: &Value) -> Option<String> {
+    if let Some(d) = parsed.get("description").and_then(|v| v.as_str()) {
+        return Some(d.to_string());
+    }
+    parsed
+        .get("frontmatter")
+        .and_then(|fm| fm.get("description"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
 impl HooksHandler {
     /// Lift Claude JSON hooks → IR (c2x).
     pub(super) fn lift_c2x(&self, parsed: &Value) -> anyhow::Result<IRNode> {
@@ -124,6 +139,27 @@ impl HooksHandler {
     pub(super) fn lift_x2c(&self, parsed: &Value) -> anyhow::Result<IRNode> {
         let source_path = parsed["path"].as_str().unwrap_or("").to_string();
         let mut node = new_node(Kind::Hooks, Tool::Codex, &source_path);
+
+        // Top-level `description` metadata (openai/codex#30229) is a sibling of
+        // `hooks`, not part of it; resolve_hooks_obj never returns it, so it must
+        // be checked separately before iterating events.
+        if let Some(description) = resolve_description(parsed) {
+            node.fields.insert(
+                "hooks.toplevel.description".to_string(),
+                IRField {
+                    id: "hooks.toplevel.description".to_string(),
+                    value: Value::String(description),
+                    loss: Loss::Dropped,
+                    transforms_applied: vec![],
+                    degrade: None,
+                    warning: None,
+                    dropped: Some(DroppedInfo {
+                        reason: "Claude hooks configuration has no top-level description field"
+                            .to_string(),
+                    }),
+                },
+            );
+        }
 
         let hooks_obj = match resolve_hooks_obj(parsed) {
             Some(obj) => obj,

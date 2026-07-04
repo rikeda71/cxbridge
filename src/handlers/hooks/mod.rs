@@ -526,6 +526,69 @@ mod tests {
         );
     }
 
+    /// A Codex hooks.json with a top-level `description` metadata string
+    /// (openai/codex#30229) must parse without error, and the description must
+    /// be reported as a dropped `hooks.toplevel.description` field (Claude has
+    /// no equivalent) rather than being silently discarded.
+    #[test]
+    fn test_hooks_lift_x2c_toplevel_description_dropped() {
+        let dir = TempDir::new().unwrap();
+        let hooks_json = dir.path().join("hooks.json");
+        std::fs::write(
+            &hooks_json,
+            r#"{
+  "description": "Team-wide hook bundle for CI checks",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          { "type": "command", "command": "echo test" }
+        ]
+      }
+    ]
+  }
+}"#,
+        )
+        .unwrap();
+
+        let h = make_handler();
+        let parsed = h.parse(&hooks_json).expect("parse must not error");
+        let ir = h.lift(&parsed, ConvDir::X2c).expect("lift must not error");
+
+        let desc_field = ir
+            .fields
+            .get("hooks.toplevel.description")
+            .expect("Expected hooks.toplevel.description field in IR");
+        assert_eq!(
+            desc_field.value,
+            Value::String("Team-wide hook bundle for CI checks".to_string())
+        );
+        assert_eq!(desc_field.loss, Loss::Dropped);
+
+        // The hooks section itself must still be lifted normally.
+        let event_field = ir.fields.get("hooks.event.PreToolUse");
+        assert!(
+            event_field.is_some(),
+            "Expected hooks.event.PreToolUse to still be lifted alongside description"
+        );
+        assert_eq!(event_field.unwrap().loss, Loss::Lossless);
+
+        // The drop must surface in the conversion report.
+        let out_dir = TempDir::new().unwrap();
+        let opts = default_opts(out_dir.path().to_str().unwrap());
+        let plan = h.lower(&ir, ConvDir::X2c, &opts).unwrap();
+        let report = crate::core::report::build_report(&ir, &plan);
+        assert!(
+            report
+                .dropped
+                .iter()
+                .any(|e| e.id.as_deref() == Some("hooks.toplevel.description")),
+            "Expected hooks.toplevel.description in report.dropped, got: {:?}",
+            report.dropped.iter().map(|e| &e.id).collect::<Vec<_>>()
+        );
+    }
+
     /// Wildcard matchers ("*" and "") must emit `id: "hooks.matcher.wildcard"`, not
     /// `"hooks.matcher.exact"`.  Spec entry `hooks.matcher.wildcard` exists in
     /// mappings/hooks.yaml and covers the lossy conversion "*" / "" → "".

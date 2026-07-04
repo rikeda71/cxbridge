@@ -499,7 +499,7 @@ fn test_marketplace_c2x_npm_source_emits_drop_diagnostic() {
     );
 }
 
-/// The three Claude-only top-level fields must be absent from the generated
+/// The four Claude-only top-level fields must be absent from the generated
 /// marketplace.json and must appear in the report.dropped section.
 #[test]
 fn test_marketplace_c2x_dropped_top_level_fields_absent_from_output() {
@@ -531,7 +531,7 @@ fn test_marketplace_c2x_dropped_top_level_fields_absent_from_output() {
     let content: serde_json::Value = serde_json::from_str(&marketplace_file.content)
         .expect("marketplace.json must be valid JSON");
 
-    // (1) The three Claude-only fields must NOT be present in the output
+    // (1) The four Claude-only fields must NOT be present in the output
     assert!(
         content.get("owner").is_none(),
         "owner must be absent from c2x marketplace.json output, got: {}",
@@ -545,6 +545,10 @@ fn test_marketplace_c2x_dropped_top_level_fields_absent_from_output() {
         content.get("forceRemoveDeletedPlugins").is_none(),
         "forceRemoveDeletedPlugins must be absent from c2x marketplace.json output"
     );
+    assert!(
+        content.get("renames").is_none(),
+        "renames must be absent from c2x marketplace.json output"
+    );
 
     // (2) The plugins[] array must still be present (other content preserved)
     assert!(
@@ -552,7 +556,7 @@ fn test_marketplace_c2x_dropped_top_level_fields_absent_from_output() {
         "plugins array must remain in c2x marketplace.json output"
     );
 
-    // (3) Three Drop diagnostics must be emitted for the dropped fields
+    // (3) Four Drop diagnostics must be emitted for the dropped fields
     let drop_ids: Vec<Option<&str>> = plan
         .diagnostics
         .iter()
@@ -564,6 +568,7 @@ fn test_marketplace_c2x_dropped_top_level_fields_absent_from_output() {
         "plugins.marketplace.owner",
         "plugins.marketplace.allowCrossMarketplaceDependenciesOn",
         "plugins.marketplace.forceRemoveDeletedPlugins",
+        "plugins.marketplace.renames",
     ];
 
     for id in &expected_ids {
@@ -575,7 +580,7 @@ fn test_marketplace_c2x_dropped_top_level_fields_absent_from_output() {
         );
     }
 
-    // (4) All three must appear in report.dropped
+    // (4) All four must appear in report.dropped
     let report = build_report(&ir, &plan);
 
     for id in &expected_ids {

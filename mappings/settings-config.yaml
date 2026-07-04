@@ -51,7 +51,7 @@ entries:
       scope: user
     codex:
       field: "model_reasoning_effort"
-      type: "enum(minimal|low|medium|high|xhigh)"
+      type: "string (model-advertised; commonly minimal|low|medium|high|xhigh)"
       scope: user
     direction: both
     loss: lossy
@@ -62,6 +62,9 @@ entries:
       Claude's `max` does not exist in Codex, so it is rounded to `xhigh` (claude_to_codex).
       Codex's `minimal` has no corresponding value in Claude, so it is dropped (codex_to_claude).
       Lower effort levels (low/medium/high) map 1:1.
+      As of 2026-06 (openai/codex#26444), `model_reasoning_effort` is a free-form
+      non-empty string of model-advertised effort values rather than a closed enum;
+      the `enum_map:{max:xhigh}` transform is unaffected.
     source: "https://developers.openai.com/codex/config-reference"
 
   - id: settings.language
@@ -195,6 +198,33 @@ entries:
       `approval_policy.granular.rules=true` is also required.
       Lossy due to differing granularity. Warning mandatory because scope expands.
     source: "https://developers.openai.com/codex/permissions"
+
+  # ─── Permissions: Parameter Matching ────────────────────────────────
+
+  - id: settings.permissions.paramMatch
+    claude:
+      field: "permissions.deny/ask: Tool(param:value)"
+      type: "string"
+      scope: user
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Claude Code v2.1.178+. `deny`/`ask` rules (not `allow`) may match one
+      top-level scalar input parameter of any tool, e.g. `Agent(model:opus)`,
+      `Agent(isolation:worktree)`, `Bash(run_in_background:true)`. `*`
+      wildcards the value; whitespace around `:` is ignored; matching is
+      against the literal pre-normalization input. Canonical fields (command,
+      file_path, path, notebook_path, url) are exempt and rejected by Claude
+      at startup. Codex rules are command-prefix/resource-axis and cannot
+      express tool-parameter matching. Dropped + reported.
+    source: "https://code.claude.com/docs/en/permissions"
 
   # ─── Permissions: Filesystem ──────────────────────────────────────
 
@@ -568,6 +598,76 @@ entries:
       Must be noted as dropped in the conversion report.
     source: "https://code.claude.com/docs/en/settings"
 
+  - id: settings.sandbox.credentials.files
+    claude:
+      field: "sandbox.credentials.files"
+      type: "object[] ({path, mode:\"deny\"})"
+      scope: user
+    codex:
+      field: "permissions.<name>.filesystem.<path>"
+      type: "string(\"deny\")"
+      scope: user
+    direction: claude_to_codex
+    loss: lossy
+    degrade: null
+    transform: "format:json_to_toml"
+    warn: true
+    notes: |
+      Claude Code v2.1.187+. Blocks sandboxed commands from reading credential
+      file paths; `deny` is the only supported file mode. Converted to Codex
+      `[permissions.default].filesystem` deny entries the same way as
+      `settings.sandbox.filesystem.denyRead`. Lossy because the Claude setting
+      applies only inside the sandbox for credential protection, while the
+      Codex permission profile applies to the whole profile scope, and arrays
+      merge across settings scopes.
+    source: "https://code.claude.com/docs/en/settings, https://developers.openai.com/codex/permissions"
+
+  - id: settings.sandbox.credentials.envVars
+    claude:
+      field: "sandbox.credentials.envVars"
+      type: "object[] ({name, mode:\"deny\"|\"mask\", injectHosts?})"
+      scope: user
+    codex:
+      field: "shell_environment_policy.exclude"
+      type: "string[]"
+      scope: user
+    direction: claude_to_codex
+    loss: lossy
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Claude Code v2.1.187+ (`mask` mode v2.1.199+). `deny` entries strip the
+      variable from the sandboxed environment, converted to
+      `shell_environment_policy.exclude` name patterns. `mask` entries
+      (per-session sentinel value + proxy re-injection to `injectHosts`,
+      requires `network.tlsTerminate`, honored only from user/managed/CLI
+      scopes) have no Codex equivalent and are dropped with a warning.
+    source: "https://code.claude.com/docs/en/settings, https://developers.openai.com/codex/config-reference"
+
+  - id: settings.sandbox.allowAppleEvents
+    claude:
+      field: "sandbox.allowAppleEvents"
+      type: "boolean"
+      scope: user
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Claude Code v2.1.181+; macOS-only; default false. When true, sandboxed
+      commands may send Apple Events / launch apps unsandboxed, removing
+      code-execution isolation (subject to macOS TCC). Honored only from
+      user/managed/CLI settings — ignored in project settings. Codex has no
+      Apple Events concept (similar to `sandbox.network.allowMachLookup`).
+      Dropped.
+    source: "https://code.claude.com/docs/en/settings"
+
   # ─── Environment Variables ──────────────────────────────────────────────────
 
   - id: settings.env
@@ -662,6 +762,28 @@ entries:
       Treat as lossy when the formats differ.
     source: "https://developers.openai.com/codex/config-reference"
 
+  - id: settings.attribution.sessionUrl
+    claude:
+      field: "attribution.sessionUrl"
+      type: "boolean"
+      scope: user
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Claude Code v2.1.183+; default true. Setting to false omits the
+      claude.ai session link (Claude-Session git trailer on commits + link in
+      PR descriptions) for web/Remote Control sessions. Codex's
+      `commit_attribution` is a plain trailer string with no session-link
+      concept. Dropped.
+    source: "https://code.claude.com/docs/en/settings"
+
   - id: settings.includeCoAuthoredBy
     claude:
       field: "includeCoAuthoredBy"
@@ -721,6 +843,28 @@ entries:
       Codex has no equivalent to Claude's statusLine.
       `tui.status_line` (an array) is a Codex-specific footer display setting with different semantics.
       Must be noted as dropped in the conversion report.
+    source: "https://code.claude.com/docs/en/settings"
+
+  - id: settings.footerLinksRegexes
+    claude:
+      field: "footerLinksRegexes"
+      type: "object[]"
+      scope: user
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      TUI footer badge configuration (Claude Code v2.1.176+). Each element is
+      `{type:"regex", pattern (named capture groups), url (template with
+      {name} placeholders), label?}`. Honored only from user settings,
+      `--settings`, or managed settings — ignored in project/local scopes.
+      Limited to 5 badges. Codex has no TUI footer badge equivalent. Dropped.
     source: "https://code.claude.com/docs/en/settings"
 
   # ─── Skills / Plugins ──────────────────────────────────────────
@@ -784,6 +928,28 @@ entries:
     warn: true
     notes: |
       Codex has no corresponding display mode classification. Dropped.
+    source: "https://code.claude.com/docs/en/settings"
+
+  - id: settings.teammateMode
+    claude:
+      field: "teammateMode"
+      type: "enum(in-process|auto|tmux|iterm2)"
+      scope: user
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Teammate/agent split-pane display mode. The `"iterm2"` value was added
+      in v2.1.186 (native iTerm2 panes via the it2 CLI). The official docs are
+      internally inconsistent about the default (prose says `in-process`, the
+      example shows `auto`) — do not assume a default. Codex's TUI has no
+      teammate pane concept. Dropped.
     source: "https://code.claude.com/docs/en/settings"
 
   - id: settings.worktree
@@ -934,6 +1100,48 @@ entries:
       Claude-only flag that forces extended thinking to be active for every request.
       Codex reasoning effort is controlled via `model_reasoning_effort` (a level enum, not a forced-on toggle).
       Dropped.
+    source: "https://code.claude.com/docs/en/settings"
+
+  - id: settings.respondToBashCommands
+    claude:
+      field: "respondToBashCommands"
+      type: "boolean"
+      scope: user
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Default true as of Claude Code v2.1.186: Claude auto-responds to the
+      output of user-typed `!` bash commands. Setting to false restores
+      context-only behavior (output is recorded but not acted upon). Codex
+      has no equivalent user-shell-passthrough response toggle. Dropped.
+    source: "https://code.claude.com/docs/en/settings"
+
+  - id: settings.autoMode.classifyAllShell
+    claude:
+      field: "autoMode.classifyAllShell"
+      type: "boolean"
+      scope: user
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Claude Code v2.1.193+; default false. When true, suspends every
+      Bash/PowerShell allow rule while auto mode is active so all shell
+      commands route through the auto-mode classifier. Codex has no
+      auto-mode classifier. Dropped.
     source: "https://code.claude.com/docs/en/settings"
 
   - id: settings.apiKeyHelper
@@ -1294,6 +1502,27 @@ entries:
       Dropped. At conversion time, consider approximating with the closest `defaultMode` value.
     source: "https://developers.openai.com/codex/agent-approvals-security"
 
+  - id: settings.codex.orchestrator
+    claude:
+      field: null
+      type: null
+      scope: null
+    codex:
+      field: "orchestrator.skills.enabled / orchestrator.mcp.enabled"
+      type: "boolean"
+      scope: user
+    direction: codex_to_claude
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      New `[orchestrator]` table (openai/codex#28942, merged 2026-06-19); both
+      default true. Lets hosts disable orchestrator-owned skills / MCP-Apps
+      surfaces independently of regular skills/MCP. Claude has no equivalent.
+      Dropped.
+    source: "https://developers.openai.com/codex/config-reference"
+
   - id: settings.codex.agents_config
     claude:
       field: null
@@ -1310,6 +1539,38 @@ entries:
     warn: false
     notes: |
       Codex agent parallelism and depth settings. No direct Claude counterpart. Dropped.
+    source: "https://developers.openai.com/codex/config-reference"
+
+  - id: settings.codex.feature_flags
+    claude:
+      field: null
+      type: null
+      scope: null
+    codex:
+      field: "features.<flag> (experimental feature toggles)"
+      type: "boolean|table"
+      scope: user
+    direction: codex_to_claude
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: |
+      Catch-all for Codex experimental `[features]` flags with no Claude
+      receptacle. 2026-06 additions include: current_time_reminder
+      (bool|table: clock_source, delivery_mode, reminder_interval_seconds,
+      sleep_tool — openai/codex#28822), rollout_budget (bool|table:
+      limit_tokens, prefill/sampling token weights, reminder thresholds —
+      #28746), token_budget (changed bool→bool|table with guidance/reminder
+      messages — #29255), multi_agent_mode (#28685) and
+      multi_agent_v2.multi_agent_mode_hint_text (#30493), code_mode_host
+      (#30142), code_mode.direct_only_tool_namespaces (#28825),
+      deferred_executor, item_ids (#28814), use_agent_identity (#19049),
+      browser_use_full_cdp_access (#28769), respect_system_proxy (user/managed
+      scopes only). `features.network_proxy` and `features.memories` are
+      consumed by dedicated mappings and are NOT part of this entry.
+      `features.child_agents_md` was removed upstream (openai/codex#28993,
+      2026-06-18).
     source: "https://developers.openai.com/codex/config-reference"
 
   - id: settings.codex.otel
@@ -1377,7 +1638,7 @@ entries:
       scope: null
     codex:
       field: "web_search"
-      type: "enum(disabled|cached|live)"
+      type: "enum(disabled|cached|live|indexed)"
       scope: user
     direction: codex_to_claude
     loss: dropped
@@ -1387,6 +1648,8 @@ entries:
     notes: |
       Codex-specific web search flag. Claude can use the WebFetch tool as an alternative, but has no standalone mode-switching field.
       Dropped.
+      `"indexed"` was added in Codex v0.142.0 (openai/codex#28489) — live search with
+      page fetch restricted to server-approved URLs (index-gated web access).
     source: "https://developers.openai.com/codex/config-reference"
 
   - id: settings.codex.project_doc_max_bytes

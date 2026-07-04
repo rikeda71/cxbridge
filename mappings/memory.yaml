@@ -254,7 +254,7 @@ entries:
     degrade: null
     transform: null
     warn: false
-    notes: "Feature flag that, when enabled, appends additional guidance about AGENTS.md scope and priority to the user instruction message. Claude has no equivalent feature flag. dropped."
+    notes: "Feature flag that, when enabled, appends additional guidance about AGENTS.md scope and priority to the user instruction message. Claude has no equivalent feature flag. dropped. REMOVED upstream (openai/codex#28993, merged 2026-06-18): the flag was an experimental, unshipped, default-off second prompt layer that was never enabled by default; its removal does not change normal AGENTS.md discovery/composition. Entry kept for historical configs that may still contain the key (now a no-op in current Codex)."
     source: "https://github.com/openai/codex/blob/main/docs/agents_md.md"
 
   - id: memory.merge-order
@@ -349,4 +349,4 @@ notes:
   - "@import inline expansion (inline_imports) is a mandatory step in claude_to_codex conversion. If the post-expansion size exceeds 28 KiB, emit a warning and advise the user to consider increasing project_doc_max_bytes."
   - "AGENTS.md is an open standard (Agentic AI Foundation / Linux Foundation) with support for 18+ tools. After converting CLAUDE.md → AGENTS.md, Claude-specific syntax (dynamic injection via !`cmd`, references to /memory and similar commands) may malfunction in other agents; scan and warn during conversion."
   - "The maximum @import depth is 4 hops per the official documentation. Community reports show cases of 5 hops (possibly version-dependent). The conversion tool should adopt 4 hops as the safe limit and detect and warn about depth overflows."
-  - "Codex-side specifications (project_doc_max_bytes, features.child_agents_md, etc.) are new features added in 2025-2026 and are still evolving. Re-verify with the source URL for each version."
+  - "Codex-side specifications (project_doc_max_bytes, features.child_agents_md, etc.) are new features added in 2025-2026 and are still evolving. Re-verify with the source URL for each version. Note: features.child_agents_md was removed upstream (openai/codex#28993, merged 2026-06-18) — it was an unshipped, default-off experiment and its removal does not affect normal AGENTS.md discovery/composition."

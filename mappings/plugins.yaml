@@ -804,6 +804,34 @@ entries:
     notes: "Codex marketplace has no `owner` field. Dropped on Claude→Codex conversion."
     source: "https://www.schemastore.org/claude-code-marketplace.json"
 
+  - id: plugins.marketplace.renames
+    claude:
+      field: "renames"
+      type: "map<string,string|null>"
+      scope: marketplace
+    codex:
+      field: null
+      type: null
+      scope: null
+    direction: claude_to_codex
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: false
+    notes: >
+      Claude Code v2.1.193+ follows a marketplace's top-level `renames` map
+      automatically: an append-only history mapping former plugin names to
+      current names (or null when the plugin was removed). Chains are followed
+      and must terminate at null or at a name present in `plugins`
+      (validated by `claude plugin validate`). On load, Claude rewrites
+      enabledPlugins/pluginConfigs keys in user/project/local settings to
+      follow the rename chain. Codex's marketplace schema has no rename-history
+      concept. Dropped on Claude→Codex conversion; the drop diagnostic is
+      always enumerated in the report (same handling as the other Claude-only
+      marketplace fields) — users switching to Codex lose automatic
+      rename-following and must fix stale plugin names manually.
+    source: "https://code.claude.com/docs/en/plugin-marketplaces"
+
   - id: plugins.marketplace.interface.displayName
     claude:
       field: null

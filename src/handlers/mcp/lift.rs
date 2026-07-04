@@ -570,6 +570,26 @@ impl McpHandler {
                         }
                     }
                 }
+                "auth" => {
+                    // Codex-only per-server auth mode (openai/codex#29924); Claude
+                    // manages MCP OAuth automatically with no config-file equivalent.
+                    child.fields.insert(
+                        "mcp.auth".to_string(),
+                        IRField {
+                            id: "mcp.auth".to_string(),
+                            value: value.clone(),
+                            loss: Loss::Dropped,
+                            transforms_applied: vec![],
+                            degrade: None,
+                            warning: None,
+                            dropped: Some(DroppedInfo {
+                                reason: "Codex-only field; Claude manages MCP OAuth \
+                                         automatically with no config-file equivalent"
+                                    .to_string(),
+                            }),
+                        },
+                    );
+                }
                 _ => {
                     if let Some(entry) = idx.get(key.as_str()) {
                         lift_mapped_field(entry, key, value, ConvDir::X2c, &mut child);

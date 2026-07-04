@@ -31,19 +31,19 @@ These symbols match the report output from `cxbridge --report`.
 ## Per-Domain Summary
 
 Numbers are taken directly from `docs/spec.md §16` and confirmed against the
-YAML source. They sum to 317.
+YAML source. They sum to 332.
 
 | Domain | Total | ◎ Lossless | ○ Lossy | ✕ Dropped |
 |--------|------:|----------:|--------:|----------:|
-| Skills | 23 | 5 | 13 | 5 |
-| Hooks | 83 | 34 | 6 | 43 |
-| MCP | 32 | 10 | 4 | 18 |
-| Plugins | 48 | 13 | 15 | 20 |
+| Skills | 24 | 6 | 13 | 5 |
+| Hooks | 84 | 34 | 6 | 44 |
+| MCP | 33 | 10 | 4 | 19 |
+| Plugins | 49 | 13 | 15 | 21 |
 | Memory | 18 | 3 | 5 | 10 |
 | Subagents | 25 | 4 | 10 | 11 |
-| Settings/Config | 73 | 2 | 35 | 36 |
+| Settings/Config | 84 | 2 | 37 | 45 |
 | Variables | 15 | 2 | 5 | 8 |
-| **Total** | **317** | **73** | **93** | **151** |
+| **Total** | **332** | **74** | **95** | **163** |
 
 **Directional note:** Codex → Claude conversion is generally lower-loss than
 Claude → Codex. Codex has a smaller vocabulary; Claude has receptacles for most
@@ -57,7 +57,8 @@ have no Codex equivalent.
 
 **Files:** `.claude/skills/<name>/SKILL.md` ↔ `.agents/skills/<name>/SKILL.md`
 
-◎ **Converts cleanly:** `name`, `description`, file path (directory remap),
+◎ **Converts cleanly:** `name`, `description`, `metadata` (Agent Skills
+open-standard extension map, carried verbatim), file path (directory remap),
 invocation syntax (`/skill-name` ↔ `$skill-name`), `disable-model-invocation`
 (polarity-inverted to `policy.allow_implicit_invocation`).
 
@@ -74,7 +75,7 @@ session-scoped hooks in `config.toml`.
 - `paths` (`skills.paths`) — glob-triggered auto-invocation has no Codex equivalent.
 - `argument-hint`, `arguments` (`skills.argument-hint`, `skills.arguments`) — Claude's named/positional argument machinery.
 
-See [`mappings/skills.yaml`](../mappings/skills.yaml) for all 23 entries.
+See [`mappings/skills.yaml`](../mappings/skills.yaml) for all 24 entries.
 
 ---
 
@@ -104,8 +105,10 @@ anchored regexes `"^Bash$"` in Codex (which always evaluates matchers as regex).
 - Command sub-fields `args`, `shell`, `if`, `once`, `asyncRewake`
   (`hooks.command.*`) — Codex does not support exec-form args, shell selection,
   or conditional/once semantics.
+- Codex-only x2c: `hooks.json` top-level `description` metadata
+  (`hooks.toplevel.description`, allowed since openai/codex#30229).
 
-See [`mappings/hooks.yaml`](../mappings/hooks.yaml) for all 83 entries.
+See [`mappings/hooks.yaml`](../mappings/hooks.yaml) for all 84 entries.
 
 ---
 
@@ -131,13 +134,14 @@ Codex — a collision risk when multiple servers differ.
 - OAuth `authServerMetadataUrl` (`mcp.oauth.auth_server_metadata_url`).
 - Codex-only fields on x2c: `enabled_tools`, `disabled_tools`,
   `default_tools_approval_mode`, `startup_timeout_sec`, `env_vars`,
-  `environment_id`, `oauth_resource`.
+  `environment_id`, `oauth_resource`, `auth` (`mcp.auth`, oauth|chatgpt enum,
+  2026-06 — Claude manages MCP OAuth automatically with no config field).
 
 **Note:** Codex entries with `enabled: false` are **excluded entirely** from
 Claude output (Claude has no `enabled` field; presence equals enabled). The
 excluded server names are listed in the conversion report.
 
-See [`mappings/mcp.yaml`](../mappings/mcp.yaml) for all 32 entries.
+See [`mappings/mcp.yaml`](../mappings/mcp.yaml) for all 33 entries.
 
 ---
 
@@ -170,12 +174,15 @@ marketplace entry). Codex `interface.*` display fields (`websiteURL` → `homepa
   unresolved `${user_config.KEY}` references will remain in MCP/hook configs.
 - `channels` (`plugins.channels`), `settings` (`plugins.settings`),
   `dependencies` (`plugins.dependencies`).
+- Marketplace `renames` map (`plugins.marketplace.renames`, v2.1.193+) —
+  Codex marketplaces have no rename-history concept; stale plugin names must
+  be fixed manually after conversion.
 
 **Dual manifest:** Use `--dual-manifest` to retain `.claude-plugin/` and emit
 `.codex-plugin/plugin.json` alongside — required for native Codex recognition
 (`.claude-plugin/plugin.json` is not read as a Codex manifest).
 
-See [`mappings/plugins.yaml`](../mappings/plugins.yaml) for all 48 entries.
+See [`mappings/plugins.yaml`](../mappings/plugins.yaml) for all 49 entries.
 
 ---
 
@@ -202,7 +209,8 @@ between tools.
 - Auto memory `MEMORY.md` (`memory.auto-memory`) — Claude's autonomous memory system.
 - Codex-only x2c drops: `AGENTS.override.md` (`memory.override-file`),
   `project_doc_fallback_filenames` (`memory.fallback-filenames`),
-  `features.child_agents_md` (`memory.child-agents-md-feature`).
+  `features.child_agents_md` (`memory.child-agents-md-feature` — the flag was
+  removed upstream in 2026-06, openai/codex#28993; kept for legacy configs).
 
 See [`mappings/memory.yaml`](../mappings/memory.yaml) for all 18 entries.
 
@@ -255,7 +263,7 @@ See [`mappings/subagents.yaml`](../mappings/subagents.yaml) for all 25 entries.
 
 Full automatic conversion is not attempted. The permission model axis mismatch
 (Claude: tool-axis; Codex: resource-axis) makes complete machine translation
-infeasible. **Only 2 of 73 entries (3%) are lossless.**
+infeasible. **Only 2 of 84 entries (2%) are lossless.**
 
 ◎ **Converts cleanly:** `editorMode`/`tui.vim_mode_default` (enum → boolean
 rename), `sandbox.network.allowAllUnixSockets`/`features.network_proxy.dangerously_allow_all_unix_sockets`
@@ -287,6 +295,9 @@ rename), `sandbox.network.allowAllUnixSockets`/`features.network_proxy.dangerous
 Reverse (x2c): `sandbox_mode` × `approval_policy` jointly collapse to the nearest `defaultMode`
 (`read-only` → `plan`; `danger-full-access` → `bypassPermissions`;
 `workspace-write+never` → `dontAsk`; `workspace-write+other` → `default`). Both directions are lossy.
+Also lossy: `sandbox.credentials.files` → `[permissions.default].filesystem` deny entries,
+`sandbox.credentials.envVars` (mode `deny`) → `shell_environment_policy.exclude`
+(mode `mask` entries have no Codex equivalent and are dropped with a warning).
 
 ✕ **Dropped (notable examples, c2x):**
 - `viewMode`, `worktree`, `autoUpdatesChannel`, `spinnerTips*`, `voice`,
@@ -298,12 +309,21 @@ Reverse (x2c): `sandbox_mode` × `approval_policy` jointly collapse to the neare
 - `disableBundledSkills`, `requiredMinimumVersion` / `requiredMaximumVersion`.
 - `agent` (`settings.agent`) — run the main thread as a named subagent; Codex agents are
   explicit `spawn_agent` targets only.
+- `footerLinksRegexes`, `respondToBashCommands`, `teammateMode`,
+  `attribution.sessionUrl`, `sandbox.allowAppleEvents`,
+  `autoMode.classifyAllShell` — 2026-06 Claude additions with no Codex receptacle.
+- `Tool(param:value)` permission rules (`settings.permissions.paramMatch`,
+  v2.1.178+) — parameter-value matching (e.g. `Agent(model:opus)`,
+  `Bash(run_in_background:true)`) cannot be expressed in Codex rules; these are
+  also excluded from `.rules` generation so they never become bogus prefix rules.
 
 ✕ **Dropped (notable examples, x2c):** `plan_mode_reasoning_effort`,
 `approvals_reviewer` / `auto_review.policy`, `projects.<path>.trust_level`,
-`tui.theme` / `tui.status_line` / `tui.terminal_title`.
+`tui.theme` / `tui.status_line` / `tui.terminal_title`,
+`orchestrator.skills/mcp.enabled` (`settings.codex.orchestrator`), experimental
+`features.*` flags (`settings.codex.feature_flags` catch-all).
 
-See [`mappings/settings-config.yaml`](../mappings/settings-config.yaml) for all 73 entries.
+See [`mappings/settings-config.yaml`](../mappings/settings-config.yaml) for all 84 entries.
 
 ---
 

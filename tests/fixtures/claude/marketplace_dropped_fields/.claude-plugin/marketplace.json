@@ -6,6 +6,10 @@
   },
   "allowCrossMarketplaceDependenciesOn": ["trusted-marketplace"],
   "forceRemoveDeletedPlugins": true,
+  "renames": {
+    "old-plugin-name": "test-plugin",
+    "removed-plugin": null
+  },
   "plugins": [
     {
       "name": "test-plugin",

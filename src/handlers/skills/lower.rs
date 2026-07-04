@@ -61,6 +61,11 @@ impl SkillsHandler {
             }
         }
 
+        // metadata: carried verbatim (lossless, part of the Agent Skills open standard)
+        if let Some(f) = ir.fields.get("skills.metadata") {
+            fm.insert("metadata".to_string(), f.value.clone());
+        }
+
         // determine skill target
         let target = decide_skill_target(ir, opts);
 

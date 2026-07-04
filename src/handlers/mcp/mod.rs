@@ -494,4 +494,51 @@ scopes = ["a:read", "b:write"]
             "scopes must be joined by space in x2c"
         );
     }
+
+    /// x2c: a server with `auth = "chatgpt"` (openai/codex#29924) must be
+    /// recorded as a dropped mcp.auth IRField and must NOT be written into the
+    /// generated .mcp.json (Claude has no config-file equivalent).
+    #[test]
+    fn test_mcp_lift_x2c_auth_dropped() {
+        let dir = TempDir::new().unwrap();
+        let config_path = dir.path().join("config.toml");
+        std::fs::write(
+            &config_path,
+            r#"[mcp_servers.s]
+url = "https://x.com"
+auth = "chatgpt"
+"#,
+        )
+        .unwrap();
+
+        let h = make_handler();
+        let parsed = h.parse(&config_path).unwrap();
+        let ir = h.lift(&parsed, ConvDir::X2c).unwrap();
+        let child = &ir.children[0];
+
+        let auth = child
+            .fields
+            .get("mcp.auth")
+            .expect("mcp.auth must be in x2c IR");
+        assert_eq!(auth.value, Value::String("chatgpt".to_string()));
+        assert!(matches!(auth.loss, Loss::Dropped));
+        assert!(
+            auth.dropped.is_some(),
+            "mcp.auth must carry DroppedInfo, not a separate Diagnostic"
+        );
+
+        let opts = default_opts();
+        let plan = h.lower(&ir, ConvDir::X2c, &opts).unwrap();
+        let mcp_json = plan
+            .files
+            .iter()
+            .find(|f| f.path.ends_with(".mcp.json"))
+            .expect("Expected .mcp.json in x2c output");
+        let content: Value = serde_json::from_str(&mcp_json.content).unwrap();
+        assert!(
+            content["mcpServers"]["s"].get("auth").is_none(),
+            "auth key must not be written into .mcp.json output, got: {}",
+            content
+        );
+    }
 }

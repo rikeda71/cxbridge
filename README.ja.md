@@ -167,7 +167,7 @@ cargo install --path .
 
 - **[docs/conversion-coverage.md](docs/conversion-coverage.md)** — ドメインごとの変換可否・degrade・dropped の一覧。
 - **[docs/spec.md](docs/spec.md)** — 設計・実装仕様の全文（IR モデル、transform レジストリ、degrade エンジン、CLI フラグ、終了コード）。
-- **[mappings/](mappings/)** — 変換テーブルの正本（8 ドメイン・314 エントリ）。スキーマは [mappings/SCHEMA.md](mappings/SCHEMA.md)。
+- **[mappings/](mappings/)** — 変換テーブルの正本（8 ドメイン・332 エントリ）。スキーマは [mappings/SCHEMA.md](mappings/SCHEMA.md)。
 
 ## ライセンス
 
