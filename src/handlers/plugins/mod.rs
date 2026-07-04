@@ -588,6 +588,7 @@ mod tests {
   "owner": {"name": "ACME", "email": "acme@example.com"},
   "allowCrossMarketplaceDependenciesOn": ["other"],
   "forceRemoveDeletedPlugins": true,
+  "renames": {"old-plugin-name": "test-plugin", "removed-plugin": null},
   "plugins": [
     {"name": "test-plugin", "source": "./", "category": "productivity"}
   ]
@@ -624,8 +625,12 @@ mod tests {
             content.get("forceRemoveDeletedPlugins").is_none(),
             "forceRemoveDeletedPlugins must be absent from output"
         );
+        assert!(
+            content.get("renames").is_none(),
+            "renames must be absent from output"
+        );
 
-        // (2) Three DiagLevel::Drop entries with the correct mapping IDs
+        // (2) Four DiagLevel::Drop entries with the correct mapping IDs
         let drop_ids: Vec<Option<&str>> = plan
             .diagnostics
             .iter()
@@ -648,6 +653,11 @@ mod tests {
         assert!(
             drop_ids.contains(&Some("plugins.marketplace.forceRemoveDeletedPlugins")),
             "Expected Drop diagnostic for plugins.marketplace.forceRemoveDeletedPlugins; drop_ids={:?}",
+            drop_ids
+        );
+        assert!(
+            drop_ids.contains(&Some("plugins.marketplace.renames")),
+            "Expected Drop diagnostic for plugins.marketplace.renames; drop_ids={:?}",
             drop_ids
         );
     }

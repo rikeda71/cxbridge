@@ -438,6 +438,23 @@ entries:
     notes: "Codex-specific field. Sends the RFC 8707 OAuth Resource Parameter to the server during the OAuth flow. Claude has no equivalent. Codex→Claude conversion results in dropped + warn."
     source: "https://github.com/openai/codex/blob/main/codex-rs/config/src/mcp_types.rs"
 
+  - id: mcp.auth
+    claude:
+      field: null
+      type: null
+      scope: null
+    codex:
+      field: "mcp_servers.<name>.auth"
+      type: "enum(oauth|chatgpt)"
+      scope: user
+    direction: codex_to_claude
+    loss: dropped
+    degrade: null
+    transform: null
+    warn: true
+    notes: "Added 2026-06-24 (openai/codex#29924), replacing the short-lived boolean `use_chatgpt_auth` from #29733. Default is null (= \"oauth\": use the credentials stored by the MCP OAuth flow). `\"chatgpt\"` reuses the current ChatGPT session and is only honored when the server's resolved origin matches the trusted `chatgpt_base_url` origin (silently dropped otherwise); explicit bearer tokens / auth headers always take precedence over this setting. Claude Code manages MCP OAuth automatically (`claude mcp login <name>`, v2.1.186+) with no config-file equivalent field. Codex→Claude conversion results in dropped + warn."
+    source: "https://developers.openai.com/codex/config-reference"
+
   - id: mcp.enabled_tools
     claude:
       field: null

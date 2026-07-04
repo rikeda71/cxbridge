@@ -27,7 +27,7 @@ impl SettingsHandler {
             self.add_field(node, "settings.env", env_val.clone(), ConvDir::C2x);
         }
 
-        // attribution.commit
+        // attribution.commit / attribution.sessionUrl
         if let Some(attr) = settings.get("attribution") {
             if let Some(commit) = attr.get("commit") {
                 self.add_field(
@@ -35,6 +35,14 @@ impl SettingsHandler {
                     "settings.attribution.commit",
                     commit.clone(),
                     ConvDir::C2x,
+                );
+            }
+            if let Some(session_url) = attr.get("sessionUrl") {
+                insert_dropped_field(
+                    node,
+                    "settings.attribution.sessionUrl",
+                    "attribution.sessionUrl",
+                    session_url.clone(),
                 );
             }
         }
@@ -88,6 +96,44 @@ impl SettingsHandler {
                         self.add_field(node, v, val.clone(), ConvDir::C2x);
                     }
                 }
+            }
+            if let Some(credentials) = sandbox.get("credentials") {
+                if let Some(files) = credentials.get("files") {
+                    self.add_field(
+                        node,
+                        "settings.sandbox.credentials.files",
+                        files.clone(),
+                        ConvDir::C2x,
+                    );
+                }
+                if let Some(env_vars) = credentials.get("envVars") {
+                    self.add_field(
+                        node,
+                        "settings.sandbox.credentials.envVars",
+                        env_vars.clone(),
+                        ConvDir::C2x,
+                    );
+                }
+            }
+            if let Some(allow_apple_events) = sandbox.get("allowAppleEvents") {
+                insert_dropped_field(
+                    node,
+                    "settings.sandbox.allowAppleEvents",
+                    "sandbox.allowAppleEvents",
+                    allow_apple_events.clone(),
+                );
+            }
+        }
+
+        // autoMode.classifyAllShell
+        if let Some(auto_mode) = settings.get("autoMode") {
+            if let Some(classify_all_shell) = auto_mode.get("classifyAllShell") {
+                insert_dropped_field(
+                    node,
+                    "settings.autoMode.classifyAllShell",
+                    "autoMode.classifyAllShell",
+                    classify_all_shell.clone(),
+                );
             }
         }
 
@@ -145,33 +191,15 @@ impl SettingsHandler {
             ("requiredMinimumVersion", "settings.requiredVersionRange"),
             ("requiredMaximumVersion", "settings.requiredVersionRange"),
             ("agent", "settings.agent"),
+            ("footerLinksRegexes", "settings.footerLinksRegexes"),
+            ("respondToBashCommands", "settings.respondToBashCommands"),
+            ("teammateMode", "settings.teammateMode"),
         ];
         for (settings_key, entry_id) in DROPPED_KEYS {
             let Some(v) = settings.get(*settings_key) else {
                 continue;
             };
-            if node.fields.contains_key(*entry_id) {
-                continue;
-            }
-            node.fields.insert(
-                (*entry_id).to_string(),
-                IRField {
-                    id: (*entry_id).to_string(),
-                    value: v.clone(),
-                    loss: Loss::Dropped,
-                    transforms_applied: vec![],
-                    degrade: None,
-                    warning: Some(format!("{} has no Codex equivalent", settings_key)),
-                    dropped: Some(DroppedInfo {
-                        reason: format!("{} dropped (Claude-specific field)", settings_key),
-                    }),
-                },
-            );
-            node.diagnostics.push(Diagnostic {
-                level: DiagLevel::Drop,
-                id: Some((*entry_id).to_string()),
-                message: format!("{} dropped: no Codex equivalent", settings_key),
-            });
+            insert_dropped_field(node, entry_id, settings_key, v.clone());
         }
 
         // skillOverrides, enabledPlugins → lossy
@@ -338,6 +366,7 @@ impl SettingsHandler {
             ("approvals_reviewer", "settings.codex.auto_review"),
             ("auto_review", "settings.codex.auto_review"),
             ("projects", "settings.codex.projects_trust"),
+            ("orchestrator", "settings.codex.orchestrator"),
         ];
         let mut dropped_seen = std::collections::HashSet::new();
         for (codex_key, entry_id) in CODEX_DROPPED_KEYS {
@@ -346,6 +375,28 @@ impl SettingsHandler {
                     level: DiagLevel::Drop,
                     id: Some((*entry_id).to_string()),
                     message: format!("{} dropped: no Claude equivalent", codex_key),
+                });
+            }
+        }
+
+        // features.* catch-all: network_proxy and memories are consumed by their
+        // own dedicated mappings above; any other flag has no Claude receptacle
+        // and was previously ignored silently. Report it as a single drop.
+        if let Some(features) = settings.get("features").and_then(|f| f.as_object()) {
+            let mut unconsumed: Vec<&str> = features
+                .keys()
+                .map(String::as_str)
+                .filter(|k| *k != "network_proxy" && *k != "memories")
+                .collect();
+            if !unconsumed.is_empty() {
+                unconsumed.sort_unstable();
+                node.diagnostics.push(Diagnostic {
+                    level: DiagLevel::Drop,
+                    id: Some("settings.codex.feature_flags".to_string()),
+                    message: format!(
+                        "Unconsumed Codex feature flags dropped: {}",
+                        unconsumed.join(", ")
+                    ),
                 });
             }
         }
@@ -427,4 +478,33 @@ impl SettingsHandler {
             self.add_field(node, entry_id, v.clone(), ConvDir::X2c);
         }
     }
+}
+
+/// Insert a Dropped IRField plus the matching Drop diagnostic for a Claude-only
+/// settings key with no Codex equivalent. Shared by the flat `DROPPED_KEYS` loop
+/// and nested keys (e.g. `attribution.sessionUrl`) that can't be looked up with
+/// a single top-level `settings.get`.
+fn insert_dropped_field(node: &mut IRNode, entry_id: &str, settings_key: &str, value: Value) {
+    if node.fields.contains_key(entry_id) {
+        return;
+    }
+    node.fields.insert(
+        entry_id.to_string(),
+        IRField {
+            id: entry_id.to_string(),
+            value,
+            loss: Loss::Dropped,
+            transforms_applied: vec![],
+            degrade: None,
+            warning: Some(format!("{} has no Codex equivalent", settings_key)),
+            dropped: Some(DroppedInfo {
+                reason: format!("{} dropped (Claude-specific field)", settings_key),
+            }),
+        },
+    );
+    node.diagnostics.push(Diagnostic {
+        level: DiagLevel::Drop,
+        id: Some(entry_id.to_string()),
+        message: format!("{} dropped: no Codex equivalent", settings_key),
+    });
 }

@@ -63,6 +63,23 @@ entries:
     notes: "Required field on both sides and serves as the auto-invocation trigger. Semantically a full match. The combined length of description + when_to_use is capped at 1,536 characters (skill-listing truncation in Claude)."
     source: "https://code.claude.com/docs/en/skills"
 
+  - id: skills.metadata
+    claude:
+      field: "metadata"
+      type: "map<string,string>"
+      scope: skill
+    codex:
+      field: "metadata"
+      type: "map<string,string>"
+      scope: skill
+    direction: both
+    loss: lossless
+    degrade: null
+    transform: null
+    warn: false
+    notes: "Optional frontmatter field defined by the Agent Skills open standard: an arbitrary map of string keys to string values for client-specific extension data. Both Claude Code and Codex read SKILL.md, and the field is valid on both sides, so it is carried verbatim in both directions. Codex's fail-open skill loader ignores it at runtime (no error), matching its treatment of other unknown frontmatter fields (see anthropics/claude-code#25380 validator behavior discussion)."
+    source: "https://agentskills.io/specification"
+
   - id: skills.when_to_use
     claude:
       field: "when_to_use"

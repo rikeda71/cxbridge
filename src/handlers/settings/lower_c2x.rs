@@ -270,6 +270,82 @@ impl SettingsHandler {
             }
         }
 
+        // sandbox.credentials.files → [permissions.default].filesystem (deny only;
+        // "deny" is the only mode Claude currently defines for credential file paths)
+        if let Some(f) = ir.fields.get("settings.sandbox.credentials.files") {
+            if let Value::Array(entries) = &f.value {
+                for entry in entries {
+                    let path = entry.get("path").and_then(|v| v.as_str());
+                    let mode = entry.get("mode").and_then(|v| v.as_str());
+                    match (path, mode) {
+                        (Some(path), Some("deny")) => fs_perms.push((path.to_string(), "deny")),
+                        (Some(path), Some(other)) => {
+                            diagnostics.push(Diagnostic {
+                                level: DiagLevel::Warn,
+                                id: Some("settings.sandbox.credentials.files".to_string()),
+                                message: format!(
+                                    "sandbox.credentials.files entry for '{}' has unsupported mode '{}' (only \"deny\" converts); skipped",
+                                    path, other
+                                ),
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        // sandbox.credentials.envVars → shell_environment_policy.exclude (deny only).
+        // "mask" mode (proxy re-injection) has no Codex equivalent and is dropped.
+        if let Some(f) = ir.fields.get("settings.sandbox.credentials.envVars") {
+            if let Value::Array(entries) = &f.value {
+                let mut exclude_names: Vec<String> = Vec::new();
+                let mut masked_names: Vec<String> = Vec::new();
+                for entry in entries {
+                    let name = entry.get("name").and_then(|v| v.as_str());
+                    let mode = entry.get("mode").and_then(|v| v.as_str());
+                    match (name, mode) {
+                        (Some(name), Some("deny")) => exclude_names.push(name.to_string()),
+                        (Some(name), Some("mask")) => masked_names.push(name.to_string()),
+                        _ => {}
+                    }
+                }
+                if !exclude_names.is_empty() {
+                    let policy_item = doc
+                        .entry("shell_environment_policy")
+                        .or_insert(toml_edit::Item::Table(toml_edit::Table::new()));
+                    if let Some(policy_tbl) = policy_item.as_table_mut() {
+                        let exclude_item = policy_tbl
+                            .entry("exclude")
+                            .or_insert(toml_edit::value(toml_edit::Array::new()));
+                        if let Some(arr) = exclude_item.as_array_mut() {
+                            for name in &exclude_names {
+                                arr.push(name.as_str());
+                            }
+                        }
+                    }
+                    diagnostics.push(Diagnostic {
+                        level: DiagLevel::Warn,
+                        id: Some("settings.sandbox.credentials.envVars".to_string()),
+                        message: format!(
+                            "sandbox.credentials.envVars deny entries → shell_environment_policy.exclude: {}",
+                            exclude_names.join(", ")
+                        ),
+                    });
+                }
+                if !masked_names.is_empty() {
+                    diagnostics.push(Diagnostic {
+                        level: DiagLevel::Drop,
+                        id: Some("settings.sandbox.credentials.envVars".to_string()),
+                        message: format!(
+                            "sandbox.credentials.envVars mask entries dropped (proxy re-injection has no Codex equivalent): {}",
+                            masked_names.join(", ")
+                        ),
+                    });
+                }
+            }
+        }
+
         // sandbox.network.allowedDomains → [permissions.default].network.domains
         let mut network_domains: Vec<String> = Vec::new();
         if let Some(f) = ir.fields.get("settings.sandbox.network.allowedDomains") {
@@ -295,6 +371,9 @@ impl SettingsHandler {
                         split.dropped.join(", ")
                     ),
                 });
+            }
+            if !split.param_match.is_empty() {
+                diagnostics.push(param_match_drop_diagnostic("allow", &split.param_match));
             }
 
             // Bash → .rules
@@ -341,6 +420,9 @@ impl SettingsHandler {
                     ),
                 });
             }
+            if !split.param_match.is_empty() {
+                diagnostics.push(param_match_drop_diagnostic("deny", &split.param_match));
+            }
 
             if !bash_tools.is_empty() {
                 let (arts, diags) =
@@ -379,7 +461,11 @@ impl SettingsHandler {
 
         if let Some(f) = ir.fields.get("__permissions.ask") {
             let tools = crate::handlers::json_to_string_list(&f.value);
-            let bash_tools = split_permissions_by_type(&tools).bash;
+            let split = split_permissions_by_type(&tools);
+            if !split.param_match.is_empty() {
+                diagnostics.push(param_match_drop_diagnostic("ask", &split.param_match));
+            }
+            let bash_tools = split.bash;
             if !bash_tools.is_empty() {
                 // ask → prompt decision in .rules
                 // We reuse degrade_allowed_tools with allow=true and note it as prompt
@@ -513,22 +599,34 @@ pub(super) struct SplitTools {
     pub(super) web: Vec<String>,
     /// Tools with no Codex equivalent (bare WebFetch/WebSearch, AskUserQuestion, …).
     pub(super) dropped: Vec<String>,
+    /// `Tool(param:value)` parameter-match rules (e.g. `Agent(model:opus)`,
+    /// `Bash(run_in_background:true)`): Codex rules cannot express tool-parameter
+    /// matching, so these are dropped under `settings.permissions.paramMatch`.
+    pub(super) param_match: Vec<String>,
 }
 
 pub(super) fn split_permissions_by_type(tools: &[String]) -> SplitTools {
     let mut out = SplitTools::default();
-    let (bash, read, write, web, dropped) = (
+    let (bash, read, write, web, dropped, param_match) = (
         &mut out.bash,
         &mut out.read,
         &mut out.write,
         &mut out.web,
         &mut out.dropped,
+        &mut out.param_match,
     );
 
     for tool in tools {
         let t = tool.trim();
         if t.starts_with("Bash(") || t == "Bash" {
-            bash.push(t.to_string());
+            if is_bash_param_match(t) {
+                // `Bash(run_in_background:true)`-style rules match a top-level tool
+                // parameter, not a command prefix; emitting them as a .rules
+                // prefix_rule would be a bogus/no-op conversion, so drop instead.
+                param_match.push(t.to_string());
+            } else {
+                bash.push(t.to_string());
+            }
         } else if t.starts_with("Read(") {
             let path = extract_tool_arg(t);
             read.push(path);
@@ -546,6 +644,9 @@ pub(super) fn split_permissions_by_type(tools: &[String]) -> SplitTools {
             // domain-scoped, so a blanket allow has no equivalent. Record it so
             // the caller can surface a Drop diagnostic (no silent loss).
             dropped.push(t.to_string());
+        } else if is_generic_param_match(t) {
+            // `Agent(model:opus)`-style parameter matching on any other tool.
+            param_match.push(t.to_string());
         } else {
             // Other tools (AskUserQuestion, etc.) → dropped (no bucket)
             dropped.push(t.to_string());
@@ -553,6 +654,64 @@ pub(super) fn split_permissions_by_type(tools: &[String]) -> SplitTools {
     }
 
     out
+}
+
+/// True if `tool` looks like a `Tool(param:value)` parameter-match rule on a
+/// non-special-cased tool (e.g. `Agent(model:opus)`): a parenthesized argument
+/// whose leading identifier is immediately followed by `:`. Bash needs its own
+/// detection (`is_bash_param_match`) because command prefixes may also contain
+/// `:` (e.g. `Bash(npm run test:*)`).
+fn is_generic_param_match(tool: &str) -> bool {
+    let Some(open) = tool.find('(') else {
+        return false;
+    };
+    let Some(inner) = tool[open + 1..].strip_suffix(')') else {
+        return false;
+    };
+    let Some((key, _rest)) = inner.split_once(':') else {
+        return false;
+    };
+    let key = key.trim_end();
+    !key.is_empty()
+        && key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+/// True if `tool` is a `Bash(param:value)` parameter-match rule (e.g.
+/// `Bash(run_in_background:true)`) rather than a command-prefix rule. The Bash
+/// tool's top-level scalar params — `run_in_background`, `timeout`,
+/// `description`, `dangerouslyDisableSandbox` — are matchable by deny/ask
+/// rules; `command` is exempt from param-matching upstream, so anything else
+/// (e.g. `git:*`, `npm run test:*`) is a command prefix, not a param match.
+fn is_bash_param_match(tool: &str) -> bool {
+    const PARAM_NAMES: &[&str] = &[
+        "run_in_background",
+        "timeout",
+        "description",
+        "dangerouslyDisableSandbox",
+    ];
+    let Some(inner) = tool.strip_prefix("Bash(").and_then(|s| s.strip_suffix(')')) else {
+        return false;
+    };
+    let Some((key, _rest)) = inner.split_once(':') else {
+        return false;
+    };
+    PARAM_NAMES.contains(&key.trim_end())
+}
+
+/// Drop diagnostic for `Tool(param:value)` rules, keyed to the canonical
+/// mappings entry so the conversion report can cross-reference it.
+fn param_match_drop_diagnostic(list_name: &str, rules: &[String]) -> Diagnostic {
+    Diagnostic {
+        level: DiagLevel::Drop,
+        id: Some("settings.permissions.paramMatch".to_string()),
+        message: format!(
+            "permissions.{} Tool(param:value) rules dropped (Codex rules cannot express tool-parameter matching): {}",
+            list_name,
+            rules.join(", ")
+        ),
+    }
 }
 
 /// Extract the argument from a tool pattern like `Bash(git add)` → `git add`.
@@ -616,5 +775,46 @@ mod tests {
         assert_eq!(split.write, vec!["/out"]);
         assert_eq!(split.web, vec!["example.com"]);
         assert_eq!(split.dropped, vec!["WebFetch", "AskUserQuestion"]);
+    }
+
+    #[test]
+    fn test_bash_param_match_rules_are_dropped_not_bash() {
+        let tools = vec![
+            "Bash(run_in_background:true)".to_string(),
+            "Bash(git:*)".to_string(),
+            "Bash(npm run test:*)".to_string(),
+        ];
+        let split = split_permissions_by_type(&tools);
+        assert_eq!(
+            split.bash,
+            vec!["Bash(git:*)", "Bash(npm run test:*)"],
+            "command-prefix rules must stay in the bash bucket"
+        );
+        assert_eq!(
+            split.param_match,
+            vec!["Bash(run_in_background:true)"],
+            "Bash tool-parameter matches must be dropped, not emitted as bogus command-prefix rules"
+        );
+        assert!(split.dropped.is_empty());
+    }
+
+    #[test]
+    fn test_generic_param_match_rules_are_split_out() {
+        let tools = vec![
+            "Agent(model:opus)".to_string(),
+            "Agent(code-reviewer, Explore)".to_string(),
+            "AskUserQuestion".to_string(),
+        ];
+        let split = split_permissions_by_type(&tools);
+        assert_eq!(
+            split.param_match,
+            vec!["Agent(model:opus)"],
+            "Tool(param:value) rules on non-Bash tools must land in param_match"
+        );
+        assert_eq!(
+            split.dropped,
+            vec!["Agent(code-reviewer, Explore)", "AskUserQuestion"],
+            "agent-type allow-lists and bare tools stay in the generic dropped bucket"
+        );
     }
 }

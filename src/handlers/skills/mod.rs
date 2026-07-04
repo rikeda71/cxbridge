@@ -1120,4 +1120,119 @@ mod tests {
             skill_file.content
         );
     }
+
+    // ── Agent Skills open standard: metadata (skills.metadata) ──────────────
+
+    /// lift+lower (c2x): metadata is preserved verbatim in the emitted SKILL.md
+    /// frontmatter, with no drop diagnostic for it.
+    #[test]
+    fn test_skills_c2x_metadata_preserved() {
+        let dir = TempDir::new().unwrap();
+        let skill_dir = dir.path().join(".claude").join("skills").join("meta");
+        fs::create_dir_all(&skill_dir).unwrap();
+        let path = skill_dir.join("SKILL.md");
+        fs::write(
+            &path,
+            "---\nname: meta\ndescription: Metadata skill\nmetadata:\n  author: example-org\n  version: \"1.0\"\n---\nBody.\n",
+        )
+        .unwrap();
+
+        let out_dir = dir.path().join("out");
+        let mut opts = default_opts();
+        opts.out = Some(out_dir.to_str().unwrap().to_string());
+
+        let h = make_handler();
+        let parsed = h.parse(&path).unwrap();
+        let ir = h.lift(&parsed, ConvDir::C2x).unwrap();
+
+        let f = ir
+            .fields
+            .get("skills.metadata")
+            .expect("skills.metadata must be in IR fields after c2x lift");
+        assert_eq!(f.loss, Loss::Lossless);
+
+        // No drop diagnostic for metadata
+        assert!(
+            !ir.diagnostics
+                .iter()
+                .any(|d| d.level == crate::core::ir::DiagLevel::Drop
+                    && d.message.contains("metadata")),
+            "metadata must not be dropped; diagnostics: {:?}",
+            ir.diagnostics
+        );
+
+        let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
+        let skill_file = plan
+            .files
+            .iter()
+            .find(|f| f.path.ends_with("SKILL.md"))
+            .expect("Expected SKILL.md in emit plan");
+
+        assert!(
+            skill_file.content.contains("author: example-org"),
+            "Expected metadata.author preserved in output frontmatter, got:\n{}",
+            skill_file.content
+        );
+        assert!(
+            skill_file.content.contains("version:"),
+            "Expected metadata.version preserved in output frontmatter, got:\n{}",
+            skill_file.content
+        );
+    }
+
+    /// lift+lower (x2c): metadata written in a Codex SKILL.md is preserved verbatim
+    /// when converting to Claude, with no drop diagnostic for it.
+    #[test]
+    fn test_skills_x2c_metadata_preserved() {
+        let dir = TempDir::new().unwrap();
+        let skill_dir = dir.path().join(".agents").join("skills").join("meta");
+        fs::create_dir_all(&skill_dir).unwrap();
+        let path = skill_dir.join("SKILL.md");
+        fs::write(
+            &path,
+            "---\nname: meta\ndescription: Metadata skill\nmetadata:\n  author: example-org\n  version: \"1.0\"\n---\nBody.\n",
+        )
+        .unwrap();
+
+        let out_dir = dir.path().join("out");
+        let mut opts = default_opts();
+        opts.out = Some(out_dir.to_str().unwrap().to_string());
+
+        let h = make_handler();
+        let parsed = h.parse(&path).unwrap();
+        let ir = h.lift(&parsed, ConvDir::X2c).unwrap();
+
+        let f = ir
+            .fields
+            .get("skills.metadata")
+            .expect("skills.metadata must be in IR fields after x2c lift");
+        assert_eq!(f.loss, Loss::Lossless);
+
+        assert!(
+            !ir.diagnostics
+                .iter()
+                .any(|d| d.level == crate::core::ir::DiagLevel::Drop
+                    && d.message.contains("metadata")),
+            "metadata must not be dropped; diagnostics: {:?}",
+            ir.diagnostics
+        );
+
+        let plan = h.lower(&ir, ConvDir::X2c, &opts).unwrap();
+        let skill_file = plan
+            .files
+            .iter()
+            .find(|f| f.path.ends_with("SKILL.md"))
+            .expect("Expected SKILL.md in emit plan");
+
+        assert!(
+            skill_file.content.contains("author: example-org"),
+            "Expected metadata.author preserved in output frontmatter, got:\n{}",
+            skill_file.content
+        );
+        assert!(
+            skill_file.content.contains("version:"),
+            "Expected metadata.version preserved in output frontmatter, got:\n{}",
+            skill_file.content
+        );
+    }
 }

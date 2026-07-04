@@ -51,6 +51,7 @@ notes:                             # Domain-wide annotations (optional)
 
 ### `scope` (Range where the setting is effective)
 - `skill` / `command` / `agent` / `plugin` — only while that component is running
+- `marketplace` — per marketplace manifest (marketplace.json)
 - `session` — the entire running session
 - `project` — per project (repository)
 - `user` — per user (all projects)

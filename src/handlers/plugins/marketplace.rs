@@ -55,6 +55,7 @@ pub(super) fn transform_marketplace_c2x(
             "forceRemoveDeletedPlugins",
             "plugins.marketplace.forceRemoveDeletedPlugins",
         ),
+        ("renames", "plugins.marketplace.renames"),
     ];
     if let Some(obj) = json.as_object_mut() {
         for (field, mapping_id) in CLAUDE_ONLY_FIELDS {
@@ -385,6 +386,7 @@ mod tests {
             "owner": {"name": "ACME"},
             "allowCrossMarketplaceDependenciesOn": ["other-registry"],
             "forceRemoveDeletedPlugins": true,
+            "renames": {"old-name": "new-name", "removed-name": null},
             "plugins": []
         })
         .to_string();
@@ -401,6 +403,7 @@ mod tests {
             out.get("forceRemoveDeletedPlugins").is_none(),
             "forceRemoveDeletedPlugins must be dropped"
         );
+        assert!(out.get("renames").is_none(), "renames must be dropped");
 
         let drop_ids: Vec<_> = diags
             .iter()
@@ -412,6 +415,7 @@ mod tests {
             "plugins.marketplace.allowCrossMarketplaceDependenciesOn"
         )));
         assert!(drop_ids.contains(&Some("plugins.marketplace.forceRemoveDeletedPlugins")));
+        assert!(drop_ids.contains(&Some("plugins.marketplace.renames")));
     }
 
     #[test]

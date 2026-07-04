@@ -709,3 +709,330 @@ theme = "dark"
         "High tier must map back to the Opus ID, never Fable/Mythos"
     );
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// 2026-06/07 upstream updates: newly tracked Claude/Codex keys (footer links,
+// respond-to-bash, teammate mode, attribution.sessionUrl, sandbox escapes,
+// auto-mode classification, credential deny/mask, param-match permissions,
+// orchestrator/feature flags)
+// ────────────────────────────────────────────────────────────────────────────
+
+/// c2x: newly tracked Claude-only settings keys are dropped with a diagnostic
+/// keyed to their canonical entry id, and never leak into the emitted config.toml.
+#[test]
+fn test_settings_c2x_new_claude_only_keys_dropped() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("settings.json");
+    std::fs::write(
+        &path,
+        r#"{
+            "footerLinksRegexes": [{"pattern": "ISSUE-(\\d+)", "url": "https://example.com/{0}"}],
+            "respondToBashCommands": false,
+            "teammateMode": "tmux",
+            "attribution": {"sessionUrl": false},
+            "sandbox": {"allowAppleEvents": true},
+            "autoMode": {"classifyAllShell": true}
+        }"#,
+    )
+    .unwrap();
+
+    let maps = load_mappings();
+    use cxbridge::handlers::settings::SettingsHandler;
+    use cxbridge::handlers::Handler;
+    let handler = SettingsHandler {
+        map: maps["settings-config"].clone(),
+    };
+    let parsed = handler.parse(&path).expect("parse should succeed");
+    let ir = handler
+        .lift(&parsed, ConvDir::C2x)
+        .expect("lift should succeed");
+
+    let drop_diag_ids: Vec<_> = ir
+        .diagnostics
+        .iter()
+        .filter(|d| matches!(d.level, DiagLevel::Drop))
+        .filter_map(|d| d.id.as_deref())
+        .collect();
+
+    for id in [
+        "settings.footerLinksRegexes",
+        "settings.respondToBashCommands",
+        "settings.teammateMode",
+        "settings.attribution.sessionUrl",
+        "settings.sandbox.allowAppleEvents",
+        "settings.autoMode.classifyAllShell",
+    ] {
+        let f = ir
+            .fields
+            .get(id)
+            .unwrap_or_else(|| panic!("{id} should be lifted"));
+        assert!(
+            matches!(f.loss, cxbridge::core::ir::Loss::Dropped),
+            "{id} should be dropped"
+        );
+        assert!(
+            drop_diag_ids.contains(&id),
+            "Expected a Drop diagnostic for {id}, got: {drop_diag_ids:?}"
+        );
+    }
+
+    let out_dir = tempfile::TempDir::new().unwrap();
+    let opts = default_lower_opts(out_dir.path().to_str().unwrap());
+    let plan = handler
+        .lower(&ir, ConvDir::C2x, &opts)
+        .expect("lower should succeed");
+
+    // All 6 input keys are dropped with no Codex receptacle, so config.toml
+    // may legitimately be empty/absent; check every emitted file regardless.
+    for leaked in [
+        "footerLinksRegexes",
+        "respondToBashCommands",
+        "teammateMode",
+        "sessionUrl",
+        "allowAppleEvents",
+        "classifyAllShell",
+    ] {
+        for f in &plan.files {
+            assert!(
+                !f.content.contains(leaked),
+                "Dropped key {leaked} must not leak into {}, got:\n{}",
+                f.path,
+                f.content
+            );
+        }
+    }
+}
+
+/// c2x: sandbox.credentials.files/envVars deny entries convert to Codex
+/// filesystem deny + shell_environment_policy.exclude; mask entries are
+/// dropped with a diagnostic naming the masked variable.
+#[test]
+fn test_settings_c2x_sandbox_credentials_deny_and_mask() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("settings.json");
+    std::fs::write(
+        &path,
+        r#"{
+            "sandbox": {
+                "credentials": {
+                    "files": [{"path": "~/.aws/credentials", "mode": "deny"}],
+                    "envVars": [
+                        {"name": "AWS_SECRET_ACCESS_KEY", "mode": "deny"},
+                        {"name": "GITHUB_TOKEN", "mode": "mask", "injectHosts": ["api.github.com"]}
+                    ]
+                }
+            }
+        }"#,
+    )
+    .unwrap();
+
+    let maps = load_mappings();
+    use cxbridge::handlers::settings::SettingsHandler;
+    use cxbridge::handlers::Handler;
+    let handler = SettingsHandler {
+        map: maps["settings-config"].clone(),
+    };
+    let parsed = handler.parse(&path).expect("parse should succeed");
+    let ir = handler
+        .lift(&parsed, ConvDir::C2x)
+        .expect("lift should succeed");
+
+    assert!(
+        ir.fields.contains_key("settings.sandbox.credentials.files"),
+        "settings.sandbox.credentials.files should be lifted"
+    );
+    assert!(
+        ir.fields
+            .contains_key("settings.sandbox.credentials.envVars"),
+        "settings.sandbox.credentials.envVars should be lifted"
+    );
+
+    let out_dir = tempfile::TempDir::new().unwrap();
+    let opts = default_lower_opts(out_dir.path().to_str().unwrap());
+    let plan = handler
+        .lower(&ir, ConvDir::C2x, &opts)
+        .expect("lower should succeed");
+    let config_toml = plan
+        .files
+        .iter()
+        .find(|f| f.path.ends_with("config.toml"))
+        .expect("Expected config.toml in output");
+    let content = &config_toml.content;
+
+    assert!(
+        content.contains("~/.aws/credentials") && content.contains("\"deny\""),
+        "Expected credential file deny entry in config.toml, got:\n{}",
+        content
+    );
+    assert!(
+        content.contains("shell_environment_policy"),
+        "Expected shell_environment_policy in config.toml, got:\n{}",
+        content
+    );
+    assert!(
+        content.contains("AWS_SECRET_ACCESS_KEY"),
+        "Expected AWS_SECRET_ACCESS_KEY in shell_environment_policy.exclude, got:\n{}",
+        content
+    );
+    assert!(
+        !content.contains("GITHUB_TOKEN"),
+        "Masked env var GITHUB_TOKEN must not be excluded (it has no Codex equivalent), got:\n{}",
+        content
+    );
+
+    let mask_drop = plan.diagnostics.iter().find(|d| {
+        matches!(d.level, DiagLevel::Drop)
+            && d.id.as_deref() == Some("settings.sandbox.credentials.envVars")
+    });
+    assert!(
+        mask_drop.is_some(),
+        "Expected a Drop diagnostic for settings.sandbox.credentials.envVars mentioning the masked variable; got: {:?}",
+        plan.diagnostics
+            .iter()
+            .map(|d| (d.id.as_deref().unwrap_or("<none>"), &d.message))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        mask_drop.unwrap().message.contains("GITHUB_TOKEN"),
+        "Drop diagnostic should name the masked variable GITHUB_TOKEN, got: {}",
+        mask_drop.unwrap().message
+    );
+}
+
+/// c2x: Bash tool-parameter-match deny rules (e.g. `Bash(run_in_background:true)`)
+/// and other non-filesystem/web tools (e.g. `Agent(model:opus)`) have no Codex
+/// equivalent and must be dropped rather than emitted as bogus .rules entries,
+/// while ordinary Bash command-prefix rules still degrade to a .rules file.
+#[test]
+fn test_settings_c2x_permissions_param_match_dropped_not_bash_rule() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("settings.json");
+    std::fs::write(
+        &path,
+        r#"{
+            "permissions": {
+                "deny": ["Agent(model:opus)", "Bash(run_in_background:true)", "Bash(git:*)"]
+            }
+        }"#,
+    )
+    .unwrap();
+
+    let maps = load_mappings();
+    use cxbridge::handlers::settings::SettingsHandler;
+    use cxbridge::handlers::Handler;
+    let handler = SettingsHandler {
+        map: maps["settings-config"].clone(),
+    };
+    let parsed = handler.parse(&path).expect("parse should succeed");
+    let ir = handler
+        .lift(&parsed, ConvDir::C2x)
+        .expect("lift should succeed");
+
+    let out_dir = tempfile::TempDir::new().unwrap();
+    let opts = default_lower_opts(out_dir.path().to_str().unwrap());
+    let plan = handler
+        .lower(&ir, ConvDir::C2x, &opts)
+        .expect("lower should succeed");
+
+    let dropped_diag = plan.diagnostics.iter().find(|d| {
+        matches!(d.level, DiagLevel::Drop)
+            && d.id.as_deref() == Some("settings.permissions.paramMatch")
+    });
+    assert!(
+        dropped_diag.is_some(),
+        "Expected a Drop diagnostic settings.permissions.paramMatch; got: {:?}",
+        plan.diagnostics
+            .iter()
+            .map(|d| (d.id.as_deref().unwrap_or("<none>"), &d.message))
+            .collect::<Vec<_>>()
+    );
+    let msg = &dropped_diag.unwrap().message;
+    assert!(
+        msg.contains("Agent(model:opus)"),
+        "Drop diagnostic should mention Agent(model:opus), got: {}",
+        msg
+    );
+    assert!(
+        msg.contains("Bash(run_in_background:true)"),
+        "Drop diagnostic should mention Bash(run_in_background:true), got: {}",
+        msg
+    );
+
+    let rules_file = plan
+        .files
+        .iter()
+        .find(|f| f.path.ends_with(".rules"))
+        .expect("Expected a .rules file for the remaining Bash(git:*) command-prefix rule");
+    assert!(
+        rules_file.content.contains("git:*"),
+        "Expected git:* command prefix in .rules content, got:\n{}",
+        rules_file.content
+    );
+    assert!(
+        !rules_file.content.contains("run_in_background"),
+        "Bash parameter-match rule must not appear in .rules content, got:\n{}",
+        rules_file.content
+    );
+    assert!(
+        !rules_file.content.contains("model:opus"),
+        "Non-Bash tool parameter-match rule must not appear in .rules content, got:\n{}",
+        rules_file.content
+    );
+}
+
+/// x2c: `[orchestrator]` and unconsumed `[features]` flags have no Claude
+/// receptacle and must produce Drop diagnostics naming the canonical entry ids.
+#[test]
+fn test_settings_x2c_orchestrator_and_feature_flags_dropped() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        r#"
+[orchestrator.skills]
+enabled = false
+
+[features]
+current_time_reminder = true
+"#,
+    )
+    .unwrap();
+
+    let maps = load_mappings();
+    use cxbridge::handlers::settings::SettingsHandler;
+    use cxbridge::handlers::Handler;
+    let handler = SettingsHandler {
+        map: maps["settings-config"].clone(),
+    };
+    let parsed = handler.parse(&path).expect("parse should succeed");
+    let ir = handler
+        .lift(&parsed, ConvDir::X2c)
+        .expect("lift should succeed");
+
+    let diag_ids: Vec<_> = ir
+        .diagnostics
+        .iter()
+        .filter(|d| matches!(d.level, DiagLevel::Drop))
+        .filter_map(|d| d.id.as_deref())
+        .collect();
+    for id in [
+        "settings.codex.orchestrator",
+        "settings.codex.feature_flags",
+    ] {
+        assert!(
+            diag_ids.contains(&id),
+            "Expected drop diagnostic {id}, got: {diag_ids:?}"
+        );
+    }
+
+    let feature_flags_diag = ir
+        .diagnostics
+        .iter()
+        .find(|d| d.id.as_deref() == Some("settings.codex.feature_flags"))
+        .unwrap();
+    assert!(
+        feature_flags_diag.message.contains("current_time_reminder"),
+        "feature_flags diagnostic should name the unconsumed flag, got: {}",
+        feature_flags_diag.message
+    );
+}

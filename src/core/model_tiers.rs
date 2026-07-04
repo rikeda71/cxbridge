@@ -55,9 +55,9 @@ pub(crate) const CODEX_LATEST: &[(Tier, &str)] = &[
 /// High deliberately stays on the Opus name: `claude-fable-5` (Mythos class) is
 /// credit-metered, so conversions must not select it as an output model.
 pub(crate) const CLAUDE_LATEST: &[(Tier, &str)] = &[
-    (Tier::High, "claude-opus-4-8"),  // contains("opus") → High ✓
-    (Tier::Mid, "claude-sonnet-4-6"), // contains("sonnet") → Mid ✓
-    (Tier::Low, "claude-haiku-4-5"),  // contains("haiku") → Low ✓
+    (Tier::High, "claude-opus-4-8"), // contains("opus") → High ✓
+    (Tier::Mid, "claude-sonnet-5"),  // contains("sonnet") → Mid ✓ (dateless pinned ID, 1M context)
+    (Tier::Low, "claude-haiku-4-5"), // contains("haiku") → Low ✓
 ];
 
 /// Returns the Codex model name for a given Tier, looked up from CODEX_LATEST.
@@ -109,6 +109,15 @@ mod tests {
     fn test_context_suffix_does_not_break_tier_detection() {
         assert_eq!(claude_tier("claude-opus-4-6[1m]"), Some(Tier::High));
         assert_eq!(claude_tier("claude-sonnet-4-6[1m]"), Some(Tier::Mid));
+    }
+
+    #[test]
+    fn test_sonnet_5_is_mid_tier_canonical() {
+        // claude-sonnet-5 is the current Mid-tier canonical ID (Claude Code v2.1.197).
+        assert_eq!(claude_tier("claude-sonnet-5"), Some(Tier::Mid));
+        assert_eq!(tier_to_claude(Tier::Mid), "claude-sonnet-5");
+        // Legacy dated ID keeps resolving to Mid for input compatibility.
+        assert_eq!(claude_tier("claude-sonnet-4-6"), Some(Tier::Mid));
     }
 
     #[test]

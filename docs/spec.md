@@ -42,7 +42,7 @@
 
 **cxbridge** is a Rust CLI that bidirectionally converts configuration files between Claude Code (`.claude/`, JSON) and OpenAI Codex CLI (`.codex/`, TOML). It covers Skills, Plugins, Hooks, MCP servers, Memory files, Subagents, and Settings.
 
-Conversion rules are declared in `mappings/*.yaml` (314 entries). The CLI is an engine that interprets those declarations. New field support requires only YAML edits, not code changes (mappings-driven design).
+Conversion rules are declared in `mappings/*.yaml` (329 entries). The CLI is an engine that interprets those declarations. New field support requires only YAML edits, not code changes (mappings-driven design).
 
 Every conversion produces a **conversion report** that enumerates what was lossless, lossy, degraded, dropped, and any body-scan warnings. Silent data loss is prohibited.
 
@@ -157,7 +157,7 @@ Key design principles:
 ```
 cxbridge/
 ├── Cargo.toml
-├── mappings/           # ← YAML truth tables (314 entries)
+├── mappings/           # ← YAML truth tables (329 entries)
 │   ├── SCHEMA.md
 │   └── *.yaml
 ├── src/
@@ -473,7 +473,7 @@ const CODEX_LATEST: &[(Tier, &str)] = &[
 ];
 const CLAUDE_LATEST: &[(Tier, &str)] = &[
     (Tier::High, "claude-opus-4-8"),  // deliberately NOT claude-fable-5 (credit-metered)
-    (Tier::Mid,  "claude-sonnet-4-6"),
+    (Tier::Mid,  "claude-sonnet-5"), // dateless pinned ID, 1M context
     (Tier::Low,  "claude-haiku-4-5"),
 ];
 ```
@@ -542,7 +542,7 @@ pub trait Handler {
 - Unknown/unmapped keys become `Drop` diagnostics.
 
 **lower (c2x):**
-- Output: `name`, `description` (with `when_to_use` concatenated to description end).
+- Output: `name`, `description` (with `when_to_use` concatenated to description end), `metadata` (Agent Skills open-standard field, carried verbatim).
 - `disable-model-invocation: true` → SideArtifact `.agents/skills/<n>/agents/openai.yaml` with `policy.allow_implicit_invocation: false`. This is a handler special-case, not processed by `run_degrade`.
 - `allowed-tools`, `disallowed-tools`, `model`, `effort`, `context:fork` → degrade engine (§10).
 - `argument-hint`, `arguments`, `paths`, `user-invocable` → **dropped**.
@@ -576,7 +576,7 @@ Two possible conversion targets:
 
 Priority: explicit `--skill-target` > deterministic auto-detection > gray-case (interactive TTY if `--interactive`, else conservative default = subagent).
 
-**Lossless:** path, name, description, invocation syntax  
+**Lossless:** path, name, description, metadata (Agent Skills open-standard field), invocation syntax  
 **Lossy/degraded:** when_to_use, disable-model-invocation, allowed-tools, disallowed-tools, model, effort, context:fork, skill-scoped hooks  
 **Dropped:** user-invocable, paths, argument-hint, arguments, `` !`cmd` `` (dynamic injection), `${CLAUDE_*}` variables
 
@@ -607,6 +607,8 @@ Priority: explicit `--skill-target` > deterministic auto-detection > gray-case (
 **Dropped output fields (c2x):** `terminalSequence`, `sessionTitle`, `watchPaths`, `reloadSkills`, `initialUserMessage`, `permissionDecision: "defer"` (Claude-only value for `PreToolUse`; Codex does not support `defer` — the field must be dropped, not passed through).
 
 **Dropped output fields (x2c):** `updatedMCPToolOutput` (Codex PostToolUse only), `model`, `turn_id`, `tool_use_id` (Codex-only stdin fields).
+
+**Dropped file-level fields (x2c):** hooks.json top-level `description` metadata (`hooks.toplevel.description`, allowed since openai/codex#30229) — Claude hooks configuration has no top-level description field.
 
 **Plugin-bundled hooks (c2x — issue #16430):** Codex may not load `hooks/hooks.json` from installed plugin roots. The CLI emits a `DiagLevel::Warn` diagnostic with the exact message: `"Plugin-bundled hooks may not be loaded by Codex (#16430). Use --hooks-target=user|project to output hooks to ~/.codex/hooks.json or .codex/config.toml instead."` Using `--hooks-target=user|project` is the recommended workaround to ensure hooks are picked up.
 
@@ -643,7 +645,7 @@ Mostly mappings-driven mechanical transforms.
 **`env_http_headers` x2c direction:** Codex `env_http_headers` entries are converted back to Claude `headers` as `${VAR}` form (e.g. `{ "Authorization": "API_KEY" }` → `headers.Authorization: "${API_KEY}"`). This is the inverse of the c2x transform above.
 
 **Dropped (c2x):** `alwaysLoad`, `headersHelper`, `sse`/`ws` transport, `oauth.authServerMetadataUrl`.  
-**Dropped (x2c):** `enabled_tools`, `disabled_tools`, `default_tools_approval_mode`, `tools.<name>.approval_mode`, `startup_timeout_sec`, `env_vars`, `required`, `supports_parallel_tool_calls`, `environment_id`, `oauth_resource`.  
+**Dropped (x2c):** `enabled_tools`, `disabled_tools`, `default_tools_approval_mode`, `tools.<name>.approval_mode`, `startup_timeout_sec`, `env_vars`, `required`, `supports_parallel_tool_calls`, `environment_id`, `oauth_resource`, `auth` (`mcp.auth`, oauth|chatgpt enum, 2026-06 — Claude manages MCP OAuth automatically with no config-file field).  
 **`mcp.enabled: false` (x2c):** Codex MCP entries with `enabled: false` are **entirely excluded** from the Claude output — the whole server entry is omitted, not merely converted with the field dropped. This is a behavioral distinction: the handler must filter out disabled servers before emitting, not just strip the `enabled` field.
 
 **Lossless:** command, args, env, cwd, url, headers/http_headers, OAuth client_id, OAuth scopes, timeout  
@@ -661,7 +663,7 @@ The Plugins handler is the integration point. It coordinates skills/hooks/mcp ha
 3. **c2x dropped fields:** `lspServers`, `outputStyles`, `experimental.themes`, `experimental.monitors`, `settings`, `channels`, `userConfig`, `dependencies`. All emit dropped + warn diagnostics.
    - `userConfig` carries extra warn: unresolved `${user_config.KEY}` references in MCP/hooks may silently break.
 4. **c2x/x2c fields:** `commands` → lossless path-remap (`commands/` auto-discovered on both sides; no SKILL.md wrapper required). `agents` → lossy path-remap; per-file frontmatter converted via subagents domain rules. `defaultEnabled` → `policy.installation: INSTALLED_BY_DEFAULT` (lossy approximate — not fully equivalent).
-5. `marketplace.json`: near-identical schema; `source` type normalization required (Claude `relative` → Codex `{source:"local",...}`); Claude `github` source → approximate with `git-subdir` or `url` (Codex has no `github` shorthand source type); `npm`-type sources dropped. Missing `policy` entries get default values (`installation=AVAILABLE`, `authentication=ON_INSTALL`) with report annotation. Additional dropped fields (c2x): `marketplace.owner`, `allowCrossMarketplaceDependenciesOn`, `forceRemoveDeletedPlugins`. `marketplace.plugins[].policy` is Codex-only and dropped on x2c.
+5. `marketplace.json`: near-identical schema; `source` type normalization required (Claude `relative` → Codex `{source:"local",...}`); Claude `github` source → approximate with `git-subdir` or `url` (Codex has no `github` shorthand source type); `npm`-type sources dropped. Missing `policy` entries get default values (`installation=AVAILABLE`, `authentication=ON_INSTALL`) with report annotation. Additional dropped fields (c2x): `marketplace.owner`, `allowCrossMarketplaceDependenciesOn`, `forceRemoveDeletedPlugins`, `renames` (`plugins.marketplace.renames`, v2.1.193+ rename-history map — Codex marketplaces have no rename-following concept). `marketplace.plugins[].policy` is Codex-only and dropped on x2c.
 6. **Dual manifest strategy (`--dual-manifest`):** Retain `.claude-plugin/` and generate `.codex-plugin/plugin.json` alongside. This is the only way to get native Codex recognition.
 
 **Hook #16430 applies here too.** Plugin-bundled hooks may not be loaded by Codex. Use `--hooks-target=user|project` as the recommended workaround (see §9.2 and §17).
@@ -691,7 +693,7 @@ The Plugins handler is the integration point. It coordinates skills/hooks/mcp ha
 **Subdirectory on-demand load (lossy, c2x):** Claude scans subdirectories on-demand for `CLAUDE.md` files. Codex does not walk deeper than CWD when scanning for `AGENTS.md`. This behavioral difference is classified as lossy: memory files in subdirectories that Claude would pick up may be invisible to Codex. Emit a diagnostic when subdirectory `CLAUDE.md` files are detected during conversion.
 
 **Dropped (c2x):** `CLAUDE.local.md` (no non-committed personal file concept in Codex), managed policy `/etc/` CLAUDE.md, `claudeMdExcludes`, `rules/*.md` paths frontmatter, Auto memory (`MEMORY.md`).  
-**Dropped (x2c):** `AGENTS.override.md` (Codex-only complete-replacement concept), `features.child_agents_md`, `project_doc_fallback_filenames`.
+**Dropped (x2c):** `AGENTS.override.md` (Codex-only complete-replacement concept), `features.child_agents_md` (flag removed upstream 2026-06, openai/codex#28993 — now a no-op; entry kept for legacy configs), `project_doc_fallback_filenames`.
 
 ### 9.6 Subagents
 
@@ -710,7 +712,7 @@ The structural divergence is significant. Key architectural difference: Claude s
 
 Full automatic conversion is not attempted. Only a subset is converted.
 
-**Partial-subset converted (lossy):** model (tier mapping), effortLevel/model_reasoning_effort, autoMemoryEnabled→use_memories+generate_memories, cleanupPeriodDays, attribution/commit_attribution, editorMode/vim_mode_default, sandbox.network.allowAllUnixSockets.
+**Partial-subset converted (lossy):** model (tier mapping), effortLevel/model_reasoning_effort, autoMemoryEnabled→use_memories+generate_memories, cleanupPeriodDays, attribution/commit_attribution, editorMode/vim_mode_default, sandbox.network.allowAllUnixSockets, sandbox.credentials.files → `[permissions.default].filesystem` deny, sandbox.credentials.envVars (mode:deny) → `shell_environment_policy.exclude` (mode:mask entries are dropped with a warning).
 
 **`defaultMode` approximate conversions (lossy, c2x):**
 - `defaultMode: acceptEdits` → `approval_policy = "untrusted"`
@@ -724,10 +726,10 @@ Full automatic conversion is not attempted. Only a subset is converted.
 - `permissions.allow(Read/Write)` → `[permissions.<n>].filesystem` (tool-axis → resource-axis; Read/Write boundary lost)
 - `permissions.allow/deny(WebFetch)` → `[permissions.<n>].network = true|false` (boolean)
 
-**Dropped (c2x):** viewMode, worktree, autoUpdatesChannel, spinnerTips, voice/voiceEnabled, maxSkillDescriptionChars, defaultMode:plan, wheelScrollAccelerationEnabled, fallbackModel, availableModels/enforceAvailableModels, disableBundledSkills, requiredMinimumVersion/requiredMaximumVersion, agent.  
-**Dropped (x2c):** profiles, permissions.extends, approval_policy.granular.*, agents.max_threads/max_depth, tui.keymap.*, tui.theme/status_line/terminal_title, model_verbosity, web_search, plan_mode_reasoning_effort, approvals_reviewer/auto_review.policy, projects.\<path\>.trust_level, features.child_agents_md, project_doc_fallback_filenames, developer_instructions (→ CLAUDE.md approximation only).
+**Dropped (c2x):** viewMode, worktree, autoUpdatesChannel, spinnerTips, voice/voiceEnabled, maxSkillDescriptionChars, defaultMode:plan, wheelScrollAccelerationEnabled, fallbackModel, availableModels/enforceAvailableModels, disableBundledSkills, requiredMinimumVersion/requiredMaximumVersion, agent, footerLinksRegexes, respondToBashCommands, teammateMode, attribution.sessionUrl, sandbox.allowAppleEvents, autoMode.classifyAllShell, `Tool(param:value)` permission rules (v2.1.178+ parameter matching — Codex rules cannot express tool-parameter matching; also excluded from `.rules` generation so `Bash(run_in_background:true)` never becomes a bogus prefix rule).  
+**Dropped (x2c):** profiles, permissions.extends, approval_policy.granular.*, agents.max_threads/max_depth, tui.keymap.*, tui.theme/status_line/terminal_title, model_verbosity, web_search, plan_mode_reasoning_effort, approvals_reviewer/auto_review.policy, projects.\<path\>.trust_level, features.child_agents_md (flag removed upstream 2026-06, openai/codex#28993; entry kept for legacy configs), project_doc_fallback_filenames, developer_instructions (→ CLAUDE.md approximation only), orchestrator.skills/mcp.enabled, experimental `features.*` flags (catch-all `settings.codex.feature_flags`: current_time_reminder, rollout_budget, token_budget, multi_agent_mode, code_mode_host, …).
 
-**Lossless count: 2 out of 70 entries (3%).**
+**Lossless count: 2 out of 81 entries (2%).**
 
 ---
 
@@ -1012,13 +1014,13 @@ All writes to `config.toml` use `toml_edit::DocumentMut`. No string-patching (se
 
 ## 16. Feature & Loss Matrix Summary
 
-Total entries across all `mappings/*.yaml`: **314**
+Total entries across all `mappings/*.yaml`: **329**
 
 | Loss level | Count | % |
 |---|---|---|
-| lossless | 73 | 23% |
-| lossy | 89 | 28% |
-| dropped | 152 | 48% |
+| lossless | 74 | 22% |
+| lossy | 91 | 28% |
+| dropped | 164 | 50% |
 
 **Directional asymmetry:**
 - **Codex → Claude:** Near-lossless. Codex vocabulary is smaller; Claude has receptacles for most concepts.
@@ -1028,13 +1030,13 @@ Total entries across all `mappings/*.yaml`: **314**
 
 | Domain | Entries | Lossless | Lossy | Dropped | Notes |
 |---|---|---|---|---|---|
-| Skills | 23 | 5 | 13 | 5 | Core — degrade engine + body scanner |
-| Hooks | 83 | 34 | 6 | 43 | Core — JSON↔TOML structural conversion |
-| MCP | 32 | 10 | 4 | 18 | Lightweight mechanical transforms |
-| Plugins | 48 | 13 | 15 | 20 | Integration point; recursive |
+| Skills | 24 | 6 | 13 | 5 | Core — degrade engine + body scanner |
+| Hooks | 84 | 34 | 6 | 44 | Core — JSON↔TOML structural conversion |
+| MCP | 33 | 10 | 4 | 19 | Lightweight mechanical transforms |
+| Plugins | 49 | 13 | 15 | 21 | Integration point; recursive |
 | Memory | 18 | 3 | 5 | 10 | File rename + @import expansion |
 | Subagents | 25 | 4 | 10 | 11 | Large structural divergence |
-| Settings/Config | 70 | 2 (3%) | 31 | 37 | Hardest; permission axis mismatch |
+| Settings/Config | 81 | 2 (2%) | 33 | 46 | Hardest; permission axis mismatch |
 | Variables | 15 | 2 | 5 | 8 | No standalone handler. All variable-related transformations are performed by the body scanner within the Skills handler. |
 
 **Implementation value/complexity concentration:**
@@ -1050,6 +1052,7 @@ Fields with no Codex equivalent, always dropped on c2x:
 - `user-invocable`, `paths` (glob auto-trigger), `argument-hint`, `arguments` — skill invocation machinery
 - `` !`cmd` `` (inline dynamic injection), `${CLAUDE_*}` variables — body preprocessing
 - `lspServers`, `outputStyles`, `experimental.themes`, `experimental.monitors`, `bin`, `userConfig`, `channels` — plugin features
+- `footerLinksRegexes`, `respondToBashCommands`, `teammateMode`, `attribution.sessionUrl`, `sandbox.allowAppleEvents`, `autoMode.classifyAllShell`, `Tool(param:value)` permission rules, marketplace `renames` — 2026-06/07 Claude additions with no Codex receptacle
 - Claude-only hook events (20): Setup, UserPromptExpansion, PermissionDenied, PostToolUseFailure, PostToolBatch, Notification, MessageDisplay, TaskCreated, TaskCompleted, StopFailure, TeammateIdle, InstructionsLoaded, ConfigChange, CwdChanged, FileChanged, WorktreeCreate, WorktreeRemove, Elicitation, ElicitationResult, SessionEnd
 - `http`, `mcp_tool` hook types
 
@@ -1079,6 +1082,20 @@ The CLI mirrors this philosophy: unknown fields produce drop diagnostics but pro
 
 Current `awaiting-codex` fields include: `user-invocable`, `paths` (auto-trigger), `http`/`mcp_tool` hook types, `prompt`/`agent` hook types (Codex parses but does not execute), Claude-only hook events (20), `once`, `if`, `asyncRewake`, and SessionStart output fields `sessionTitle`/`watchPaths`/`reloadSkills`/`initialUserMessage`.
 
+### Codex Native `/import` Migrator (v0.140.0, 2026-06-15)
+
+Codex CLI ships a built-in, strictly **one-way** `/import` command that migrates Claude Code config (`.claude/`, `CLAUDE.md`, `.mcp.json`) into Codex (`AGENTS.md`, `config.toml`, `.codex/`). It is not a competitor to cxbridge's contract; the differences matter:
+
+- **Direction:** `/import` never writes back to `.claude/*`. cxbridge is bidirectional.
+- **Silent loss:** `/import` never reads `permissions.allow/deny/ask`, `model`, `statusLine`, `outputStyle`, or `apiKeyHelper`, drops non-scalar `env` values, `prompt`/`http` hook types, `if`-conditioned hook groups, and subagent `model`/`tools` — all without a report. cxbridge converts several of these (permission rules → `.codex/rules`, model → tier mapping) and reports every drop.
+- **Useful confirmation:** OpenAI's own importer treating those fields as unmappable independently corroborates this spec's `dropped`/`lossy` judgments for the same fields.
+- **Merge policy:** `/import` uses additive-only merges for `config.toml`/MCP and whole-file skip-if-non-empty for AGENTS.md/hooks/subagents — different from cxbridge's `toml_edit` non-destructive merge (§15).
+
+### Upstream Enum Drift (2026-06)
+
+- Codex `approval_policy` removed the deprecated `"on-failure"` variant (openai/codex#28418). cxbridge never emits it; treat it as invalid input from old configs (fail-open: pass through with a warning).
+- Codex `web_search` gained `"indexed"` (openai/codex#28489); `model_reasoning_effort` is now a free-form model-advertised string (openai/codex#26444).
+
 ### Codex Invocation Model Difference
 
 Claude uses description semantic matching for automatic subagent dispatch. Codex requires explicit `spawn_agent` call. There is no mechanical workaround for this behavioral difference — it is always noted as a `lossy` diagnostic.
@@ -1093,7 +1110,7 @@ Claude uses description semantic matching for automatic subagent dispatch. Codex
 
 ## 18. Testing Strategy
 
-1. **Mappings invariant tests** (at startup + CI): assert globally unique `id`, `degrade` implies `loss:lossy`, `loss:dropped` has no `transform`. 314 entries; 0 issues confirmed. (Note: `source` field is not validated — it is documentation metadata only.)
+1. **Mappings invariant tests** (at startup + CI): assert globally unique `id`, `degrade` implies `loss:lossy`, `loss:dropped` has no `transform`. 329 entries; 0 issues confirmed. (Note: `source` field is not validated — it is documentation metadata only.)
 
 2. **Unit tests:**
    - Each transform function (`unit:ms_to_sec`, `polarity:invert`, `enum_map`, `index_shift`, etc.)

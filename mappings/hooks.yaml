@@ -59,6 +59,29 @@ entries:
       default). Write hooks = true only when you want to explicitly enable it.
     source: "https://developers.openai.com/codex/config-reference"
 
+  - id: hooks.toplevel.description
+    claude:
+      field: null
+      type: null
+      scope: null
+    codex:
+      field: "description (hooks.json top-level)"
+      type: "string"
+      scope: session
+    direction: codex_to_claude
+    loss: dropped
+    transform: null
+    warn: true
+    notes: >
+      Codex relaxed hooks.json top-level validation to allow an optional
+      `description` metadata string (openai/codex#30229, merged 2026-06-26).
+      Previously, unknown top-level keys were rejected: #26426 made a root-level
+      event key (e.g. {"SessionStart":[...]}) a hard error; the canonical shape
+      is {"hooks": {...}, "description": "..."}. Claude hooks configuration
+      (settings.json "hooks" key / hooks.json) has no top-level description
+      field. Dropped + warn on Codex→Claude conversion.
+    source: "https://github.com/openai/codex/pull/30229"
+
   # ── Events: 10 common events (both / lossless, format conversion only) ─────────
   - id: hooks.event.SessionStart
     claude:
@@ -322,7 +345,13 @@ entries:
     loss: dropped
     transform: null
     warn: true
-    notes: "Not supported by Codex. dropped."
+    notes: >
+      Not supported by Codex. dropped, remains dropped.
+      As of Claude Code v2.1.198 (2026-07-01), the Notification matcher's notification-type
+      values include two new entries emitted by background agents: agent_needs_input and
+      agent_completed. These join the existing set (permission_prompt, idle_prompt,
+      auth_success, elicitation_dialog, elicitation_complete, elicitation_response). Codex
+      has no equivalent event, so all notification-type values are dropped regardless.
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.event.MessageDisplay
@@ -844,6 +873,12 @@ entries:
       but Codex always evaluates it as a regex.
       Claude→Codex: "Bash" → "^Bash$", "Edit|Write" → "^(Edit|Write)$" conversion required.
       lossy (without conversion, matches in Codex may be broader than intended).
+      Upstream matcher-semantics clarifications: comma-separated matcher lists (e.g.
+      "Bash,PowerShell") require Claude Code v2.1.191+. Hyphenated identifiers (e.g.
+      code-reviewer, mcp__brave-search) are exact-match only as of v2.1.195 — previously
+      they partially matched; use a `mcp__server-name__.*`-style regex to match all tools
+      of a server. FileChanged/StopFailure matchers use a narrower exact-match character
+      set (alphanumerics, _, | only).
     source: "https://code.claude.com/docs/en/hooks"
 
   - id: hooks.matcher.wildcard
