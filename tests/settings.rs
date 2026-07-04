@@ -628,6 +628,240 @@ fn test_settings_c2x_fable_model_and_new_dropped_keys() {
     );
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// approval_policy / sandbox_mode two-axis tests
+// ────────────────────────────────────────────────────────────────────────────
+
+/// c2x: defaultMode=plan → sandbox_mode=read-only + approval_policy=on-request,
+/// with a Warn (not Drop) diagnostic.
+#[test]
+fn test_settings_c2x_default_mode_plan_warns_and_converts() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("settings.json");
+    std::fs::write(&path, r#"{"permissions": {"defaultMode": "plan"}}"#).unwrap();
+
+    let maps = load_mappings();
+    use cxbridge::handlers::settings::SettingsHandler;
+    use cxbridge::handlers::Handler;
+    let handler = SettingsHandler {
+        map: maps["settings-config"].clone(),
+    };
+    let parsed = handler.parse(&path).expect("parse should succeed");
+    let ir = handler
+        .lift(&parsed, ConvDir::C2x)
+        .expect("lift should succeed");
+    let out_dir = tempfile::TempDir::new().unwrap();
+    let opts = default_lower_opts(out_dir.path().to_str().unwrap());
+    let plan = handler
+        .lower(&ir, ConvDir::C2x, &opts)
+        .expect("lower should succeed");
+
+    let config = plan
+        .files
+        .iter()
+        .find(|f| f.path.ends_with("config.toml"))
+        .expect("Expected config.toml");
+    assert!(
+        config.content.contains("sandbox_mode = \"read-only\""),
+        "plan must map to sandbox_mode=read-only; got:\n{}",
+        config.content
+    );
+    assert!(
+        config.content.contains("approval_policy = \"on-request\""),
+        "plan must map to approval_policy=on-request; got:\n{}",
+        config.content
+    );
+
+    // Must be Warn, not Drop.
+    let diag = plan
+        .diagnostics
+        .iter()
+        .find(|d| d.id.as_deref() == Some("settings.permissions.defaultMode.plan"))
+        .expect("Expected diagnostic for defaultMode.plan");
+    assert_eq!(
+        diag.level,
+        DiagLevel::Warn,
+        "defaultMode.plan must produce a Warn, not Drop"
+    );
+}
+
+/// c2x: defaultMode=default → on-request + workspace-write.
+#[test]
+fn test_settings_c2x_default_mode_default_converts() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("settings.json");
+    std::fs::write(&path, r#"{"permissions": {"defaultMode": "default"}}"#).unwrap();
+
+    let maps = load_mappings();
+    use cxbridge::handlers::settings::SettingsHandler;
+    use cxbridge::handlers::Handler;
+    let handler = SettingsHandler {
+        map: maps["settings-config"].clone(),
+    };
+    let parsed = handler.parse(&path).expect("parse");
+    let ir = handler.lift(&parsed, ConvDir::C2x).expect("lift");
+    let out_dir = tempfile::TempDir::new().unwrap();
+    let opts = default_lower_opts(out_dir.path().to_str().unwrap());
+    let plan = handler.lower(&ir, ConvDir::C2x, &opts).expect("lower");
+
+    let config = plan
+        .files
+        .iter()
+        .find(|f| f.path.ends_with("config.toml"))
+        .expect("Expected config.toml");
+    assert!(
+        config.content.contains("approval_policy = \"on-request\""),
+        "default must map to approval_policy=on-request; got:\n{}",
+        config.content
+    );
+    assert!(
+        config
+            .content
+            .contains("sandbox_mode = \"workspace-write\""),
+        "default must map to sandbox_mode=workspace-write; got:\n{}",
+        config.content
+    );
+}
+
+/// x2c: sandbox_mode=read-only → permissions.defaultMode=plan;
+/// source axes appear as LOSSY in the report, NOT in dropped.
+#[test]
+fn test_settings_x2c_sandbox_read_only_gives_plan() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "sandbox_mode = \"read-only\"\napproval_policy = \"on-request\"\n",
+    )
+    .unwrap();
+
+    let maps = load_mappings();
+    use cxbridge::handlers::settings::SettingsHandler;
+    use cxbridge::handlers::Handler;
+    let handler = SettingsHandler {
+        map: maps["settings-config"].clone(),
+    };
+    let parsed = handler.parse(&path).expect("parse");
+    let ir = handler.lift(&parsed, ConvDir::X2c).expect("lift");
+
+    let out_dir = tempfile::TempDir::new().unwrap();
+    let opts = default_lower_opts(out_dir.path().to_str().unwrap());
+    let plan = handler.lower(&ir, ConvDir::X2c, &opts).expect("lower");
+
+    let settings_json = plan
+        .files
+        .iter()
+        .find(|f| f.path.ends_with("settings.json"))
+        .expect("Expected settings.json");
+    let content: serde_json::Value =
+        serde_json::from_str(&settings_json.content).expect("valid JSON");
+    assert_eq!(
+        content["permissions"]["defaultMode"],
+        serde_json::Value::String("plan".to_string()),
+        "sandbox_mode=read-only must produce permissions.defaultMode=plan"
+    );
+
+    // Source axes must be visible as lossy in the report.
+    let report = build_report(&ir, &plan);
+    assert!(
+        !report
+            .dropped
+            .iter()
+            .any(|d| d.id.as_deref() == Some("settings.codex.sandbox_mode")),
+        "sandbox_mode must NOT appear in dropped; dropped: {:?}",
+        report.dropped
+    );
+    assert!(
+        !report
+            .dropped
+            .iter()
+            .any(|d| d.id.as_deref() == Some("settings.codex.approval_policy")),
+        "approval_policy must NOT appear in dropped; dropped: {:?}",
+        report.dropped
+    );
+    let lossy_ids: Vec<_> = report
+        .lossy
+        .iter()
+        .filter_map(|d| d.id.as_deref())
+        .collect();
+    assert!(
+        lossy_ids.contains(&"settings.codex.sandbox_mode")
+            || lossy_ids.contains(&"settings.codex.approval_policy"),
+        "at least one approval axis must appear as lossy; lossy: {:?}",
+        lossy_ids
+    );
+}
+
+/// x2c: approval_policy=never + sandbox_mode=workspace-write → defaultMode=dontAsk.
+#[test]
+fn test_settings_x2c_never_workspace_gives_dont_ask() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "approval_policy = \"never\"\nsandbox_mode = \"workspace-write\"\n",
+    )
+    .unwrap();
+
+    let maps = load_mappings();
+    use cxbridge::handlers::settings::SettingsHandler;
+    use cxbridge::handlers::Handler;
+    let handler = SettingsHandler {
+        map: maps["settings-config"].clone(),
+    };
+    let parsed = handler.parse(&path).expect("parse");
+    let ir = handler.lift(&parsed, ConvDir::X2c).expect("lift");
+    let out_dir = tempfile::TempDir::new().unwrap();
+    let opts = default_lower_opts(out_dir.path().to_str().unwrap());
+    let plan = handler.lower(&ir, ConvDir::X2c, &opts).expect("lower");
+
+    let settings_json = plan
+        .files
+        .iter()
+        .find(|f| f.path.ends_with("settings.json"))
+        .expect("Expected settings.json");
+    let content: serde_json::Value =
+        serde_json::from_str(&settings_json.content).expect("valid JSON");
+    assert_eq!(
+        content["permissions"]["defaultMode"],
+        serde_json::Value::String("dontAsk".to_string()),
+        "never+workspace-write must give dontAsk"
+    );
+}
+
+/// x2c: sandbox_mode=danger-full-access → defaultMode=bypassPermissions.
+#[test]
+fn test_settings_x2c_danger_full_access_gives_bypass_permissions() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let path = dir.path().join("config.toml");
+    std::fs::write(&path, "sandbox_mode = \"danger-full-access\"\n").unwrap();
+
+    let maps = load_mappings();
+    use cxbridge::handlers::settings::SettingsHandler;
+    use cxbridge::handlers::Handler;
+    let handler = SettingsHandler {
+        map: maps["settings-config"].clone(),
+    };
+    let parsed = handler.parse(&path).expect("parse");
+    let ir = handler.lift(&parsed, ConvDir::X2c).expect("lift");
+    let out_dir = tempfile::TempDir::new().unwrap();
+    let opts = default_lower_opts(out_dir.path().to_str().unwrap());
+    let plan = handler.lower(&ir, ConvDir::X2c, &opts).expect("lower");
+
+    let settings_json = plan
+        .files
+        .iter()
+        .find(|f| f.path.ends_with("settings.json"))
+        .expect("Expected settings.json");
+    let content: serde_json::Value =
+        serde_json::from_str(&settings_json.content).expect("valid JSON");
+    assert_eq!(
+        content["permissions"]["defaultMode"],
+        serde_json::Value::String("bypassPermissions".to_string()),
+        "danger-full-access must give bypassPermissions"
+    );
+}
+
 /// x2c: gpt-5.5 tier-maps to the Opus ID (never the credit-metered Fable ID),
 /// and newly tracked Codex-only keys produce drop diagnostics.
 #[test]

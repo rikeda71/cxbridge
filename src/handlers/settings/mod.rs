@@ -8,6 +8,7 @@ use crate::core::mappings::DomainMap;
 use crate::core::transforms::ConvDir;
 use crate::handlers::{EmitPlan, Handler, LowerOpts};
 
+mod approval;
 mod lift;
 mod lower_c2x;
 mod lower_x2c;
@@ -326,7 +327,8 @@ mod tests {
         let opts = default_opts(out_dir.path().to_str().unwrap());
         let plan = h.lower(&ir, ConvDir::C2x, &opts).unwrap();
 
-        // dontAsk converts to approval_policy=never + sandbox_mode=danger-full-access.
+        // dontAsk converts to approval_policy=never + sandbox_mode=workspace-write.
+        // The workspace boundary is preserved; only the approval gate is removed.
         let config = plan
             .files
             .iter()
@@ -335,7 +337,7 @@ mod tests {
         assert!(config.content.contains("approval_policy = \"never\""));
         assert!(config
             .content
-            .contains("sandbox_mode = \"danger-full-access\""));
+            .contains("sandbox_mode = \"workspace-write\""));
 
         // The lossy approximation must be surfaced, not silent (warn:true contract).
         assert!(
