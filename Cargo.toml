@@ -24,7 +24,7 @@ path = "src/lib.rs"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-serde-saphyr = "0.0.28"
+serde-saphyr = "0.0.29"
 toml = "1.1"
 toml_edit = "0.25"
 gray_matter = "0.3"
